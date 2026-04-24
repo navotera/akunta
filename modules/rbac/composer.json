@@ -1,0 +1,38 @@
+{
+    "name": "akunta/rbac",
+    "description": "RBAC: User × Role × App × Entity model, permission registry, Gate/Policy scaffolding.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "akunta/core": "*",
+        "illuminate/auth": "^11.0",
+        "illuminate/database": "^11.0",
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "pestphp/pest": "^2.34"
+    },
+    "autoload": {
+        "psr-4": {
+            "Akunta\\Rbac\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Akunta\\Rbac\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Akunta\\Rbac\\RbacServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

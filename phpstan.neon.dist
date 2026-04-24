@@ -1,0 +1,18 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 7
+    paths:
+        - modules/core/src
+        - modules/rbac/src
+        - modules/audit/src
+        - modules/ui/src
+        - modules/api-client/src
+        - apps/main-tier/app
+        - apps/accounting/app
+        - apps/payroll/app
+    tmpDir: .phpstan-cache
+    checkMissingIterableValueType: false
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: false

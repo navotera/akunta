@@ -1,0 +1,45 @@
+{
+    "name": "akunta/api-client",
+    "description": "HTTP client for inter-app calls: scoped token auth, idempotency-key, retry/backoff, hook bridge.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "akunta/core": "*",
+        "guzzlehttp/guzzle": "^7.8",
+        "illuminate/http": "^11.0",
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.5",
+        "pestphp/pest": "^3.0"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "Akunta\\ApiClient\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Akunta\\ApiClient\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Akunta\\ApiClient\\ApiClientServiceProvider"
+            ]
+        }
+    },
+    "repositories": [
+        { "type": "path", "url": "../core", "options": { "symlink": true } }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

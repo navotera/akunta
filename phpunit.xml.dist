@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         failOnWarning="true"
+         failOnRisky="true">
+    <testsuites>
+        <testsuite name="akunta">
+            <directory>modules/core/tests</directory>
+            <directory>modules/rbac/tests</directory>
+            <directory>modules/audit/tests</directory>
+            <directory>modules/ui/tests</directory>
+            <directory>modules/api-client/tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>modules/core/src</directory>
+            <directory>modules/rbac/src</directory>
+            <directory>modules/audit/src</directory>
+            <directory>modules/ui/src</directory>
+            <directory>modules/api-client/src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+    </php>
+</phpunit>

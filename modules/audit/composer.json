@@ -1,0 +1,37 @@
+{
+    "name": "akunta/audit",
+    "description": "Immutable append-only audit log: writer service, AuditLog model, migration, DB-level permission guards.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "akunta/core": "*",
+        "illuminate/database": "^11.0",
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "pestphp/pest": "^2.34"
+    },
+    "autoload": {
+        "psr-4": {
+            "Akunta\\Audit\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Akunta\\Audit\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Akunta\\Audit\\AuditServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

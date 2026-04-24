@@ -1,0 +1,54 @@
+name: akunta
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: akunta-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-akunta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-akunta}
+      POSTGRES_DB: ${POSTGRES_DB:-ecosystem_control}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: akunta-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ./redis/data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PHP workspace: shared container untuk dev tooling (composer, artisan cross-app).
+  # Setiap app (accounting, payroll, main-tier) akan punya service php-fpm + nginx sendiri
+  # setelah di-scaffold (step 5+ di architecture.md §11).
+  workspace:
+    build:
+      context: ./php-fpm
+      dockerfile: Dockerfile
+    container_name: akunta-workspace
+    working_dir: /app
+    volumes:
+      - ../:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    tty: true
+    stdin_open: true

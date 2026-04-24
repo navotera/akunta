@@ -1,0 +1,38 @@
+{
+    "name": "akunta/ui",
+    "description": "Shared Filament v3 components: entity switcher, period badge, common form fields, table columns.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "akunta/core": "*",
+        "akunta/rbac": "*",
+        "filament/filament": "^3.2",
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "pestphp/pest": "^2.34"
+    },
+    "autoload": {
+        "psr-4": {
+            "Akunta\\Ui\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Akunta\\Ui\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Akunta\\Ui\\UiServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

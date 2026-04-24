@@ -1,0 +1,49 @@
+{
+    "name": "akunta/ecosystem",
+    "description": "Accounting Ecosystem App — monorepo root (dev workspace, tooling)",
+    "type": "project",
+    "license": "proprietary",
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "require": {
+        "php": "^8.3",
+        "akunta/api-client": "*",
+        "akunta/audit": "*",
+        "akunta/core": "*",
+        "akunta/rbac": "*",
+        "akunta/ui": "*"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.15",
+        "larastan/larastan": "^2.9",
+        "mockery/mockery": "^1.6",
+        "orchestra/testbench": "^9.0",
+        "pestphp/pest": "^2.34",
+        "pestphp/pest-plugin-laravel": "^2.3",
+        "phpstan/phpstan": "^1.11"
+    },
+    "repositories": [
+        { "type": "path", "url": "modules/core",       "options": { "symlink": true } },
+        { "type": "path", "url": "modules/rbac",       "options": { "symlink": true } },
+        { "type": "path", "url": "modules/audit",      "options": { "symlink": true } },
+        { "type": "path", "url": "modules/ui",         "options": { "symlink": true } },
+        { "type": "path", "url": "modules/api-client", "options": { "symlink": true } }
+    ],
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "lint": "pint",
+        "lint:check": "pint --test",
+        "stan": "phpstan analyse",
+        "test": "pest",
+        "ci": [
+            "@lint:check",
+            "@stan",
+            "@test"
+        ]
+    }
+}

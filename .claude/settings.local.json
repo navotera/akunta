@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(composer --version)",
+      "Bash(php --version)",
+      "Bash(brew list *)",
+      "Bash(brew info *)",
+      "Bash(/opt/homebrew/opt/php/bin/php --version)",
+      "Bash(/opt/homebrew/opt/php/bin/php -r \"echo PHP_VERSION, PHP_EOL; echo extension_loaded\\('pdo_pgsql'\\) ? 'pgsql ok' : 'pgsql MISSING'; echo PHP_EOL;\")",
+      "Bash(brew search *)",
+      "Bash(brew reinstall *)",
+      "Bash(export PATH=\"/opt/homebrew/opt/php/bin:$PATH\")",
+      "Bash(php -r \"echo extension_loaded\\('pdo_pgsql'\\)?'pgsql ok':'pgsql MISSING'; echo PHP_EOL;\")",
+      "Bash(rm /Users/hendra/akunta/apps/accounting/.gitkeep)",
+      "Bash(rmdir /Users/hendra/akunta/apps/accounting)",
+      "Bash(composer update *)",
+      "Bash(php artisan *)",
+      "Bash(pkill -f \"artisan serve --port=8765\")",
+      "Bash(grep -A 2 \"admin-accounting$\")",
+      "Bash(curl -s -o /dev/null -H 'X-Tenant-Slug: test-tenant' http://127.0.0.1:8769/admin-accounting)",
+      "Bash(pkill -f \"artisan serve --port=8769\")",
+      "Bash(wait)",
+      "Bash(grep -B1 -A 20 \"dashboard$\")",
+      "Bash(composer require *)",
+      "Bash(vendor/bin/pest --init)",
+      "Bash(vendor/bin/pest tests/Feature/Journal/ --stop-on-failure)",
+      "Bash(vendor/bin/pest tests/Feature/Journal/)",
+      "Bash(vendor/bin/pest tests/Feature/Journal/ReverseJournalActionTest.php --filter \"fires before_reverse\")",
+      "Bash(vendor/bin/pest tests/Feature/Journal/PostJournalActionTest.php --filter \"it posts a balanced\")",
+      "Bash(vendor/bin/pest tests/Feature/Journal/PostJournalActionTest.php --filter \"it posts a balanced\" --display-deprecations)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(vendor/bin/pest)",
+      "Bash(composer install *)",
+      "Bash(vendor/bin/pest ../../modules/core/tests/)"
+    ]
+  }
+}

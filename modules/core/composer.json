@@ -1,0 +1,40 @@
+{
+    "name": "akunta/core",
+    "description": "Core contracts: hook system (Event façade + WP-style naming), BaseAction, shared interfaces.",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^11.0",
+        "illuminate/events": "^11.0",
+        "illuminate/support": "^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "pestphp/pest": "^2.34"
+    },
+    "autoload": {
+        "psr-4": {
+            "Akunta\\Core\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Akunta\\Core\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Akunta\\Core\\CoreServiceProvider"
+            ],
+            "aliases": {
+                "Hooks": "Akunta\\Core\\Facades\\Hooks"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}
