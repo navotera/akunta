@@ -15,7 +15,11 @@ class TrialBalance extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-calculator';
 
+    protected static ?string $activeNavigationIcon = 'heroicon-s-calculator';
+
     protected static ?string $navigationGroup = 'Laporan';
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $title = 'Neraca Saldo';
 

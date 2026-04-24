@@ -7,19 +7,19 @@
     "prefer-stable": true,
     "require": {
         "php": "^8.3",
-        "akunta/api-client": "*",
-        "akunta/audit": "*",
-        "akunta/core": "*",
-        "akunta/rbac": "*",
-        "akunta/ui": "*"
+        "akunta/api-client": "@dev",
+        "akunta/audit": "@dev",
+        "akunta/core": "@dev",
+        "akunta/rbac": "@dev",
+        "akunta/ui": "@dev"
     },
     "require-dev": {
         "laravel/pint": "^1.15",
         "larastan/larastan": "^2.9",
         "mockery/mockery": "^1.6",
         "orchestra/testbench": "^9.0",
-        "pestphp/pest": "^2.34",
-        "pestphp/pest-plugin-laravel": "^2.3",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0",
         "phpstan/phpstan": "^1.11"
     },
     "repositories": [

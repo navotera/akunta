@@ -15,7 +15,11 @@ class IncomeStatement extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
 
+    protected static ?string $activeNavigationIcon = 'heroicon-s-chart-bar';
+
     protected static ?string $navigationGroup = 'Laporan';
+
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $title = 'Laporan Laba Rugi';
 

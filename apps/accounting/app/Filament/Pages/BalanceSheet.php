@@ -15,7 +15,11 @@ class BalanceSheet extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-scale';
 
+    protected static ?string $activeNavigationIcon = 'heroicon-s-scale';
+
     protected static ?string $navigationGroup = 'Laporan';
+
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $title = 'Neraca';
 

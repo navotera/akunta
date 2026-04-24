@@ -8,11 +8,16 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use App\Filament\Widgets\AccountingStatsOverview;
+use App\Filament\Widgets\PeriodStatusWidget;
+use App\Filament\Widgets\QuickActionsWidget;
+use App\Filament\Widgets\RecentJournalsWidget;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
+use Filament\Support\Enums\MaxWidth;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -30,9 +35,26 @@ class AccountingPanelProvider extends PanelProvider
             ->default()
             ->id('accounting')
             ->path('admin-accounting')
+            ->brandName('Akunta')
             ->login()
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Indigo,
+                'success' => Color::Emerald,
+                'warning' => Color::Amber,
+                'danger' => Color::Rose,
+                'info' => Color::Sky,
+                'gray' => Color::Slate,
+            ])
+            ->font('Inter')
+            ->darkMode()
+            ->maxContentWidth(MaxWidth::Full)
+            ->sidebarCollapsibleOnDesktop()
+            ->breadcrumbs(true)
+            ->navigationGroups([
+                NavigationGroup::make('Operasional')->icon('heroicon-o-bolt')->collapsible(false),
+                NavigationGroup::make('Laporan')->icon('heroicon-o-chart-pie')->collapsible(false),
+                NavigationGroup::make('Master Data')->icon('heroicon-o-rectangle-stack')->collapsible(true),
+                NavigationGroup::make('Pengaturan')->icon('heroicon-o-cog-6-tooth')->collapsible(true),
             ])
             ->tenant(\Akunta\Rbac\Models\Entity::class)
             ->tenantMenuItems([])
@@ -43,8 +65,10 @@ class AccountingPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                AccountingStatsOverview::class,
+                PeriodStatusWidget::class,
+                RecentJournalsWidget::class,
+                QuickActionsWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

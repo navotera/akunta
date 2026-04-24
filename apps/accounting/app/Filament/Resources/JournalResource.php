@@ -20,9 +20,11 @@ class JournalResource extends Resource
 {
     protected static ?string $model = Journal::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-book-open';
+    protected static ?string $navigationIcon = 'heroicon-o-pencil-square';
 
-    protected static ?string $navigationGroup = 'Transactions';
+    protected static ?string $activeNavigationIcon = 'heroicon-s-pencil-square';
+
+    protected static ?string $navigationGroup = 'Operasional';
 
     protected static ?string $navigationLabel = 'Jurnal';
 
@@ -30,7 +32,7 @@ class JournalResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Jurnal';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $tenantOwnershipRelationshipName = 'entity';
 
@@ -61,7 +63,7 @@ class JournalResource extends Resource
                             ->relationship(
                                 name: 'period',
                                 titleAttribute: 'name',
-                                modifyQueryUsing: fn ($q) => $q->where('status', Period::STATUS_OPEN)->orderBy('start_date', 'desc'),
+                                modifyQueryUsing: fn (\Illuminate\Database\Eloquent\Builder $query) => $query->where('status', Period::STATUS_OPEN)->orderBy('start_date', 'desc'),
                             )
                             ->native(false),
                         Forms\Components\Select::make('type')
@@ -94,7 +96,7 @@ class JournalResource extends Resource
                                     ->required()
                                     ->relationship(
                                         name: 'account',
-                                        modifyQueryUsing: fn ($q) => $q->where('is_postable', true)->where('is_active', true)->orderBy('code'),
+                                        modifyQueryUsing: fn (\Illuminate\Database\Eloquent\Builder $query) => $query->where('is_postable', true)->where('is_active', true)->orderBy('code'),
                                     )
                                     ->getOptionLabelFromRecordUsing(fn (Account $r) => "{$r->code} — {$r->name}")
                                     ->searchable()

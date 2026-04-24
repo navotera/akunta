@@ -2,6 +2,20 @@
 
 Monorepo untuk ekosistem aplikasi akuntansi UKM Indonesia (Laravel 11 + Filament v3).
 
+---
+
+## 🔑 Login (Local / Dev)
+
+| URL                                            | Email                       | Password         |
+|------------------------------------------------|-----------------------------|------------------|
+| http://localhost:8765/admin-accounting         | `superadmin@akunta.local`   | `ChangeMe!2026`  |
+
+Created by `php artisan migrate:fresh --seed` → `SuperAdminSeeder`.
+Override via `.env`: `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`.
+Full detail: [§ Default Super Admin](#default-super-admin-local--dev).
+
+---
+
 ## Dokumentasi
 
 | File | Isi |
@@ -48,8 +62,41 @@ composer install
 # Start infra (postgres + redis + workspace)
 docker compose -f docker/docker-compose.yml up -d
 
+# Migrate + seed default super-admin (accounting app)
+cd apps/accounting
+php artisan migrate:fresh --seed
+
+# Run dev server (port 8765, deprecation notices suppressed for PHP 8.5)
+composer serve
+# Then open http://localhost:8765/admin-accounting
+
 # Run checks
 composer ci     # lint + phpstan + tests
+```
+
+## Default Super Admin (Local / Dev)
+
+Seeded by `SuperAdminSeeder` (`apps/accounting/database/seeders/SuperAdminSeeder.php`)
+when `php artisan db:seed` runs. Idempotent on email.
+
+| Field    | Default                  | Override (env) |
+|----------|--------------------------|----------------|
+| Email    | `superadmin@akunta.local`| `SUPER_ADMIN_EMAIL` |
+| Password | `ChangeMe!2026`          | `SUPER_ADMIN_PASSWORD` |
+| Name     | `Super Admin`            | `SUPER_ADMIN_NAME` |
+
+**Login:** `/admin-accounting` Filament panel.
+
+> ⚠️ **Local/dev only.** Change password before any non-local deploy. Never
+> commit real credentials. Production tenant onboarding uses
+> `ProvisionTenantAction` which seeds its own per-tenant super-admin with a
+> generated password returned to the caller — see `docs/spec.md` §5.5.
+
+Custom credentials via `.env`:
+```env
+SUPER_ADMIN_EMAIL=you@example.com
+SUPER_ADMIN_PASSWORD=YourStrongPassword!
+SUPER_ADMIN_NAME=Hendra
 ```
 
 ## Next Step

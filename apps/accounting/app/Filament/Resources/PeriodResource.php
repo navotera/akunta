@@ -17,7 +17,9 @@ class PeriodResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
 
-    protected static ?string $navigationGroup = 'Period & Close';
+    protected static ?string $activeNavigationIcon = 'heroicon-s-calendar-days';
+
+    protected static ?string $navigationGroup = 'Master Data';
 
     protected static ?string $navigationLabel = 'Periode';
 

@@ -14,15 +14,17 @@ class AccountResource extends Resource
 {
     protected static ?string $model = Account::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-folder-open';
 
-    protected static ?string $navigationGroup = 'Chart of Accounts';
+    protected static ?string $activeNavigationIcon = 'heroicon-s-folder-open';
 
-    protected static ?string $navigationLabel = 'Akun';
+    protected static ?string $navigationGroup = 'Master Data';
+
+    protected static ?string $navigationLabel = 'Bagan Akun';
 
     protected static ?string $modelLabel = 'Akun';
 
-    protected static ?string $pluralModelLabel = 'Chart of Accounts';
+    protected static ?string $pluralModelLabel = 'Bagan Akun';
 
     protected static ?int $navigationSort = 10;
 

@@ -31,7 +31,16 @@
       "Bash(echo \"exit=$?\")",
       "Bash(vendor/bin/pest)",
       "Bash(composer install *)",
-      "Bash(vendor/bin/pest ../../modules/core/tests/)"
+      "Bash(vendor/bin/pest ../../modules/core/tests/)",
+      "Bash(brew unlink *)",
+      "Bash(brew link *)",
+      "Read(//opt/homebrew/Cellar/php/8.5.5/bin/**)",
+      "Bash(which php *)",
+      "Bash(php -v)",
+      "Bash(curl *)",
+      "Bash(grep -n '\\\\$q\\\\|->relationship\\\\|Select::make' /Users/hendra/akunta/apps/accounting/app/Filament/Resources/JournalResource.php)",
+      "Bash(grep -rn 'modifyQueryUsing.*$q\\\\b\\\\|modifyQueryUsing.*fn \\($q\\\\|getOptionLabel.*$q\\\\|->where.*$q\\\\b' /Users/hendra/akunta/apps/accounting/app/Filament/)",
+      "Bash(grep -v '$query')"
     ]
   }
 }

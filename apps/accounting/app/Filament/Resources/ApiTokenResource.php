@@ -16,7 +16,13 @@ class ApiTokenResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
-    protected static ?string $navigationGroup = 'Admin';
+    protected static ?string $activeNavigationIcon = 'heroicon-s-key';
+
+    protected static ?string $navigationGroup = 'Pengaturan';
+
+    protected static ?string $navigationLabel = 'API Tokens';
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'API Token';
 
