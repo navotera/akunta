@@ -1,0 +1,1033 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@config 'tailwind.config.js';
+
+/*
+ * Akunta — Editorial Ledger
+ * Indonesian warmth × Swiss-financial precision
+ */
+
+@layer base {
+    @font-face {
+        font-family: 'Fraunces';
+        font-style: normal;
+        font-weight: 300 900;
+        font-display: swap;
+        src: url('https://fonts.bunny.net/fraunces/files/fraunces-latin-wght-normal.woff2') format('woff2-variations');
+    }
+
+    @font-face {
+        font-family: 'Instrument Sans';
+        font-style: normal;
+        font-weight: 400 700;
+        font-display: swap;
+        src: url('https://fonts.bunny.net/instrument-sans/files/instrument-sans-latin-wght-normal.woff2') format('woff2-variations');
+    }
+
+    @font-face {
+        font-family: 'JetBrains Mono';
+        font-style: normal;
+        font-weight: 400 700;
+        font-display: swap;
+        src: url('https://fonts.bunny.net/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+    }
+
+    :root {
+        /* Akunta tokens — light ("daybook") */
+        --ak-ink: 13 59 46;
+        --ak-ink-soft: 26 82 66;
+        --ak-paper: 245 239 226;
+        --ak-paper-2: 238 230 212;
+        --ak-paper-3: 250 246 238;
+        --ak-copper: 184 101 74;
+        --ak-copper-soft: 212 142 112;
+        --ak-red: 194 59 34;
+        --ak-graphite: 26 28 27;
+        --ak-muted: 107 104 95;
+        --ak-rule: 26 28 27 / 0.12;
+
+        --ak-font-display: 'Fraunces', 'Georgia', serif;
+        --ak-font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+        --ak-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+        font-feature-settings: 'ss01', 'ss02', 'cv02', 'cv11';
+    }
+
+    .dark {
+        /* "Library at night" */
+        --ak-ink: 232 181 104;            /* amber glow replaces ink as accent */
+        --ak-ink-soft: 203 151 81;
+        --ak-paper: 11 18 16;              /* deep forest */
+        --ak-paper-2: 17 26 23;
+        --ak-paper-3: 22 33 29;
+        --ak-copper: 217 151 115;
+        --ak-copper-soft: 178 119 89;
+        --ak-red: 222 94 70;
+        --ak-graphite: 230 224 208;
+        --ak-muted: 158 150 134;
+        --ak-rule: 230 224 208 / 0.14;
+    }
+
+    html {
+        font-family: var(--ak-font-sans);
+        font-feature-settings: 'ss01', 'cv11';
+        -webkit-font-smoothing: antialiased;
+    }
+
+    .fi-body {
+        background: rgb(var(--ak-paper));
+        color: rgb(var(--ak-graphite));
+        background-image:
+            radial-gradient(at 0% 0%, rgb(var(--ak-copper) / 0.04) 0, transparent 45%),
+            radial-gradient(at 100% 100%, rgb(var(--ak-ink) / 0.05) 0, transparent 55%);
+    }
+}
+
+@layer components {
+    /* -------- Brand / logo -------- */
+    .fi-logo,
+    .fi-topbar .fi-logo {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-size: 1.35rem;
+        letter-spacing: -0.02em;
+        font-variation-settings: 'opsz' 144, 'SOFT' 50;
+        color: rgb(var(--ak-graphite));
+        position: relative;
+        padding-left: 1.1rem;
+    }
+
+    .fi-logo::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 0.5rem;
+        height: 0.5rem;
+        background: rgb(var(--ak-copper));
+        border-radius: 9999px;
+        box-shadow: 0 0 0 3px rgb(var(--ak-copper) / 0.15);
+    }
+
+    /* -------- Sidebar -------- */
+    .fi-sidebar {
+        background: rgb(var(--ak-paper-3));
+        border-right: 1px solid rgb(var(--ak-rule));
+        position: relative;
+    }
+
+    .fi-sidebar::after {
+        /* grainy paper texture */
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.4;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.05 0 0 0 0 0.23 0 0 0 0 0.18 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        mix-blend-mode: multiply;
+    }
+
+    .dark .fi-sidebar::after { mix-blend-mode: screen; opacity: 0.18; }
+
+    .fi-sidebar-nav {
+        position: relative;
+        z-index: 1;
+    }
+
+    .fi-sidebar-group-label {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-style: italic;
+        letter-spacing: 0.02em;
+        font-size: 0.78rem;
+        color: rgb(var(--ak-muted));
+        text-transform: none;
+        padding-left: 0.25rem;
+        border-bottom: 1px solid rgb(var(--ak-rule));
+        padding-bottom: 0.35rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .fi-sidebar-item-button {
+        border-radius: 0.125rem;
+        transition: all 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        position: relative;
+        font-weight: 500;
+    }
+
+    .fi-sidebar-item-button:hover {
+        background: rgb(var(--ak-copper) / 0.08);
+        color: rgb(var(--ak-graphite));
+    }
+
+    .fi-sidebar-item.fi-active .fi-sidebar-item-button {
+        background: rgb(var(--ak-ink));
+        color: rgb(var(--ak-paper));
+    }
+
+    .dark .fi-sidebar-item.fi-active .fi-sidebar-item-button {
+        background: rgb(var(--ak-ink) / 0.14);
+        color: rgb(var(--ak-ink));
+    }
+
+    .fi-sidebar-item.fi-active .fi-sidebar-item-button::before {
+        content: '';
+        position: absolute;
+        left: -0.5rem;
+        top: 0.35rem;
+        bottom: 0.35rem;
+        width: 2px;
+        background: rgb(var(--ak-copper));
+    }
+
+    /* -------- Top bar -------- */
+    .fi-topbar {
+        background: rgb(var(--ak-paper) / 0.92);
+        backdrop-filter: blur(14px) saturate(120%);
+        border-bottom: 1px solid rgb(var(--ak-rule));
+    }
+
+    /* -------- Top navigation (replaces sidebar) -------- */
+    .fi-topbar-group {
+        gap: 0.25rem;
+    }
+
+    .fi-topbar-item {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-size: 0.92rem;
+        letter-spacing: -0.005em;
+        font-variation-settings: 'opsz' 48;
+        border-radius: 2px;
+        position: relative;
+    }
+
+    .fi-topbar-item-button,
+    .fi-topbar-item-label {
+        position: relative;
+    }
+
+    .fi-topbar-item:hover {
+        background: rgb(var(--ak-copper) / 0.08);
+        color: rgb(var(--ak-graphite));
+    }
+
+    .fi-topbar-item.fi-active {
+        background: rgb(var(--ak-ink));
+        color: rgb(var(--ak-paper)) !important;
+    }
+    .dark .fi-topbar-item.fi-active {
+        background: rgb(var(--ak-ink) / 0.16);
+        color: rgb(var(--ak-ink)) !important;
+    }
+    .fi-topbar-item.fi-active::after {
+        content: '';
+        position: absolute;
+        left: 0.5rem; right: 0.5rem;
+        bottom: -1px;
+        height: 2px;
+        background: rgb(var(--ak-copper));
+    }
+
+    /* Top-nav grouped dropdowns (NavigationGroup) */
+    .fi-dropdown-panel.fi-topbar-group-dropdown-panel {
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        background: rgb(var(--ak-paper-3));
+        box-shadow: 0 18px 40px -16px rgb(var(--ak-ink) / 0.28);
+    }
+
+    .fi-dropdown-list-item-label {
+        font-family: var(--ak-font-display);
+        font-variation-settings: 'opsz' 48;
+        letter-spacing: -0.005em;
+    }
+
+    /* -------- Page titles — editorial headline -------- */
+    .fi-header-heading,
+    .fi-page-header-heading {
+        font-family: var(--ak-font-display);
+        font-weight: 450;
+        font-size: clamp(1.75rem, 2.4vw, 2.5rem);
+        letter-spacing: -0.025em;
+        line-height: 1.02;
+        color: rgb(var(--ak-graphite));
+        font-variation-settings: 'opsz' 96, 'SOFT' 30;
+    }
+
+    .fi-header-subheading {
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        font-weight: 400;
+        color: rgb(var(--ak-muted));
+        letter-spacing: 0;
+    }
+
+    /* section headings */
+    .fi-section-header-heading {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        font-variation-settings: 'opsz' 48;
+    }
+
+    /* -------- Cards / sections — ledger paper -------- */
+    .fi-section,
+    .fi-wi-stats-overview-stat {
+        background: rgb(var(--ak-paper-3));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 0.25rem;
+        box-shadow:
+            0 1px 0 rgb(var(--ak-graphite) / 0.02),
+            0 18px 40px -28px rgb(var(--ak-ink) / 0.18);
+        position: relative;
+    }
+
+    /* double-rule accent on top of stat cards */
+    .fi-wi-stats-overview-stat::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 1rem;
+        right: 1rem;
+        height: 3px;
+        border-top: 1px solid rgb(var(--ak-graphite));
+        border-bottom: 1px solid rgb(var(--ak-graphite));
+        opacity: 0.55;
+    }
+
+    .fi-wi-stats-overview-stat-label {
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        font-weight: 400;
+        color: rgb(var(--ak-muted));
+        font-size: 0.85rem;
+        letter-spacing: 0.01em;
+    }
+
+    .fi-wi-stats-overview-stat-value {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums slashed-zero;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        color: rgb(var(--ak-graphite));
+    }
+
+    /* -------- Buttons -------- */
+    .fi-btn {
+        font-family: var(--ak-font-sans);
+        font-weight: 600;
+        letter-spacing: 0.005em;
+        border-radius: 0.125rem;
+        transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+
+    .fi-btn:active { transform: translateY(1px); }
+
+    .fi-btn-color-primary {
+        background: rgb(var(--ak-ink));
+        color: rgb(var(--ak-paper));
+        box-shadow: 0 1px 0 rgb(var(--ak-graphite) / 0.3), 0 8px 20px -10px rgb(var(--ak-ink) / 0.55);
+    }
+
+    .fi-btn-color-primary:hover {
+        background: rgb(var(--ak-ink-soft));
+    }
+
+    /* -------- Tables — ledger feel -------- */
+    .fi-ta-table thead {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        letter-spacing: 0.02em;
+    }
+
+    .fi-ta-table thead th {
+        border-top: 1px solid rgb(var(--ak-graphite) / 0.7);
+        border-bottom: 1px solid rgb(var(--ak-graphite) / 0.7);
+        background: rgb(var(--ak-paper-2));
+    }
+
+    .fi-ta-table tbody td {
+        border-bottom: 1px dashed rgb(var(--ak-rule));
+    }
+
+    .fi-ta-table tbody tr:hover {
+        background: rgb(var(--ak-copper) / 0.05);
+    }
+
+    /* mono numerics in table cells */
+    .fi-ta-text-item-label,
+    .fi-ta-text-item[data-column*="amount"],
+    .fi-ta-text-item[data-column*="debit"],
+    .fi-ta-text-item[data-column*="credit"],
+    .fi-ta-text-item[data-column*="balance"] {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums slashed-zero;
+    }
+
+    /* -------- Inputs -------- */
+    .fi-input {
+        font-family: var(--ak-font-sans);
+        border-radius: 0.125rem;
+        border: 1px solid rgb(var(--ak-rule));
+        background: rgb(var(--ak-paper-3));
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .fi-input:focus,
+    .fi-input:focus-within {
+        border-color: rgb(var(--ak-ink));
+        box-shadow: 0 0 0 3px rgb(var(--ak-ink) / 0.12);
+        outline: none;
+    }
+
+    /* -------- Badges -------- */
+    .fi-badge {
+        font-family: var(--ak-font-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-radius: 0.125rem;
+        border: 1px solid currentColor;
+        background: transparent !important;
+    }
+
+    /* -------- Motion — staggered page load -------- */
+    @keyframes ak-rise {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .fi-page > * {
+        animation: ak-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+
+    .fi-page > *:nth-child(1) { animation-delay: 0ms; }
+    .fi-page > *:nth-child(2) { animation-delay: 60ms; }
+    .fi-page > *:nth-child(3) { animation-delay: 120ms; }
+    .fi-page > *:nth-child(4) { animation-delay: 180ms; }
+    .fi-page > *:nth-child(5) { animation-delay: 240ms; }
+    .fi-page > *:nth-child(6) { animation-delay: 300ms; }
+
+    /* -------- Login page — editorial cover -------- */
+    .fi-simple-layout {
+        background:
+            radial-gradient(at 20% 10%, rgb(var(--ak-copper) / 0.12) 0, transparent 40%),
+            radial-gradient(at 85% 90%, rgb(var(--ak-ink) / 0.14) 0, transparent 50%),
+            rgb(var(--ak-paper));
+        position: relative;
+    }
+
+    .fi-simple-layout::before {
+        content: 'AKUNTA — LEDGERS FOR INDONESIAN SMEs · EST. 2026 · AKUNTA — LEDGERS FOR INDONESIAN SMEs · EST. 2026';
+        position: absolute;
+        top: 2rem;
+        left: 0;
+        right: 0;
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        font-weight: 400;
+        font-size: 0.75rem;
+        letter-spacing: 0.3em;
+        color: rgb(var(--ak-muted) / 0.5);
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .fi-simple-main {
+        background: rgb(var(--ak-paper-3));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 0.25rem;
+        box-shadow: 0 40px 80px -40px rgb(var(--ak-ink) / 0.35);
+        padding: 2.5rem !important;
+        position: relative;
+    }
+
+    .fi-simple-main::before,
+    .fi-simple-main::after {
+        content: '';
+        position: absolute;
+        width: 1rem;
+        height: 1rem;
+        border: 1px solid rgb(var(--ak-copper));
+    }
+
+    .fi-simple-main::before {
+        top: 0.6rem; left: 0.6rem;
+        border-right: 0; border-bottom: 0;
+    }
+
+    .fi-simple-main::after {
+        bottom: 0.6rem; right: 0.6rem;
+        border-left: 0; border-top: 0;
+    }
+
+    .fi-simple-header-heading {
+        font-family: var(--ak-font-display);
+        font-weight: 450;
+        font-size: 2rem;
+        letter-spacing: -0.025em;
+        font-variation-settings: 'opsz' 96, 'SOFT' 40;
+    }
+
+    /* -------- Scrollbar -------- */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+        background: rgb(var(--ak-ink) / 0.15);
+        border-radius: 0;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgb(var(--ak-copper) / 0.4);
+        background-clip: padding-box;
+    }
+
+    /* -------- Selection -------- */
+    ::selection {
+        background: rgb(var(--ak-copper) / 0.3);
+        color: rgb(var(--ak-graphite));
+    }
+}
+
+/* -------- Topbar — clock + active period -------- */
+@layer components {
+    [x-cloak] { display: none !important; }
+
+    .ak-topbar-clock {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.4rem 0.85rem;
+        margin-left: 0.5rem;
+        border-radius: 2px;
+        border: 1px solid rgb(var(--ak-rule));
+        background: rgb(var(--ak-paper-3));
+        color: rgb(var(--ak-graphite));
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .ak-topbar-clock-icon {
+        width: 1.1rem;
+        height: 1.1rem;
+        color: rgb(var(--ak-copper));
+        flex-shrink: 0;
+    }
+
+    .ak-topbar-clock-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        line-height: 1;
+    }
+
+    .ak-topbar-clock-date {
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        font-weight: 400;
+        font-size: 0.7rem;
+        color: rgb(var(--ak-muted));
+        font-variation-settings: 'opsz' 48, 'SOFT' 100;
+        letter-spacing: 0.01em;
+    }
+
+    .ak-topbar-clock-time {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums slashed-zero;
+        font-size: 0.85rem;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        color: rgb(var(--ak-graphite));
+    }
+
+    @media (max-width: 720px) {
+        .ak-topbar-clock-date { display: none; }
+        .ak-topbar-clock { padding: 0.4rem 0.7rem; }
+    }
+
+    /* ---- Active period switcher (Livewire) ---- */
+    .ak-period-switcher {
+        position: relative;
+        display: inline-block;
+        margin-right: 0.5rem;
+    }
+
+    .ak-period-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.4rem 0.8rem;
+        background: rgb(var(--ak-paper-3));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        color: rgb(var(--ak-graphite));
+        cursor: pointer;
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-size: 0.9rem;
+        letter-spacing: -0.005em;
+        line-height: 1;
+        transition: all 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        font-variation-settings: 'opsz' 48;
+    }
+
+    .ak-period-trigger:hover {
+        border-color: rgb(var(--ak-copper) / 0.6);
+        background: rgb(var(--ak-copper) / 0.05);
+    }
+
+    .ak-period-trigger[aria-expanded="true"] {
+        border-color: rgb(var(--ak-ink));
+        background: rgb(var(--ak-ink) / 0.04);
+    }
+
+    .ak-period-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 999px;
+        flex-shrink: 0;
+        position: relative;
+    }
+    .ak-period-dot--live {
+        background: #10B981; /* emerald — active signal */
+        box-shadow: 0 0 0 3px rgb(16 185 129 / 0.18);
+    }
+    .ak-period-dot--live::after {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 999px;
+        background: #10B981;
+        opacity: 0.4;
+        animation: ak-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .ak-period-dot--warn {
+        background: rgb(var(--ak-red));
+        box-shadow: 0 0 0 3px rgb(var(--ak-red) / 0.2);
+    }
+
+    @keyframes ak-ping {
+        0%   { transform: scale(1);   opacity: 0.5; }
+        80%, 100% { transform: scale(1.8); opacity: 0; }
+    }
+
+    .ak-period-name {
+        white-space: nowrap;
+    }
+
+    .ak-period-caret {
+        opacity: 0.55;
+        transition: transform 200ms;
+    }
+
+    .ak-period-trigger--empty .ak-period-name {
+        color: rgb(var(--ak-muted));
+        font-style: italic;
+        font-variation-settings: 'opsz' 48, 'SOFT' 100;
+    }
+
+    /* Dropdown */
+    .ak-period-dropdown {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 0.5rem);
+        min-width: 22rem;
+        max-width: 28rem;
+        background: rgb(var(--ak-paper-3));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        box-shadow:
+            0 1px 0 rgb(var(--ak-graphite) / 0.05),
+            0 24px 56px -20px rgb(var(--ak-ink) / 0.35);
+        z-index: 50;
+        overflow: hidden;
+    }
+
+    .ak-period-dropdown-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding: 0.85rem 1rem 0.5rem;
+        border-bottom: 1px solid rgb(var(--ak-rule));
+    }
+
+    .ak-period-list {
+        list-style: none;
+        margin: 0;
+        padding: 0.35rem 0;
+        max-height: 22rem;
+        overflow-y: auto;
+    }
+
+    .ak-period-option {
+        display: grid;
+        grid-template-columns: 1.25rem 1fr auto;
+        gap: 0.75rem;
+        align-items: baseline;
+        width: 100%;
+        padding: 0.6rem 1rem;
+        background: transparent;
+        border: 0;
+        border-left: 2px solid transparent;
+        text-align: left;
+        cursor: pointer;
+        color: rgb(var(--ak-graphite));
+        transition: background 160ms, border-color 160ms;
+    }
+
+    .ak-period-option:hover {
+        background: rgb(var(--ak-copper) / 0.06);
+        border-left-color: rgb(var(--ak-copper));
+    }
+
+    .ak-period-option--active {
+        background: rgb(var(--ak-ink) / 0.05);
+        border-left-color: rgb(var(--ak-ink));
+    }
+
+    .ak-period-option-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: rgb(var(--ak-ink));
+        width: 1rem;
+        height: 1rem;
+    }
+
+    .ak-period-option-name {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-size: 0.92rem;
+        font-variation-settings: 'opsz' 48;
+    }
+
+    .ak-period-option-range {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 0.7rem;
+        color: rgb(var(--ak-muted));
+        letter-spacing: 0.02em;
+    }
+
+    .ak-period-empty {
+        padding: 1.25rem 1rem;
+        text-align: center;
+    }
+    .ak-period-empty p {
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        color: rgb(var(--ak-muted));
+        margin: 0 0 0.5rem;
+    }
+    .ak-period-empty-link {
+        font-family: var(--ak-font-mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgb(var(--ak-copper));
+    }
+
+    .ak-period-dropdown-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 1rem;
+        border-top: 1px solid rgb(var(--ak-rule));
+        background: rgb(var(--ak-paper-2));
+    }
+
+    .ak-period-reset,
+    .ak-period-manage {
+        font-family: var(--ak-font-mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: rgb(var(--ak-muted));
+        background: transparent;
+        border: 0;
+        cursor: pointer;
+        text-decoration: none;
+        transition: color 160ms;
+    }
+    .ak-period-reset:hover,
+    .ak-period-manage:hover {
+        color: rgb(var(--ak-copper));
+    }
+
+    @media (max-width: 560px) {
+        .ak-period-name { display: none; }
+        .ak-period-trigger { padding: 0.45rem 0.6rem; }
+        .ak-period-dropdown { min-width: 18rem; right: -0.5rem; }
+    }
+
+    /* ---- Legacy badge styles (still used as fallback view) ---- */
+    .ak-topbar-period {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7rem;
+        padding: 0.45rem 0.95rem;
+        margin-right: 0.5rem;
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        background: rgb(var(--ak-paper-3));
+        color: rgb(var(--ak-graphite));
+        text-decoration: none;
+        line-height: 1;
+        transition: border-color 180ms, background 180ms, transform 180ms;
+        white-space: nowrap;
+    }
+    .ak-topbar-period:hover {
+        border-color: rgb(var(--ak-copper) / 0.6);
+        background: rgb(var(--ak-copper) / 0.05);
+        transform: translateY(-1px);
+    }
+
+    .ak-topbar-period-dot {
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 999px;
+        background: rgb(var(--ak-ink));
+        box-shadow: 0 0 0 3px rgb(var(--ak-ink) / 0.15);
+        flex-shrink: 0;
+    }
+    .ak-topbar-period-dot--warn {
+        background: rgb(var(--ak-red));
+        box-shadow: 0 0 0 3px rgb(var(--ak-red) / 0.18);
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    .ak-topbar-period-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+
+    .ak-topbar-period-eyebrow {
+        font-family: var(--ak-font-mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgb(var(--ak-muted));
+    }
+
+    .ak-topbar-period-name {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        font-size: 0.92rem;
+        letter-spacing: -0.01em;
+        color: rgb(var(--ak-graphite));
+        font-variation-settings: 'opsz' 48;
+    }
+
+    .ak-topbar-period-range {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 0.72rem;
+        color: rgb(var(--ak-muted));
+        letter-spacing: 0.01em;
+        padding-left: 0.7rem;
+        border-left: 1px solid rgb(var(--ak-rule));
+    }
+
+    @media (max-width: 960px) {
+        .ak-topbar-period-range { display: none; }
+        .ak-topbar-period-eyebrow { display: none; }
+    }
+    @media (max-width: 540px) {
+        .ak-topbar-period-stack { display: none; }
+        .ak-topbar-period { padding: 0.45rem; }
+    }
+}
+
+/* -------- Journal create/edit page -------- */
+@layer components {
+    /* Sticky context column on wide screens */
+    @media (min-width: 1024px) {
+        .ak-journal-context {
+            position: sticky;
+            top: 5rem;
+            align-self: start;
+            max-height: calc(100vh - 6rem);
+            overflow-y: auto;
+        }
+        .ak-journal-context::-webkit-scrollbar { width: 4px; }
+    }
+
+    .ak-journal-context .fi-section-content,
+    .ak-journal-lines .fi-section-content {
+        padding-top: 1.25rem;
+    }
+
+    /* Repeater item — paper card aesthetic */
+    .ak-journal-lines .fi-fo-repeater-item {
+        background: rgb(var(--ak-paper-3));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        margin-bottom: 0.75rem;
+        transition: box-shadow 200ms ease, border-color 200ms ease;
+    }
+
+    .ak-journal-lines .fi-fo-repeater-item:hover {
+        border-color: rgb(var(--ak-copper) / 0.5);
+        box-shadow: 0 8px 18px -12px rgb(var(--ak-ink) / 0.25);
+    }
+
+    .ak-journal-lines .fi-fo-repeater-item-header {
+        background: rgb(var(--ak-paper-2));
+        border-bottom: 1px solid rgb(var(--ak-rule));
+    }
+
+    /* Totals card — editorial */
+    .ak-totals-card {
+        margin-top: 1rem;
+        padding: 1.5rem;
+        background: rgb(var(--ak-paper-2));
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        position: relative;
+    }
+    .ak-totals-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 1.25rem; right: 1.25rem;
+        height: 3px;
+        border-top: 1px solid rgb(var(--ak-graphite));
+        border-bottom: 1px solid rgb(var(--ak-graphite));
+        opacity: 0.6;
+    }
+    .ak-totals-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 2rem;
+    }
+    @media (max-width: 720px) {
+        .ak-totals-grid { grid-template-columns: 1fr; gap: 1.5rem; }
+    }
+    .ak-totals-label {
+        font-family: var(--ak-font-display);
+        font-style: italic;
+        font-weight: 400;
+        font-size: 0.78rem;
+        color: rgb(var(--ak-muted));
+        margin-bottom: 0.4rem;
+        font-variation-settings: 'opsz' 48, 'SOFT' 100;
+    }
+    .ak-totals-value {
+        font-family: var(--ak-font-mono);
+        font-variant-numeric: tabular-nums slashed-zero;
+        font-size: 1.4rem;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        color: rgb(var(--ak-graphite));
+        line-height: 1;
+    }
+    .ak-totals-bar {
+        height: 3px;
+        margin-top: 0.6rem;
+        background: rgb(var(--ak-graphite) / 0.08);
+        border-radius: 0;
+        overflow: hidden;
+        position: relative;
+    }
+    .ak-totals-bar span {
+        display: block;
+        height: 100%;
+        transition: width 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .ak-totals-status {
+        margin-top: 0.5rem;
+        min-height: 2rem;
+    }
+    .ak-totals-hint {
+        font-family: var(--ak-font-mono);
+        font-size: 0.65rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: rgb(var(--ak-muted));
+        margin-top: 0.5rem;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.4; transform: scale(1.4); }
+    }
+
+    /* Toggle buttons — D/K segmented */
+    .ak-journal-lines .fi-fo-toggle-buttons-grouped button {
+        font-family: var(--ak-font-display);
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        font-variation-settings: 'opsz' 48;
+    }
+
+    /* Repeater footer actions row */
+    .ak-journal-lines .fi-fo-section-footer-actions {
+        border-top: 1px dashed rgb(var(--ak-rule));
+        padding-top: 1rem;
+        margin-top: 1rem;
+    }
+
+    /* Context toggle button */
+    .ak-ctx-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid rgb(var(--ak-rule));
+        border-radius: 2px;
+        background: transparent;
+        color: rgb(var(--ak-graphite));
+        font-family: var(--ak-font-mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: all 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .ak-ctx-toggle:hover {
+        background: rgb(var(--ak-copper) / 0.08);
+        border-color: rgb(var(--ak-copper) / 0.5);
+        color: rgb(var(--ak-copper));
+    }
+    .ak-ctx-toggle svg {
+        width: 1rem;
+        height: 1rem;
+        transition: transform 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @media (max-width: 720px) {
+        .ak-ctx-toggle-label { display: none; }
+    }
+
+    /* Lines section expands to 12 cols when context hidden — override Filament's lg:col-span-8 */
+    @media (min-width: 1024px) {
+        .ak-journal-lines.ak-journal-lines--full {
+            grid-column: span 12 / span 12 !important;
+        }
+    }
+}
+
+/* Utility classes exposed for blade views */
+@layer utilities {
+    .ak-display     { font-family: var(--ak-font-display); font-variation-settings: 'opsz' 96, 'SOFT' 30; }
+    .ak-display-xl  { font-family: var(--ak-font-display); font-weight: 450; font-size: clamp(2.5rem, 5vw, 4.5rem); letter-spacing: -0.035em; line-height: 0.95; font-variation-settings: 'opsz' 144, 'SOFT' 20; }
+    .ak-italic      { font-style: italic; font-variation-settings: 'opsz' 48, 'SOFT' 60; }
+    .ak-mono        { font-family: var(--ak-font-mono); font-variant-numeric: tabular-nums slashed-zero; }
+    .ak-sans        { font-family: var(--ak-font-sans); }
+    .ak-eyebrow     { font-family: var(--ak-font-mono); font-size: 0.7rem; letter-spacing: 0.25em; text-transform: uppercase; color: rgb(var(--ak-copper)); }
+    .ak-rule        { border-color: rgb(var(--ak-rule)); }
+    .ak-double-rule { border-top: 1px solid rgb(var(--ak-graphite) / 0.7); border-bottom: 1px solid rgb(var(--ak-graphite) / 0.7); padding-top: 2px; padding-bottom: 2px; }
+    .ak-paper       { background: rgb(var(--ak-paper)); }
+    .ak-paper-soft  { background: rgb(var(--ak-paper-3)); }
+    .ak-ink         { color: rgb(var(--ak-ink)); }
+    .ak-ink-bg      { background: rgb(var(--ak-ink)); color: rgb(var(--ak-paper)); }
+    .ak-copper      { color: rgb(var(--ak-copper)); }
+    .ak-red         { color: rgb(var(--ak-red)); }
+    .ak-grain::after {
+        content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.35; mix-blend-mode: multiply;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.05 0 0 0 0 0.23 0 0 0 0 0.18 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+}

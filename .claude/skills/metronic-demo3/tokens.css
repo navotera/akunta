@@ -1,0 +1,105 @@
+/*
+ * Metronic Demo3 — drop-in CSS tokens
+ * Paste into theme-metronic.css :root + .dark blocks.
+ * Do NOT mix with Editorial Ledger tokens (--ak-*).
+ */
+
+:root {
+    /* Brand */
+    --m-primary:        #1B84FF;
+    --m-primary-light:  #EFF6FF;
+    --m-primary-active: #056EE9;
+    --m-primary-clarity:rgba(27, 132, 255, 0.18);
+
+    /* Status */
+    --m-success:        #17C653;
+    --m-success-light:  #DFFFEA;
+    --m-success-active: #04B440;
+
+    --m-warning:        #F6C000;
+    --m-warning-light:  #FFF8DD;
+    --m-warning-active: #DCA200;
+
+    --m-danger:         #F8285A;
+    --m-danger-light:   #FFEEF3;
+    --m-danger-active:  #D81A48;
+
+    --m-info:           #7239EA;
+    --m-info-light:     #F1E6FF;
+    --m-info-active:    #5014D0;
+
+    /* Neutrals */
+    --m-gray-50:        #FAFAFB;
+    --m-gray-100:       #F1F1F4;
+    --m-gray-200:       #DBDFE9;
+    --m-gray-300:       #C4CADA;
+    --m-gray-400:       #99A1B7;
+    --m-gray-500:       #78829D;
+    --m-gray-600:       #4B5675;
+    --m-gray-700:       #252F4A;
+    --m-gray-800:       #15182E;
+    --m-gray-900:       #071437;
+
+    /* Surfaces */
+    --m-bg-page:        #FAFAFB;
+    --m-bg-card:        #FFFFFF;
+    --m-bg-sidebar:     #FFFFFF;
+    --m-bg-topbar:      #FFFFFF;
+    --m-border:         #DBDFE9;
+    --m-border-soft:    #E5E7EB;
+
+    /* Type */
+    --m-font-sans:      "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --m-font-display:   "Inter Display", "Inter", sans-serif;
+    --m-font-mono:      "JetBrains Mono", ui-monospace, monospace;
+
+    /* Radius */
+    --m-radius-xs: 0.25rem;
+    --m-radius-sm: 0.375rem;
+    --m-radius:    0.5rem;
+    --m-radius-lg: 0.75rem;
+    --m-radius-pill: 9999px;
+
+    /* Shadows */
+    --m-shadow-xs:    0 1px 2px rgba(15, 23, 42, 0.04);
+    --m-shadow-sm:    0 2px 4px rgba(15, 23, 42, 0.05);
+    --m-shadow:       0 4px 13px rgba(15, 23, 42, 0.07);
+    --m-shadow-lg:    0 12px 28px rgba(15, 23, 42, 0.12);
+    --m-shadow-focus: 0 0 0 3px rgba(27, 132, 255, 0.18);
+
+    /* Layout */
+    --m-sidebar-w:        280px;
+    --m-sidebar-mini-w:   80px;
+    --m-topbar-h:         70px;
+    --m-page-pad-x:       1.5rem;
+    --m-page-pad-y:       1.5rem;
+
+    /* Transitions */
+    --m-ease:        cubic-bezier(0.4, 0, 0.2, 1);
+    --m-duration:    160ms;
+}
+
+.dark, [data-theme="dark"] {
+    --m-bg-page:     #0E1014;
+    --m-bg-card:     #15181F;
+    --m-bg-sidebar:  #15181F;
+    --m-bg-topbar:   #15181F;
+    --m-border:      #252F4A;
+    --m-border-soft: #1F2433;
+
+    --m-gray-50:     #15181F;
+    --m-gray-100:    #1F2433;
+    --m-gray-200:    #252F4A;
+    --m-gray-300:    #3A4156;
+    --m-gray-400:    #78829D;
+    --m-gray-500:    #99A1B7;
+    --m-gray-600:    #B7BFCF;
+    --m-gray-700:    #DADFE9;
+    --m-gray-900:    #F4F6F9;
+
+    --m-primary-light: rgba(27, 132, 255, 0.12);
+    --m-success-light: rgba(23, 198, 83, 0.12);
+    --m-warning-light: rgba(246, 192, 0, 0.12);
+    --m-danger-light:  rgba(248, 40, 90, 0.12);
+    --m-info-light:    rgba(114, 57, 234, 0.14);
+}
