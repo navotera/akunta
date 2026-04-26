@@ -15,6 +15,10 @@ class User extends RbacUser implements HasDefaultTenant, HasTenants
 {
     public function getTenants(Panel $panel): array|Collection
     {
+        if ($this->isSsoAdmin()) {
+            return Entity::query()->get();
+        }
+
         return Entity::query()
             ->whereIn('id', $this->assignments()->whereNull('revoked_at')->pluck('entity_id')->filter()->unique()->values())
             ->orWhereIn('id', $this->accessibleEntityIdsFromTenantWide())
@@ -27,12 +31,22 @@ class User extends RbacUser implements HasDefaultTenant, HasTenants
             return false;
         }
 
+        if ($this->isSsoAdmin()) {
+            return true;
+        }
+
         return $this->assignments()
             ->whereNull('revoked_at')
             ->where(function ($q) use ($tenant) {
                 $q->whereNull('entity_id')->orWhere('entity_id', $tenant->id);
             })
             ->exists();
+    }
+
+    /** True if current session was provisioned via Ecopa with app_role=admin. */
+    public function isSsoAdmin(): bool
+    {
+        return session('ecopa.app_role') === 'admin';
     }
 
     protected function accessibleEntityIdsFromTenantWide(): Collection

@@ -10,6 +10,7 @@
         "akunta/api-client": "@dev",
         "akunta/audit": "@dev",
         "akunta/core": "@dev",
+        "akunta/ecopa-client": "@dev",
         "akunta/rbac": "@dev",
         "akunta/ui": "@dev"
     },
@@ -27,7 +28,8 @@
         { "type": "path", "url": "modules/rbac",       "options": { "symlink": true } },
         { "type": "path", "url": "modules/audit",      "options": { "symlink": true } },
         { "type": "path", "url": "modules/ui",         "options": { "symlink": true } },
-        { "type": "path", "url": "modules/api-client", "options": { "symlink": true } }
+        { "type": "path", "url": "modules/api-client",   "options": { "symlink": true } },
+        { "type": "path", "url": "modules/ecopa-client", "options": { "symlink": true } }
     ],
     "config": {
         "sort-packages": true,

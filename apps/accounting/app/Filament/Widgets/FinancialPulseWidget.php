@@ -46,58 +46,59 @@ class FinancialPulseWidget extends Widget
             ->where('status', 'draft')
             ->count();
 
-        // 6-month trend (net income per month, oldest first)
+        // Anatomy bar — revenue split into cogs / expense / net (or loss overlay)
+        $denom = max($revenue, 1);
+        $cogsPct    = $revenue > 0 ? min(100, $cogs    / $denom * 100) : 0;
+        $expensePct = $revenue > 0 ? min(100, $expense / $denom * 100) : 0;
+        $profitPct  = $net > 0 && $revenue > 0 ? max(0, min(100, $net / $denom * 100)) : 0;
+        $lossPct    = $net < 0 && $revenue > 0
+            ? max(0, min(100 - $cogsPct - $expensePct, abs($net) / $denom * 100))
+            : 0;
+
+        // 6-month net income trend
         $months = [];
         for ($i = 5; $i >= 0; $i--) {
-            $m   = Carbon::now()->startOfMonth()->subMonths($i);
+            $m    = Carbon::now()->startOfMonth()->subMonths($i);
             $mEnd = (clone $m)->endOfMonth();
-            $r   = $svc->compute($entity->id, $m->toDateString(), $mEnd->toDateString());
+            $r    = $svc->compute($entity->id, $m->toDateString(), $mEnd->toDateString());
             $months[] = [
                 'label' => $m->isoFormat('MMM'),
                 'net'   => (float) ($r['net_income'] ?? 0),
             ];
         }
 
-        // Donut segments — share of P&L composition
-        $totalAct = max($revenue + $cogs + $expense, 1);
-        $segments = [
-            ['label' => 'Pendapatan',  'value' => $revenue, 'color' => '#17C653', 'pct' => $revenue / $totalAct * 100],
-            ['label' => 'HPP',         'value' => $cogs,    'color' => '#F6C000', 'pct' => $cogs / $totalAct * 100],
-            ['label' => 'Beban',       'value' => $expense, 'color' => '#F8285A', 'pct' => $expense / $totalAct * 100],
-        ];
+        $netVals  = array_column($months, 'net');
+        $maxAbs   = max(array_map('abs', $netVals)) ?: 1;
+        $lastNet  = end($netVals) ?: 0;
+        $prevNet  = $netVals[count($netVals) - 2] ?? 0;
+        $delta    = $lastNet - $prevNet;
+        $deltaPct = $prevNet != 0 ? ($delta / abs($prevNet)) * 100 : 0;
 
-        // Spark path — normalize to 0..1
-        $netVals = array_column($months, 'net');
-        $maxAbs = max(array_map('abs', $netVals)) ?: 1;
-        $points = [];
-        $w = 100;
-        $h = 30;
-        $pad = 2;
-        $count = count($netVals);
-        foreach ($netVals as $i => $v) {
-            $x = $pad + ($i / max($count - 1, 1)) * ($w - 2 * $pad);
-            $y = ($h / 2) - ($v / $maxAbs) * ($h / 2 - $pad);
-            $points[] = round($x, 2) . ',' . round($y, 2);
-        }
-        $sparkPath = 'M ' . implode(' L ', $points);
-        $areaPath  = 'M ' . $points[0] . ' L ' . implode(' L ', array_slice($points, 1)) . " L {$w},{$h} L 0,{$h} Z";
+        // Runway = cash / avg monthly burn YTD (cogs + expense / months elapsed)
+        $monthsElapsed = max(1, (int) Carbon::now()->month);
+        $monthlyBurn   = ($cogs + $expense) / $monthsElapsed;
+        $runway        = $monthlyBurn > 0 ? $cash / $monthlyBurn : null;
 
         return [
-            'empty' => false,
-            'revenue' => $revenue,
-            'cogs' => $cogs,
-            'expense' => $expense,
-            'net' => $net,
-            'cash' => $cash,
+            'empty'      => false,
+            'revenue'    => $revenue,
+            'cogs'       => $cogs,
+            'expense'    => $expense,
+            'net'        => $net,
+            'cogsPct'    => $cogsPct,
+            'expensePct' => $expensePct,
+            'profitPct'  => $profitPct,
+            'lossPct'    => $lossPct,
+            'cash'       => $cash,
+            'runway'     => $runway,
             'draftCount' => $draftCount,
-            'segments' => $segments,
-            'months' => $months,
-            'sparkPath' => $sparkPath,
-            'areaPath' => $areaPath,
-            'sparkW' => $w,
-            'sparkH' => $h,
-            'lastNet' => end($netVals) ?: 0,
-            'prevNet' => $netVals[count($netVals) - 2] ?? 0,
+            'months'     => $months,
+            'maxAbs'     => $maxAbs,
+            'delta'      => $delta,
+            'deltaPct'   => $deltaPct,
+            'lastNet'    => $lastNet,
+            'prevNet'    => $prevNet,
+            'hasRevenue' => $revenue > 0,
         ];
     }
 

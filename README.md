@@ -23,21 +23,28 @@ Full detail: [§ Default Super Admin](#default-super-admin-local--dev).
 | [`docs/spec.md`](docs/spec.md) | Spec lengkap (v0.6, locked) — source of truth |
 | [`docs/architecture.md`](docs/architecture.md) | Architecture plan v0.1 — komponen, DB schema, sequence diagram |
 | [`docs/decisions.md`](docs/decisions.md) | Decisions log — keputusan teknis yang sudah locked |
+| [`docs/plugins.md`](docs/plugins.md) | **Plugin spec** — WP-style plugin + widget framework untuk second-tier app |
+| [`ecopa/docs/INTEGRATION.md`](ecopa/docs/INTEGRATION.md) | Spec integrasi second-tier app ↔ Ecopa (SSO, webhooks, MFA, audit) |
+| [`ecopa/docs/ROADMAP.md`](ecopa/docs/ROADMAP.md) | Status 12 milestone Ecopa Main Tier |
 
 ## Struktur
 
 ```
 akunta/
-├── apps/                     # Laravel apps (scaffolded per-app)
-│   ├── main-tier/            # Optional auth gateway
+├── ecopa/                    # Main Tier — auth gateway + app catalog (ex-app-management-portal)
+│                             #   Laravel 12 + Filament v4. SSO IdP. See ecopa/docs/INTEGRATION.md
+├── apps/                     # Second/Third-tier Laravel apps
+│   ├── main-tier/            # (deprecated path — Main Tier role moved to ../ecopa)
 │   ├── accounting/           # Second-tier hub (Double-Entry)
-│   └── payroll/              # Third-tier example
+│   ├── payroll/              # Third-tier specialist
+│   └── cash-mgmt/            # Third-tier specialist
 ├── modules/                  # Composer packages (path repos)
 │   ├── core/                 # Hook system, BaseAction, contracts   (akunta/core)
 │   ├── rbac/                 # RBAC (User × Role × App × Entity)    (akunta/rbac)
 │   ├── audit/                # Immutable audit log                  (akunta/audit)
 │   ├── ui/                   # Shared Filament components           (akunta/ui)
-│   └── api-client/           # Inter-app HTTP client                (akunta/api-client)
+│   ├── api-client/           # Inter-app HTTP client                (akunta/api-client)
+│   └── ecopa-client/         # Ecopa SSO + API client               (akunta/ecopa-client)
 ├── wordpress-plugin/         # SaaS licensing + signup
 ├── docker/                   # Compose + Dockerfiles
 ├── docs/                     # Spec, architecture, decisions
@@ -72,6 +79,36 @@ composer serve
 
 # Run checks
 composer ci     # lint + phpstan + tests
+```
+
+## Scheduler (Recurring Journals + Auto-Reverse)
+
+Akunta runs daily background jobs for:
+- `accounting:run-recurring` — instantiate jurnal dari schedule berulang (sewa, gaji accrual, depresiasi). Jalan harian 00:05.
+- `accounting:run-auto-reversals` — auto-reverse jurnal accrual ketika `auto_reverse_on` tiba. Jalan harian 00:10.
+
+Both registered in `apps/accounting/routes/console.php` via Laravel's `Schedule::command(...)` with `withoutOverlapping()` + `onOneServer()`.
+
+**Production cron** — register Laravel scheduler so the daily commands fire:
+
+```bash
+crontab -e
+# add this single line:
+* * * * * cd /path/to/akunta/apps/accounting && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Verify next-run candidates without executing:
+
+```bash
+php artisan accounting:run-recurring --dry-run
+php artisan accounting:run-auto-reversals --dry-run
+```
+
+Manual one-shot for a specific date (useful for backfill):
+
+```bash
+php artisan accounting:run-recurring --date=2026-04-30
+php artisan accounting:run-recurring --date=2026-04-30 --entity=<ULID>
 ```
 
 ## Default Super Admin (Local / Dev)

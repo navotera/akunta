@@ -11,6 +11,13 @@ class DatabaseSeeder extends Seeder
         $this->call([
             PresetRolesSeeder::class,
             SuperAdminSeeder::class,
+            SettingsPermissionsSeeder::class,
         ]);
+
+        if (filter_var(env('SEED_DEMO_DATA', false), FILTER_VALIDATE_BOOLEAN)) {
+            $this->call([
+                DemoDataSeeder::class,
+            ]);
+        }
     }
 }

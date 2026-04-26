@@ -38,6 +38,13 @@ return [
         '/api/v1/tenants/*',
         '/livewire/*',
         '/_ignition/*',
+        // Public well-known + Ecopa SSO + webhook receivers
+        '/.well-known/*',
+        '/auth/ecopa/*',
+        '/sso/*',
+        '/oidc/backchannel-logout',
+        '/webhooks/ecopa',
+        '/login',
         // Dev: Filament panel uses Entity as Filament-tenant; tenant DB provisioning deferred to step 12.
         // Remove these exemptions once SaaS provisioning lands + control DB is live.
         '/admin-accounting',
@@ -46,5 +53,12 @@ return [
         // Once provisioning lands, remove this and resolve tenant from token.app_id or header.
         '/api/v1/journals',
         '/api/v1/journals/*',
+        '/api/v1/journal-templates',
+        '/api/v1/journal-templates/*',
+        '/api/v1/recurring-journals',
+        '/api/v1/recurring-journals/*',
+        '/api/v1/accounts/*',
+        '/api/v1/webhooks',
+        '/api/v1/webhooks/*',
     ],
 ];

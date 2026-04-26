@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
+use App\Concerns\HasAttachments;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Journal extends Model
 {
+    use HasAttachments;
     use HasUlids;
 
     public const TYPE_GENERAL = 'general';
@@ -44,12 +46,15 @@ class Journal extends Model
         'posted_at',
         'posted_by',
         'reversed_by_journal_id',
+        'auto_reverse_on',
+        'template_id',
         'created_by',
     ];
 
     protected $casts = [
         'date' => 'date',
         'posted_at' => 'datetime',
+        'auto_reverse_on' => 'date',
     ];
 
     protected $attributes = [
@@ -86,6 +91,11 @@ class Journal extends Model
     public function reversedBy(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reversed_by_journal_id');
+    }
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(JournalTemplate::class, 'template_id');
     }
 
     public function isPosted(): bool

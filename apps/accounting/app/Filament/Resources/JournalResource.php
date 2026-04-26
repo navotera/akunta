@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Actions\PostJournalAction;
 use App\Actions\ReverseJournalAction;
 use App\Filament\Resources\JournalResource\Pages;
+use App\Filament\Resources\JournalResource\RelationManagers;
 use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalEntry;
@@ -528,6 +529,35 @@ class JournalResource extends Resource
                     ->dateTime('d M Y H:i')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('source_app')
+                    ->label('Sumber')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->toggleable()
+                    ->formatStateUsing(function (Journal $r) {
+                        if ($r->source_app === null || $r->source_app === '' || $r->source_app === 'accounting') {
+                            return $r->source_app ?: '—';
+                        }
+
+                        return $r->source_id
+                            ? $r->source_app.' · '.\Illuminate\Support\Str::limit($r->source_id, 16)
+                            : $r->source_app;
+                    })
+                    ->url(function (Journal $r) {
+                        if (empty($r->source_id) || $r->source_app === null || $r->source_app === 'accounting') {
+                            return null;
+                        }
+                        $template = config("akunta.source_drill_urls.{$r->source_app}");
+                        if (! is_string($template) || $template === '') {
+                            return null;
+                        }
+
+                        return strtr($template, [
+                            '{entity}'    => $r->entity_id,
+                            '{source_id}' => urlencode((string) $r->source_id),
+                        ]);
+                    }, shouldOpenInNewTab: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')->options([
@@ -573,6 +603,13 @@ class JournalResource extends Resource
                     }),
             ])
             ->bulkActions([]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\AttachmentsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

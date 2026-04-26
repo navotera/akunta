@@ -9,7 +9,6 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use App\Filament\Widgets\FinancialPulseWidget;
-use App\Filament\Widgets\PeriodStatusWidget;
 use App\Filament\Widgets\QuickActionsWidget;
 use App\Filament\Widgets\RecentJournalsWidget;
 use Filament\Navigation\NavigationGroup;
@@ -40,7 +39,23 @@ class AccountingPanelProvider extends PanelProvider
             ->brandLogo(fn () => view('filament.brand.logo'))
             ->brandLogoHeight('1.85rem')
             ->favicon(asset('favicon.ico'))
-            ->login()
+            // Filament's native login form runs only as standalone fallback.
+            // When Ecopa (Main Tier) is configured, we delegate auth to it via
+            // RedirectGuestToEcopa middleware below.
+            ->when(! config('ecopa.client_id'), fn (Panel $p) => $p->login())
+            // When Ecopa is active, hijack the user-menu logout to also kill
+            // the Ecopa "desktop session" — otherwise a local logout just
+            // bounces the user right back in.
+            ->when(config('ecopa.client_id'), fn (Panel $p) => $p->userMenuItems([
+                'profile' => \Filament\Navigation\MenuItem::make()
+                    ->label('Profil Saya')
+                    ->url(fn () => \Akunta\EcopaClient\Filament\Pages\EcopaProfile::getUrl(panel: 'accounting'))
+                    ->icon('heroicon-o-user-circle'),
+                'logout' => \Filament\Navigation\MenuItem::make()
+                    ->label('Logout (keluar Ecopa)')
+                    ->url(fn () => route('ecopa.logout'))
+                    ->icon('heroicon-o-arrow-right-on-rectangle'),
+            ]))
             ->viteTheme('resources/css/filament/accounting/theme-metronic.css')
             ->colors([
                 // Metronic Demo3 palette
@@ -127,24 +142,26 @@ class AccountingPanelProvider extends PanelProvider
             ->darkMode()
             ->maxContentWidth(MaxWidth::Full)
             ->topNavigation()
+            ->homeUrl(fn () => \App\Filament\Pages\Dashboard::getUrl(tenant: \Filament\Facades\Filament::getTenant()))
             ->breadcrumbs(true)
             ->navigationGroups([
                 NavigationGroup::make('Operasional')->collapsible(false),
                 NavigationGroup::make('Laporan')->collapsible(false),
                 NavigationGroup::make('Master Data')->collapsible(true),
-                NavigationGroup::make('Pengaturan')->collapsible(true),
+                NavigationGroup::make('API')->collapsible(true),
             ])
             ->tenant(\Akunta\Rbac\Models\Entity::class)
             ->tenantMenuItems([])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+            ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
             ->pages([
                 \App\Filament\Pages\Dashboard::class,
+                \Akunta\EcopaClient\Filament\Pages\EcopaProfile::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 FinancialPulseWidget::class,
-                PeriodStatusWidget::class,
                 QuickActionsWidget::class,
                 RecentJournalsWidget::class,
             ])
@@ -158,6 +175,7 @@ class AccountingPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                \App\Http\Middleware\RedirectGuestToEcopa::class,
                 \App\Http\Middleware\SharedEntitySelector::class,
             ])
             ->authMiddleware([
@@ -169,9 +187,13 @@ class AccountingPanelProvider extends PanelProvider
             )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
-                fn (): string => view('filament.topbar.scripts')->render() . view('filament.topbar.clock')->render(),
+                fn (): string => view('filament.topbar.scripts')->render()
+                    . view('filament.topbar.clock')->render()
+                    . view('filament.dim-zeros')->render(),
             )
-            ->plugin(
+            // Google Socialite — fallback only when Ecopa is NOT configured
+            // (standalone / dev mode). With Ecopa, all auth flows through Main Tier.
+            ->when(! config('ecopa.client_id'), fn (Panel $p) => $p->plugin(
                 FilamentSocialitePlugin::make()
                     ->providers([
                         SocialiteProvider::make('google')
@@ -181,9 +203,6 @@ class AccountingPanelProvider extends PanelProvider
                     ])
                     ->userModelClass(\App\Models\User::class)
                     ->socialiteUserModelClass(\Akunta\Rbac\Models\SocialAccount::class)
-                    // Gate for creating the (user × provider) link OR a brand-new user.
-                    //   - Existing user → only allow if email_verified_at is set (v1 auto-link rule).
-                    //   - New user (no match) → honor AUTH_SSO_AUTO_REGISTER env (default false = blocked).
                     ->registration(function (string $provider, SocialiteUserContract $oauthUser, ?Authenticatable $user) {
                         if ($user !== null) {
                             return property_exists($user, 'email_verified_at') || method_exists($user, 'getAttribute')
@@ -193,6 +212,6 @@ class AccountingPanelProvider extends PanelProvider
 
                         return (bool) config('services.akunta_sso.auto_register', false);
                     }),
-            );
+            ));
     }
 }

@@ -14,8 +14,4 @@
             </defs>
         </svg>
     </span>
-    <span class="ak-brand-text">
-        <span class="ak-brand-name">Akunta</span>
-        <span class="ak-brand-tag">Accounting Suite</span>
-    </span>
 </div>

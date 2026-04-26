@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'akunta_sso' => [
+        'auto_register' => (bool) env('AUTH_SSO_AUTO_REGISTER', false),
+    ],
+
 ];

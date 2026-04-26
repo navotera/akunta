@@ -10,6 +10,7 @@
         "akunta/api-client": "@dev",
         "akunta/audit": "@dev",
         "akunta/core": "@dev",
+        "akunta/ecopa-client": "@dev",
         "akunta/rbac": "@dev",
         "akunta/ui": "@dev",
         "dutchcodingcompany/filament-socialite": "^2.4",
@@ -49,6 +50,13 @@
         {
             "type": "path",
             "url": "../../modules/api-client",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "path",
+            "url": "../../modules/ecopa-client",
             "options": {
                 "symlink": true
             }

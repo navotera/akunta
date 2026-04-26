@@ -930,6 +930,115 @@ Step 12b-α-ii-min closed. Remaining priority:
 1. **12b-α-iii** — seed split + TenantResolver connection swap + tenant-conn auth. Multi-hour refactor; expects test-harness rewiring across 94 accounting tests.
 2. **Reporting phase 2** — Buku Besar drill-down + PDF/XLSX export + comparative BS/IS. Low risk, demo-ready.
 3. **Step 14-iii** — GitHub/Microsoft multi-provider + SSO audit + login button polish.
-4. **Step 11** — main-tier OIDC.
+4. **Step 11** — main-tier OIDC (now ECOPA — see below).
 
 Recommend **reporting phase 2** for demo polish (low risk). **12b-α-iii** is the natural continuation for tenant isolation but is the heavy step.
+
+## Locked 2026-04-25 (revised) — Ecopa = single-org by design; Division = primary scoping unit
+
+User correction (2026-04-25 evening, second clarification):
+
+> "Di Ecopa hanya 1 organisasi, namun yang banyak adalah divisi."
+
+**Multi-organization roadmap dropped.** Ecopa serve **satu organisasi** per deployment. Multi-org clients = deploy Ecopa instance terpisah (bukan multi-tenant in single instance). Pengelompokan internal user pakai existing `divisions` table.
+
+**Schema impact (revised migrations):**
+- DELETED `2026_04_25_100000_create_organizations_table.php`
+- DELETED `2026_04_25_100100_create_organization_memberships_table.php`
+- DELETED `2026_04_25_100200_add_organization_id_to_existing_tables.php`
+- KEPT `2026_04_25_100300_create_app_permissions_table.php` — but **drop `organization_id` column**, unique key now `(website_id, user_id)`
+- KEPT `2026_04_25_100400_add_metadata_fields_to_websites_table.php` — `slug`, `metadata_url`, `roles_schema`, `metadata_synced_at`
+- DELETED `App\Models\Organization`, `App\Models\OrganizationMembership`
+- KEPT `App\Models\AppPermission` — without `organization_id`
+
+**ID Token claims (revised):**
+- DROPPED: `org_id`, `org_role`
+- ADDED: `divisions` (array of `{id, name, color}`) — replaces multi-org scoping
+- KEPT: `app_role`, `app_scopes` (REQUIRED for app access)
+- KEPT (back-compat): `division` string `"id:name id:name ..."`
+
+**UI revision (Ecopa Filament):**
+- DELETED OrganizationResource + Pages
+- KEPT AppPermissionResource — without organization field
+- Existing DivisionResource (under "Manage" group) tetap satu-satunya scoping unit
+
+**Integration impact:**
+- Akunta `Entity` mirrors Ecopa `Division`, not Organization.
+- `EcopaController::provisionUser` consume `divisions` claim, not `org_id`.
+
+## Locked 2026-04-25 (refined) — Ecopa = "OS for organization" mental model
+
+User clarification (2026-04-25 evening) refined the relationship:
+
+- **Ecopa is OPTIONAL.** When connected to Akunta (`ECOPA_CLIENT_ID` set), Ecopa becomes the auth gateway + identity authority. When NOT set, Akunta runs standalone with own login form + Google socialite.
+- **Mental model: Ecopa = OS untuk organisasi.** Akunta + payroll + cash-mgmt + future apps = modul/program ter-install di "desktop" itu. User login ke OS dulu, baru bisa pakai aplikasi. Permission untuk akses tiap aplikasi diatur per-user di OS.
+- **Identity authority split (when Ecopa active):**
+  - Ecopa owns: user identity (name, email, password, MFA), organization, division, app permissions (`(user × app)` matrix).
+  - Akunta owns: app-specific role assignment (`(user × role × entity)`) + Akunta-specific data.
+  - Akunta NEVER auto-creates user from SSO. User must pre-exist in Ecopa + be assigned to Akunta in Ecopa's permission matrix. Akunta `EcopaController.provisionUser` rejects unknown users with 403.
+  - Akunta NEVER edits identity attrs (name/email/password/MFA). UI shows them read-only with link to Ecopa.
+  - Akunta MAY edit role/entity assignment for known users.
+- **`AUTH_SSO_AUTO_REGISTER`** removed from EcopaController flow. Was a holdover from Google socialite era; Ecopa is authoritative so auto-register is wrong.
+
+**Implementation status:**
+
+Akunta side (done):
+- `RedirectGuestToEcopa` middleware: guest hits panel → bounce to `/auth/ecopa/redirect`.
+- Filament login form disabled when `ECOPA_CLIENT_ID` set (conditional `->login()` via `->when()`).
+- Google socialite plugin gated to standalone-only mode.
+- User-menu logout points to `/auth/ecopa/logout` which kills local session + redirects to Ecopa `/custom-logout`.
+- `EcopaController.provisionUser`: match by sub → fallback by email + auto-link → reject if unknown. No auto-create.
+
+Ecopa side (existing, unchanged):
+- OAuth2 authorization-code flow with RS256 JWT id-token + JWKS.
+- App catalog (`Website` model) with `is_restricted` boolean.
+- API: `/api/users`, `/api/user/{id}`, `/api/check-approval/{userId}`.
+
+**Gap analysis: Ecopa needs more to fully serve "OS for org" role.** Documented in `ecopa/docs/ROADMAP.md`. Highlights:
+
+- **§1 Multi-org** (P0) — Ecopa currently flat, single-org. Need `Organization` model + tenancy.
+- **§2 App Permission Matrix** (P0) — replace boolean `is_restricted` with `(user × app × app_role)` table. SSO authorize must check matrix before issuing code.
+- **§3 Webhooks** (P1) — user.disabled / app_permission.granted events for client apps.
+- **§4 Single Logout** (P1) — back-channel logout to kill all client sessions when user disabled.
+- **§5 App Metadata** (P1) — apps self-describe role list via `/.well-known/akunta-app.json`.
+- **§7 UserInfo endpoint** (P1) — refresh user info without re-authorize redirect.
+- **§9 MFA** (P1 production) — TOTP / WebAuthn at Main Tier, not per-app.
+- **§10 Audit log** + **§4 Single Logout** + **§11 App Health** + **§12 Branding** — polish.
+
+**Recommended execution batch:** Ship Ecopa §1 + §2 + §5 as coordinated milestone (multi-org + app perm matrix + app metadata self-description), then Akunta-side adapter follows. Anything earlier is partial.
+
+## Locked 2026-04-25 — Main Tier identified as **Ecopa** (formerly app-management-portal)
+
+The Main Tier role specified in spec is now filled by **Ecopa** — pre-existing Laravel 12 + Filament v4 portal app at `ecopa/` (renamed from `app-management-portal/`).
+
+Existing Ecopa surface (no breaking changes):
+
+- **SSO IdP** with OAuth2 authorization-code flow + RS256 JWT id-tokens. JWKS published.
+  - `GET /oauth/authenticate?response_type=code&client_id=...&state=...&redirect_uri=...`
+  - `POST /oauth/token` (form: code/client_id/client_secret/redirect_uri) → `{ id_token }`
+  - `GET /oauth/jwks.json`
+- **Server-to-server APIs** (Bearer "Company App" token):
+  - `GET /api/users` · `GET /api/user/{id}` · `GET /api/check-approval/{userId}`
+- **App catalog** via `Website` + `SSOIntegration` models in Ecopa admin panel.
+
+ID token claims: `iss = "ecopa"`, `aud = client_uri`, `sub = ecopa_user_id`, plus `name`/`email`/`role`/`division`. Lifetime 10 min.
+
+Decisions:
+
+1. **No fork.** Akunta accounting/payroll/cash-mgmt act as Ecopa SSO clients. Ecopa stays as own deployment (`home.opensynergic.com`).
+2. **New shared module `modules/ecopa-client/`** (composer path repo, namespace `Akunta\EcopaClient\`) provides:
+   - `EcopaClient` service: `authorizeUrl()`, `verifyState()`, `exchangeCode()`, `verifyIdToken()`, `fetchJwks()`, `fetchUser()`, `listUsers()`, `checkApproval()`.
+   - `EcopaAuthController` abstract base — consuming app subclasses + implements `provisionUser($claims)` to upsert local user.
+   - Config `ecopa.php` reads `ECOPA_URL`, `ECOPA_CLIENT_ID/SECRET/REDIRECT_URI`, `ECOPA_API_TOKEN`.
+   - Guzzle + firebase/php-jwt + JWK::parseKeySet for verify.
+3. **Integration spec** frozen at `ecopa/docs/INTEGRATION.md` — versioned. Breaking change = bump iss to `ecopa-v2`.
+4. **Internal name normalization in Ecopa:** `iss` claim now reads `config('sso.app_name', 'ecopa')` (env-overridable), `APP_NAME=Ecopa`. JWT consumers must verify exact `iss` match.
+5. **Step 11 supersedes:** instead of building a fresh main-tier app inside `apps/`, integrate Akunta apps as Ecopa clients via `Akunta\EcopaClient\`. Drops scope of step 11 from "build OIDC provider" to "wire Filament socialite-style adapter for Ecopa + replace per-app Google with Ecopa as primary login".
+
+Pending (deferred):
+
+- Filament socialite-style adapter for Ecopa (similar to `dutchcodingcompany/filament-socialite` but pointing at Ecopa endpoints instead of Google).
+- `users.ecopa_user_id` column + migration in `modules/rbac/`.
+- Webhook receiver in client apps for Ecopa user-lifecycle events (disable/role-change). For now, client apps poll `/api/user/{id}` on each login.
+- Apps-catalog integration on Ecopa side: list which Akunta apps a given user can access (already partially modeled via `Website` + `Division`).
+- Replace per-app Google socialite once Ecopa SSO is the dominant path. Keep Google as fallback during transition.
