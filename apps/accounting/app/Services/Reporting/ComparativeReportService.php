@@ -34,21 +34,21 @@ class ComparativeReportService
         $prev = $this->is->compute($entityId, $prevStart, $prevEnd);
 
         return [
-            'kind'          => 'income_statement',
-            'entity_id'     => $entityId,
-            'curr_period'   => ['start' => $currStart, 'end' => $currEnd],
-            'prev_period'   => ['start' => $prevStart, 'end' => $prevEnd],
-            'sections'      => [
-                'revenue'  => $this->mergeSections($curr['revenue'], $prev['revenue']),
-                'cogs'     => $this->mergeSections($curr['cogs'], $prev['cogs']),
+            'kind' => 'income_statement',
+            'entity_id' => $entityId,
+            'curr_period' => ['start' => $currStart, 'end' => $currEnd],
+            'prev_period' => ['start' => $prevStart, 'end' => $prevEnd],
+            'sections' => [
+                'revenue' => $this->mergeSections($curr['revenue'], $prev['revenue']),
+                'cogs' => $this->mergeSections($curr['cogs'], $prev['cogs']),
                 'expenses' => $this->mergeSections($curr['expenses'], $prev['expenses']),
             ],
             'gross_profit_curr' => $curr['gross_profit'] ?? '0.00',
             'gross_profit_prev' => $prev['gross_profit'] ?? '0.00',
-            'gross_profit_delta'=> bcsub((string) ($curr['gross_profit'] ?? '0'), (string) ($prev['gross_profit'] ?? '0'), 2),
-            'net_income_curr'   => $curr['net_income'] ?? '0.00',
-            'net_income_prev'   => $prev['net_income'] ?? '0.00',
-            'net_income_delta'  => bcsub((string) ($curr['net_income'] ?? '0'), (string) ($prev['net_income'] ?? '0'), 2),
+            'gross_profit_delta' => bcsub((string) ($curr['gross_profit'] ?? '0'), (string) ($prev['gross_profit'] ?? '0'), 2),
+            'net_income_curr' => $curr['net_income'] ?? '0.00',
+            'net_income_prev' => $prev['net_income'] ?? '0.00',
+            'net_income_delta' => bcsub((string) ($curr['net_income'] ?? '0'), (string) ($prev['net_income'] ?? '0'), 2),
         ];
     }
 
@@ -59,19 +59,19 @@ class ComparativeReportService
         $prev = $this->bs->compute($entityId, $prevAsOf);
 
         return [
-            'kind'         => 'balance_sheet',
-            'entity_id'    => $entityId,
-            'curr_as_of'   => $currAsOf,
-            'prev_as_of'   => $prevAsOf,
-            'sections'     => [
-                'assets'      => $this->mergeSections($curr['assets'] ?? [], $prev['assets'] ?? []),
+            'kind' => 'balance_sheet',
+            'entity_id' => $entityId,
+            'curr_as_of' => $currAsOf,
+            'prev_as_of' => $prevAsOf,
+            'sections' => [
+                'assets' => $this->mergeSections($curr['assets'] ?? [], $prev['assets'] ?? []),
                 'liabilities' => $this->mergeSections($curr['liabilities'] ?? [], $prev['liabilities'] ?? []),
-                'equity'      => $this->mergeSections($curr['equity'] ?? [], $prev['equity'] ?? []),
+                'equity' => $this->mergeSections($curr['equity'] ?? [], $prev['equity'] ?? []),
             ],
             'totals' => [
-                'assets'      => ['curr' => (string) ($curr['total_assets']      ?? '0'), 'prev' => (string) ($prev['total_assets']      ?? '0')],
-                'liabilities' => ['curr' => (string) ($curr['total_liabilities'] ?? '0'), 'prev' => (string) ($prev['total_liabilities'] ?? '0')],
-                'equity'      => ['curr' => (string) ($curr['total_equity']      ?? '0'), 'prev' => (string) ($prev['total_equity']      ?? '0')],
+                'assets' => ['curr' => (string) ($curr['assets']['total'] ?? '0'), 'prev' => (string) ($prev['assets']['total'] ?? '0')],
+                'liabilities' => ['curr' => (string) ($curr['liabilities']['total'] ?? '0'), 'prev' => (string) ($prev['liabilities']['total'] ?? '0')],
+                'equity' => ['curr' => (string) ($curr['equity']['total'] ?? '0'), 'prev' => (string) ($prev['equity']['total'] ?? '0')],
             ],
         ];
     }
@@ -82,7 +82,7 @@ class ComparativeReportService
         $s = Carbon::parse($start);
         $e = Carbon::parse($end);
         $days = $s->diffInDays($e);
-        $prevEnd   = $s->copy()->subDay();
+        $prevEnd = $s->copy()->subDay();
         $prevStart = $prevEnd->copy()->subDays($days);
 
         return ['start' => $prevStart->toDateString(), 'end' => $prevEnd->toDateString()];
@@ -93,7 +93,7 @@ class ComparativeReportService
     {
         return [
             'start' => Carbon::parse($start)->subYearNoOverflow()->toDateString(),
-            'end'   => Carbon::parse($end)->subYearNoOverflow()->toDateString(),
+            'end' => Carbon::parse($end)->subYearNoOverflow()->toDateString(),
         ];
     }
 
@@ -109,9 +109,9 @@ class ComparativeReportService
         $byId = [];
         foreach ($currLines as $l) {
             $byId[$l->id] = (object) [
-                'id'           => $l->id,
-                'code'         => $l->code,
-                'name'         => $l->name,
+                'id' => $l->id,
+                'code' => $l->code,
+                'name' => $l->name,
                 'curr_balance' => (string) ($l->balance ?? '0'),
                 'prev_balance' => '0.00',
             ];
@@ -119,9 +119,9 @@ class ComparativeReportService
         foreach ($prevLines as $l) {
             if (! isset($byId[$l->id])) {
                 $byId[$l->id] = (object) [
-                    'id'           => $l->id,
-                    'code'         => $l->code,
-                    'name'         => $l->name,
+                    'id' => $l->id,
+                    'code' => $l->code,
+                    'name' => $l->name,
                     'curr_balance' => '0.00',
                     'prev_balance' => (string) ($l->balance ?? '0'),
                 ];
@@ -143,10 +143,10 @@ class ComparativeReportService
             ->values();
 
         return [
-            'lines'      => $rows,
+            'lines' => $rows,
             'curr_total' => (string) ($curr['total'] ?? '0'),
             'prev_total' => (string) ($prev['total'] ?? '0'),
-            'total_delta'=> bcsub((string) ($curr['total'] ?? '0'), (string) ($prev['total'] ?? '0'), 2),
+            'total_delta' => bcsub((string) ($curr['total'] ?? '0'), (string) ($prev['total'] ?? '0'), 2),
         ];
     }
 }

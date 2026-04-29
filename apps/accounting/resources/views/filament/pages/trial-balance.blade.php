@@ -1,12 +1,12 @@
 <x-filament-panels::page>
-    <div class="flex items-baseline justify-between border-y border-gray-900/40 py-1 mb-6">
+    <div class="flex items-baseline justify-between border-y border-gray-900/40 py-1 mb-6 print:hidden">
         <span class="ak-eyebrow">§ Laporan — Neraca Saldo</span>
         <span class="ak-mono text-xs tracking-[0.18em] uppercase text-gray-500">
             @if ($report) Per {{ $report['as_of'] }} @else — @endif
         </span>
     </div>
 
-    <form wire:submit="run" class="ak-paper-soft border ak-rule rounded-sm p-5 mb-6">
+    <form wire:submit="run" class="ak-paper-soft border ak-rule rounded-sm p-5 mb-6 print:hidden">
         {{ $this->form }}
         <div class="mt-4 flex items-center gap-3">
             <x-filament::button type="submit" icon="heroicon-m-arrow-path">
@@ -49,10 +49,24 @@
                     </thead>
                     <tbody>
                         @foreach ($report['rows'] as $row)
-                            @php $bal = (float) $row->balance; @endphp
+                            @php
+                                $bal = (float) $row->balance;
+                                $glUrl = \App\Filament\Pages\GeneralLedger::getUrl(
+                                    parameters: [
+                                        'account' => $row->id,
+                                        'from' => \Illuminate\Support\Carbon::parse($report['as_of'])->startOfYear()->toDateString(),
+                                        'to' => $report['as_of'],
+                                    ],
+                                    tenant: \Filament\Facades\Filament::getTenant(),
+                                );
+                            @endphp
                             <tr class="border-b border-dashed ak-rule hover:bg-[rgb(184,101,74)]/[0.05] transition-colors">
-                                <td class="px-4 py-2.5 ak-mono text-gray-700 dark:text-gray-300">{{ $row->code }}</td>
-                                <td class="px-4 py-2.5 text-gray-900 dark:text-gray-100">{{ $row->name }}</td>
+                                <td class="px-4 py-2.5 ak-mono text-gray-700 dark:text-gray-300">
+                                    <a href="{{ $glUrl }}" class="hover:ak-copper hover:underline underline-offset-2" title="Buka Buku Besar">{{ $row->code }}</a>
+                                </td>
+                                <td class="px-4 py-2.5 text-gray-900 dark:text-gray-100">
+                                    <a href="{{ $glUrl }}" class="hover:ak-copper" title="Buka Buku Besar">{{ $row->name }}</a>
+                                </td>
                                 <td class="px-4 py-2.5">
                                     <span class="ak-mono text-[0.65rem] uppercase tracking-[0.14em] text-gray-500">{{ $row->type }}</span>
                                 </td>
@@ -103,4 +117,14 @@
             </div>
         </div>
     @endif
+
+    @push('styles')
+        <style>
+            @media print {
+                .fi-sidebar, .fi-topbar, .fi-page-header-actions, .print\:hidden { display: none !important; }
+                .fi-main { padding: 0 !important; }
+                body { background: white !important; }
+            }
+        </style>
+    @endpush
 </x-filament-panels::page>

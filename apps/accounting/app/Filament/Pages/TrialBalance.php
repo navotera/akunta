@@ -2,7 +2,9 @@
 
 namespace App\Filament\Pages;
 
+use App\Services\Reporting\Export\XlsxExporter;
 use App\Services\Reporting\TrialBalanceService;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -60,5 +62,30 @@ class TrialBalance extends Page implements HasForms
         }
 
         $this->report = app(TrialBalanceService::class)->compute($entity->id, $state['as_of'] ?? $this->as_of);
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('export_xlsx')
+                ->label('Export XLSX')
+                ->icon('heroicon-o-table-cells')
+                ->color('gray')
+                ->visible(fn () => $this->report !== null)
+                ->action(function () {
+                    $entity = Filament::getTenant();
+
+                    return app(XlsxExporter::class)->exportTrialBalance(
+                        $this->report,
+                        $entity?->name ?? 'Entity',
+                    );
+                }),
+            Action::make('print')
+                ->label('Print / PDF')
+                ->icon('heroicon-o-printer')
+                ->color('gray')
+                ->visible(fn () => $this->report !== null)
+                ->extraAttributes(['onclick' => 'window.print(); return false;', 'type' => 'button']),
+        ];
     }
 }
