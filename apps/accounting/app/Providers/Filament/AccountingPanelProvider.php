@@ -2,17 +2,25 @@
 
 namespace App\Providers\Filament;
 
+use Akunta\EcopaClient\Filament\Pages\EcopaProfile;
+use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\SocialAccount;
+use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\FinancialPulseWidget;
+use App\Filament\Widgets\QuickActionsWidget;
+use App\Filament\Widgets\RecentJournalsWidget;
+use App\Http\Middleware\RedirectGuestToEcopa;
+use App\Http\Middleware\SharedEntitySelector;
+use App\Models\User;
 use DutchCodingCompany\FilamentSocialite\FilamentSocialitePlugin;
 use DutchCodingCompany\FilamentSocialite\Provider as SocialiteProvider;
+use Filament\Facades\Filament;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use App\Filament\Widgets\FinancialPulseWidget;
-use App\Filament\Widgets\QuickActionsWidget;
-use App\Filament\Widgets\RecentJournalsWidget;
+use Filament\Navigation\MenuItem;
 use Filament\Navigation\NavigationGroup;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -24,6 +32,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Laravel\Socialite\Contracts\User as SocialiteUserContract;
 
@@ -47,11 +56,11 @@ class AccountingPanelProvider extends PanelProvider
             // the Ecopa "desktop session" — otherwise a local logout just
             // bounces the user right back in.
             ->when(config('ecopa.client_id'), fn (Panel $p) => $p->userMenuItems([
-                'profile' => \Filament\Navigation\MenuItem::make()
+                'profile' => MenuItem::make()
                     ->label('Profil Saya')
-                    ->url(fn () => \Akunta\EcopaClient\Filament\Pages\EcopaProfile::getUrl(panel: 'accounting'))
+                    ->url(fn () => EcopaProfile::getUrl(panel: 'accounting'))
                     ->icon('heroicon-o-user-circle'),
-                'logout' => \Filament\Navigation\MenuItem::make()
+                'logout' => MenuItem::make()
                     ->label('Logout (keluar Ecopa)')
                     ->url(fn () => route('ecopa.logout'))
                     ->icon('heroicon-o-arrow-right-on-rectangle'),
@@ -60,7 +69,7 @@ class AccountingPanelProvider extends PanelProvider
             ->colors([
                 // Metronic Demo3 palette
                 'primary' => [
-                    50  => '#EFF6FF',
+                    50 => '#EFF6FF',
                     100 => '#DBEAFE',
                     200 => '#BFDBFE',
                     300 => '#93C5FD',
@@ -73,7 +82,7 @@ class AccountingPanelProvider extends PanelProvider
                     950 => '#041732',
                 ],
                 'success' => [
-                    50  => '#F0FDF4',
+                    50 => '#F0FDF4',
                     100 => '#DFFFEA',
                     200 => '#BBF7D0',
                     300 => '#86EFAC',
@@ -86,7 +95,7 @@ class AccountingPanelProvider extends PanelProvider
                     950 => '#052E16',
                 ],
                 'warning' => [
-                    50  => '#FFFBEB',
+                    50 => '#FFFBEB',
                     100 => '#FFF8DD',
                     200 => '#FEF3C7',
                     300 => '#FDE68A',
@@ -99,7 +108,7 @@ class AccountingPanelProvider extends PanelProvider
                     950 => '#422006',
                 ],
                 'danger' => [
-                    50  => '#FFEEF3',
+                    50 => '#FFEEF3',
                     100 => '#FFD6E0',
                     200 => '#FFAFC2',
                     300 => '#FF87A4',
@@ -112,7 +121,7 @@ class AccountingPanelProvider extends PanelProvider
                     950 => '#26040C',
                 ],
                 'info' => [
-                    50  => '#F5F0FF',
+                    50 => '#F5F0FF',
                     100 => '#F1E6FF',
                     200 => '#E2CCFF',
                     300 => '#C9A6FF',
@@ -125,7 +134,7 @@ class AccountingPanelProvider extends PanelProvider
                     950 => '#0E0428',
                 ],
                 'gray' => [
-                    50  => '#FAFAFB',
+                    50 => '#FAFAFB',
                     100 => '#F1F1F4',
                     200 => '#DBDFE9',
                     300 => '#C4CADA',
@@ -142,22 +151,23 @@ class AccountingPanelProvider extends PanelProvider
             ->darkMode()
             ->maxContentWidth(MaxWidth::Full)
             ->topNavigation()
-            ->homeUrl(fn () => \App\Filament\Pages\Dashboard::getUrl(tenant: \Filament\Facades\Filament::getTenant()))
+            ->homeUrl(fn () => Dashboard::getUrl(tenant: Filament::getTenant()))
             ->breadcrumbs(true)
             ->navigationGroups([
                 NavigationGroup::make('Operasional')->collapsible(false),
                 NavigationGroup::make('Laporan')->collapsible(false),
                 NavigationGroup::make('Master Data')->collapsible(true),
+                NavigationGroup::make('Pengaturan')->collapsible(true),
                 NavigationGroup::make('API')->collapsible(true),
             ])
-            ->tenant(\Akunta\Rbac\Models\Entity::class)
+            ->tenant(Entity::class)
             ->tenantMenuItems([])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
             ->pages([
-                \App\Filament\Pages\Dashboard::class,
-                \Akunta\EcopaClient\Filament\Pages\EcopaProfile::class,
+                Dashboard::class,
+                EcopaProfile::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
@@ -175,21 +185,21 @@ class AccountingPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                \App\Http\Middleware\RedirectGuestToEcopa::class,
-                \App\Http\Middleware\SharedEntitySelector::class,
+                RedirectGuestToEcopa::class,
+                SharedEntitySelector::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
             ])
             ->renderHook(
                 PanelsRenderHook::USER_MENU_BEFORE,
-                fn (): string => \Illuminate\Support\Facades\Blade::render('@livewire(\'active-period-switcher\')'),
+                fn (): string => Blade::render('@livewire(\'active-period-switcher\')'),
             )
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn (): string => view('filament.topbar.scripts')->render()
-                    . view('filament.topbar.clock')->render()
-                    . view('filament.dim-zeros')->render(),
+                    .view('filament.topbar.clock')->render()
+                    .view('filament.dim-zeros')->render(),
             )
             // Google Socialite — fallback only when Ecopa is NOT configured
             // (standalone / dev mode). With Ecopa, all auth flows through Main Tier.
@@ -201,8 +211,8 @@ class AccountingPanelProvider extends PanelProvider
                             ->icon('heroicon-o-globe-alt')
                             ->color(Color::Red),
                     ])
-                    ->userModelClass(\App\Models\User::class)
-                    ->socialiteUserModelClass(\Akunta\Rbac\Models\SocialAccount::class)
+                    ->userModelClass(User::class)
+                    ->socialiteUserModelClass(SocialAccount::class)
                     ->registration(function (string $provider, SocialiteUserContract $oauthUser, ?Authenticatable $user) {
                         if ($user !== null) {
                             return property_exists($user, 'email_verified_at') || method_exists($user, 'getAttribute')

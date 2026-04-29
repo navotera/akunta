@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Akunta\Rbac\Models;
 
+use Akunta\Audit\Models\AuditLog;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -11,9 +12,9 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
 
 /**
- * @property string      $id
- * @property string      $email
- * @property string      $name
+ * @property string $id
+ * @property string $email
+ * @property string $name
  * @property string|null $password_hash
  * @property string|null $main_tier_user_id
  * @property Carbon|null $last_login_at
@@ -56,6 +57,15 @@ class User extends Authenticatable
     public function socialAccounts(): HasMany
     {
         return $this->hasMany(SocialAccount::class);
+    }
+
+    /**
+     * Audit-trail relation: rows in audit_log where this user was the actor.
+     * Read-only — audit_log is append-only (see Akunta\Audit\Models\AuditLog).
+     */
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class, 'actor_user_id');
     }
 
     /**

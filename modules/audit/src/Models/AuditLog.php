@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Akunta\Audit\Models;
 
 use Akunta\Audit\Exceptions\ImmutableAuditException;
+use Akunta\Rbac\Models\User;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * Read-mostly Eloquent model over audit_log.
@@ -15,16 +18,16 @@ use Illuminate\Database\Eloquent\Model;
  * ImmutableAuditException — append-only contract enforced at the app layer
  * (prod also revokes UPDATE/DELETE on the role, see migration comment).
  *
- * @property string               $id
- * @property string|null          $actor_user_id
- * @property string               $action
- * @property string               $resource_type
- * @property string               $resource_id
- * @property string|null          $entity_id
+ * @property string $id
+ * @property string|null $actor_user_id
+ * @property string $action
+ * @property string $resource_type
+ * @property string $resource_id
+ * @property string|null $entity_id
  * @property array<string, mixed> $metadata
- * @property string|null          $ip_address
- * @property string|null          $user_agent
- * @property \Illuminate\Support\Carbon $created_at
+ * @property string|null $ip_address
+ * @property string|null $user_agent
+ * @property Carbon $created_at
  */
 class AuditLog extends Model
 {
@@ -49,5 +52,10 @@ class AuditLog extends Model
         static::deleting(function (): void {
             throw new ImmutableAuditException('audit_log rows cannot be deleted at the app layer.');
         });
+    }
+
+    public function actor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'actor_user_id');
     }
 }
