@@ -99,8 +99,7 @@ class SalesEntry extends Page implements HasForms
 
         return [
             Forms\Components\Tabs::make('SalesEntryTabs')
-                ->vertical()
-                ->contained(false)
+                ->extraAttributes(['class' => 'ak-vtabs'])
                 ->tabs([
                     Forms\Components\Tabs\Tab::make('Transaksi Info')
                         ->icon('heroicon-o-document-text')

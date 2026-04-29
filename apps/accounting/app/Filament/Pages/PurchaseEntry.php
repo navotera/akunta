@@ -103,8 +103,7 @@ class PurchaseEntry extends Page implements HasForms
 
         return [
             Forms\Components\Tabs::make('PurchaseEntryTabs')
-                ->vertical()
-                ->contained(false)
+                ->extraAttributes(['class' => 'ak-vtabs'])
                 ->tabs([
                     Forms\Components\Tabs\Tab::make('Transaksi Info')
                         ->icon('heroicon-o-document-text')
