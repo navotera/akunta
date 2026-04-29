@@ -7,7 +7,6 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\SocialAccount;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\FinancialPulseWidget;
-use App\Filament\Widgets\QuickActionsWidget;
 use App\Filament\Widgets\RecentJournalsWidget;
 use App\Http\Middleware\RedirectGuestToEcopa;
 use App\Http\Middleware\SharedEntitySelector;
@@ -172,7 +171,6 @@ class AccountingPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 FinancialPulseWidget::class,
-                QuickActionsWidget::class,
                 RecentJournalsWidget::class,
             ])
             ->middleware([

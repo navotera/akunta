@@ -2,8 +2,8 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Resources\AccountResource;
 use App\Filament\Resources\JournalResource;
+use App\Models\Journal;
 use App\Models\Period;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -38,30 +38,44 @@ class Dashboard extends BaseDashboard
         }
 
         $start = Carbon::parse($period->start_date)->translatedFormat('d M Y');
-        $end   = Carbon::parse($period->end_date)->translatedFormat('d M Y');
-        $days  = (int) Carbon::today()->diffInDays(Carbon::parse($period->end_date), false);
+        $end = Carbon::parse($period->end_date)->translatedFormat('d M Y');
+        $days = (int) Carbon::today()->diffInDays(Carbon::parse($period->end_date), false);
 
         $tail = $days < 0
-            ? abs($days) . ' hari telat'
-            : $days . ' hari sisa';
+            ? abs($days).' hari telat'
+            : $days.' hari sisa';
 
         return "Periode Aktif {$period->name} · {$start} — {$end} · {$tail}";
     }
 
     protected function getHeaderActions(): array
     {
+        $newAt = fn (string $preset) => JournalResource::getUrl('create', ['preset' => $preset]);
+
         return [
             ActionGroup::make([
-                Action::make('newJournal')
-                    ->label('Jurnal Baru')
+                Action::make('newJournalSales')
+                    ->label('Jurnal Penjualan')
+                    ->icon('heroicon-o-shopping-cart')
+                    ->color('success')
+                    ->url(fn () => $newAt('sales')),
+                Action::make('newJournalPurchase')
+                    ->label('Jurnal Pembelian')
+                    ->icon('heroicon-o-truck')
+                    ->color('info')
+                    ->url(fn () => $newAt('purchase')),
+                Action::make('newJournalGeneral')
+                    ->label('Jurnal Umum')
                     ->icon('heroicon-o-document-plus')
-                    ->url(fn () => JournalResource::getUrl('create')),
-                Action::make('newAccount')
-                    ->label('Akun (CoA) Baru')
-                    ->icon('heroicon-o-rectangle-stack')
-                    ->url(fn () => AccountResource::getUrl('create')),
+                    ->color('gray')
+                    ->url(fn () => $newAt(Journal::TYPE_GENERAL)),
+                Action::make('newJournalAdjustment')
+                    ->label('Jurnal Penyesuaian')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->color('warning')
+                    ->url(fn () => $newAt(Journal::TYPE_ADJUSTMENT)),
             ])
-                ->label('New')
+                ->label('+ Buat Jurnal')
                 ->icon('heroicon-m-plus')
                 ->button()
                 ->color('primary'),
