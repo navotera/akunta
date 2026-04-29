@@ -15,13 +15,17 @@ use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Support\RawJs;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use Throwable;
 
 class JournalResource extends Resource
@@ -118,9 +122,9 @@ class JournalResource extends Resource
                                     ->relationship(
                                         name: 'period',
                                         titleAttribute: 'name',
-                                        modifyQueryUsing: fn (\Illuminate\Database\Eloquent\Builder $query) => $query->where('status', Period::STATUS_OPEN)->orderBy('start_date', 'desc'),
+                                        modifyQueryUsing: fn (Builder $query) => $query->where('status', Period::STATUS_OPEN)->orderBy('start_date', 'desc'),
                                     )
-                                    ->getOptionLabelFromRecordUsing(fn (Period $r) => $r->name . ' (' . Carbon::parse($r->start_date)->format('d M') . ' — ' . Carbon::parse($r->end_date)->format('d M Y') . ')')
+                                    ->getOptionLabelFromRecordUsing(fn (Period $r) => $r->name.' ('.Carbon::parse($r->start_date)->format('d M').' — '.Carbon::parse($r->end_date)->format('d M Y').')')
                                     ->searchable()
                                     ->preload()
                                     ->native(false)
@@ -215,9 +219,9 @@ class JournalResource extends Resource
                                             ->required()
                                             ->relationship(
                                                 name: 'account',
-                                                modifyQueryUsing: fn (\Illuminate\Database\Eloquent\Builder $query) => $query->where('is_active', true)->orderBy('code'),
+                                                modifyQueryUsing: fn (Builder $query) => $query->where('is_active', true)->orderBy('code'),
                                             )
-                                            ->getOptionLabelFromRecordUsing(fn (Account $r) => "{$r->code} — {$r->name}" . ($r->is_postable ? '' : '  [non-postable]'))
+                                            ->getOptionLabelFromRecordUsing(fn (Account $r) => "{$r->code} — {$r->name}".($r->is_postable ? '' : '  [non-postable]'))
                                             ->disableOptionWhen(fn ($value) => optional(Account::find($value))->is_postable === false)
                                             ->searchable(['code', 'name'])
                                             ->preload()
@@ -247,15 +251,15 @@ class JournalResource extends Resource
                                         Forms\Components\ToggleButtons::make('side')
                                             ->label('Sisi')
                                             ->options([
-                                                'debit'  => 'Debit',
+                                                'debit' => 'Debit',
                                                 'credit' => 'Kredit',
                                             ])
                                             ->colors([
-                                                'debit'  => 'primary',
+                                                'debit' => 'primary',
                                                 'credit' => 'warning',
                                             ])
                                             ->icons([
-                                                'debit'  => 'heroicon-m-arrow-down-left',
+                                                'debit' => 'heroicon-m-arrow-down-left',
                                                 'credit' => 'heroicon-m-arrow-up-right',
                                             ])
                                             ->default('debit')
@@ -298,15 +302,15 @@ class JournalResource extends Resource
                                             ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;letter-spacing:0.18em;padding:1px 6px;border:1px solid #0D3B2E;color:#0D3B2E;border-radius:2px;">D</span>'
                                             : '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;letter-spacing:0.18em;padding:1px 6px;border:1px solid #B8654A;color:#B8654A;border-radius:2px;">K</span>';
 
-                                        $amountStr = $amount > 0 ? 'Rp ' . number_format($amount, 0, ',', '.') : '—';
+                                        $amountStr = $amount > 0 ? 'Rp '.number_format($amount, 0, ',', '.') : '—';
 
                                         return new HtmlString(
                                             '<span style="display:inline-flex;align-items:center;gap:0.6rem;">'
-                                            . $sideBadge
-                                            . '<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.78rem;color:#6B685F;">' . e($code) . '</span>'
-                                            . '<span style="font-family:\'Instrument Sans\',sans-serif;">' . e($name) . '</span>'
-                                            . '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-variant-numeric:tabular-nums;font-weight:500;">' . $amountStr . '</span>'
-                                            . '</span>'
+                                            .$sideBadge
+                                            .'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.78rem;color:#6B685F;">'.e($code).'</span>'
+                                            .'<span style="font-family:\'Instrument Sans\',sans-serif;">'.e($name).'</span>'
+                                            .'<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-variant-numeric:tabular-nums;font-weight:500;">'.$amountStr.'</span>'
+                                            .'</span>'
                                         );
                                     })
                                     ->reorderableWithButtons()
@@ -344,13 +348,13 @@ class JournalResource extends Resource
                                         $diff = $debit - $credit;
                                         $balanced = abs($diff) < 0.005;
 
-                                        $fmt = fn (float $n) => 'Rp ' . number_format($n, 0, ',', '.');
+                                        $fmt = fn (float $n) => 'Rp '.number_format($n, 0, ',', '.');
 
                                         $statusBlock = $balanced
                                             ? '<div style="display:inline-flex;align-items:center;gap:0.5rem;font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;letter-spacing:0.2em;text-transform:uppercase;color:#0D3B2E;">'
                                                 .'<span style="width:0.5rem;height:0.5rem;border-radius:999px;background:#0D3B2E;"></span>Seimbang</div>'
                                             : '<div style="display:inline-flex;align-items:center;gap:0.5rem;font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;letter-spacing:0.2em;text-transform:uppercase;color:#C23B22;">'
-                                                .'<span style="width:0.5rem;height:0.5rem;border-radius:999px;background:#C23B22;animation:pulse 1.6s ease-in-out infinite;"></span>Selisih ' . $fmt(abs($diff)) . '</div>';
+                                                .'<span style="width:0.5rem;height:0.5rem;border-radius:999px;background:#C23B22;animation:pulse 1.6s ease-in-out infinite;"></span>Selisih '.$fmt(abs($diff)).'</div>';
 
                                         // visual scale bar
                                         $max = max($debit, $credit, 1);
@@ -362,18 +366,18 @@ class JournalResource extends Resource
                                             .'  <div class="ak-totals-grid">'
                                             .'    <div>'
                                             .'      <div class="ak-totals-label">Total Debit</div>'
-                                            .'      <div class="ak-totals-value">' . $fmt($debit) . '</div>'
-                                            .'      <div class="ak-totals-bar"><span style="width:' . number_format($dPct, 1) . '%;background:#0D3B2E;"></span></div>'
+                                            .'      <div class="ak-totals-value">'.$fmt($debit).'</div>'
+                                            .'      <div class="ak-totals-bar"><span style="width:'.number_format($dPct, 1).'%;background:#0D3B2E;"></span></div>'
                                             .'    </div>'
                                             .'    <div>'
                                             .'      <div class="ak-totals-label">Total Kredit</div>'
-                                            .'      <div class="ak-totals-value">' . $fmt($credit) . '</div>'
-                                            .'      <div class="ak-totals-bar"><span style="width:' . number_format($cPct, 1) . '%;background:#B8654A;"></span></div>'
+                                            .'      <div class="ak-totals-value">'.$fmt($credit).'</div>'
+                                            .'      <div class="ak-totals-bar"><span style="width:'.number_format($cPct, 1).'%;background:#B8654A;"></span></div>'
                                             .'    </div>'
                                             .'    <div>'
                                             .'      <div class="ak-totals-label">Status</div>'
-                                            .'      <div class="ak-totals-status">' . $statusBlock . '</div>'
-                                            .'      <div class="ak-totals-hint">' . e(count($entries)) . ' baris</div>'
+                                            .'      <div class="ak-totals-status">'.$statusBlock.'</div>'
+                                            .'      <div class="ak-totals-hint">'.e(count($entries)).' baris</div>'
                                             .'    </div>'
                                             .'  </div>'
                                             .'</div>'
@@ -436,7 +440,7 @@ class JournalResource extends Resource
                 $entries[$i]['debit'] = $diff > 0 ? 0 : abs($diff);
                 $entries[$i]['credit'] = $diff > 0 ? abs($diff) : 0;
                 $set('entries', $entries);
-                Notification::make()->title('Selisih ' . number_format(abs($diff), 0, ',', '.') . ' diisi otomatis')->success()->send();
+                Notification::make()->title('Selisih '.number_format(abs($diff), 0, ',', '.').' diisi otomatis')->success()->send();
 
                 return;
             }
@@ -480,7 +484,7 @@ class JournalResource extends Resource
         $set('entries', $entries);
         Notification::make()
             ->title('Baris lawan ditambah')
-            ->body('Pilih akun untuk baris ' . strtoupper($side) . ' Rp ' . number_format($amount, 0, ',', '.'))
+            ->body('Pilih akun untuk baris '.strtoupper($side).' Rp '.number_format($amount, 0, ',', '.'))
             ->success()
             ->send();
     }
@@ -499,33 +503,85 @@ class JournalResource extends Resource
         $side = $balance >= 0 ? 'D' : 'K';
         $abs = abs($balance);
 
-        return 'Saldo akun: Rp ' . number_format($abs, 0, ',', '.') . ' (' . $side . ')';
+        return 'Saldo akun: Rp '.number_format($abs, 0, ',', '.').' ('.$side.')';
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->defaultSort('date', 'desc')
+            ->persistFiltersInSession()
+            ->persistSearchInSession()
+            ->striped()
+            ->deferLoading()
             ->columns([
-                Tables\Columns\TextColumn::make('number')
-                    ->searchable(),
                 Tables\Columns\TextColumn::make('date')
+                    ->label('Tanggal')
                     ->date('d M Y')
+                    ->description(fn (Journal $r) => $r->date ? Carbon::parse($r->date)->isoFormat('dddd') : null)
                     ->sortable(),
+                Tables\Columns\TextColumn::make('number')
+                    ->label('No. Jurnal')
+                    ->searchable()
+                    ->sortable()
+                    ->fontFamily('mono')
+                    ->weight('medium')
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('type')
+                    ->label('Jenis')
                     ->badge()
-                    ->formatStateUsing(fn (string $state) => self::TYPES[$state] ?? $state),
+                    ->color(fn (string $state) => match ($state) {
+                        Journal::TYPE_GENERAL => 'gray',
+                        Journal::TYPE_ADJUSTMENT => 'info',
+                        Journal::TYPE_CLOSING => 'warning',
+                        Journal::TYPE_REVERSING => 'danger',
+                        Journal::TYPE_OPENING => 'success',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(fn (string $state) => self::TYPES[$state] ?? $state)
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('reference')
+                    ->label('Ref.')
+                    ->searchable()
+                    ->limit(20)
+                    ->tooltip(fn ($state) => $state)
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('memo')
+                    ->label('Keterangan')
+                    ->searchable()
                     ->limit(40)
-                    ->tooltip(fn ($state) => $state),
+                    ->tooltip(fn ($state) => $state)
+                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('entries_count')
+                    ->label('Baris')
+                    ->counts('entries')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('entries_sum_debit')
                     ->sum('entries', 'debit')
                     ->label('Total')
-                    ->money('IDR'),
+                    ->money('IDR')
+                    ->alignEnd()
+                    ->fontFamily('mono')
+                    ->weight('medium'),
                 Tables\Columns\TextColumn::make('status')
+                    ->label('Status')
                     ->badge()
-                    ->color(fn (string $state) => self::STATUS_COLORS[$state] ?? 'gray'),
+                    ->icon(fn (string $state) => match ($state) {
+                        Journal::STATUS_DRAFT => 'heroicon-o-pencil',
+                        Journal::STATUS_POSTED => 'heroicon-o-check-circle',
+                        Journal::STATUS_REVERSED => 'heroicon-o-arrow-uturn-left',
+                        default => null,
+                    })
+                    ->color(fn (string $state) => self::STATUS_COLORS[$state] ?? 'gray')
+                    ->formatStateUsing(fn (string $state) => match ($state) {
+                        Journal::STATUS_DRAFT => 'Draft',
+                        Journal::STATUS_POSTED => 'Posted',
+                        Journal::STATUS_REVERSED => 'Reversed',
+                        default => $state,
+                    }),
                 Tables\Columns\TextColumn::make('posted_at')
+                    ->label('Diposting')
                     ->dateTime('d M Y H:i')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -541,7 +597,7 @@ class JournalResource extends Resource
                         }
 
                         return $r->source_id
-                            ? $r->source_app.' · '.\Illuminate\Support\Str::limit($r->source_id, 16)
+                            ? $r->source_app.' · '.Str::limit($r->source_id, 16)
                             : $r->source_app;
                     })
                     ->url(function (Journal $r) {
@@ -554,55 +610,308 @@ class JournalResource extends Resource
                         }
 
                         return strtr($template, [
-                            '{entity}'    => $r->entity_id,
+                            '{entity}' => $r->entity_id,
                             '{source_id}' => urlencode((string) $r->source_id),
                         ]);
                     }, shouldOpenInNewTab: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('status')->options([
-                    Journal::STATUS_DRAFT => 'Draft',
-                    Journal::STATUS_POSTED => 'Posted',
-                    Journal::STATUS_REVERSED => 'Reversed',
-                ]),
-                Tables\Filters\SelectFilter::make('type')->options(self::TYPES),
-            ])
-            ->actions([
-                Tables\Actions\EditAction::make()
-                    ->visible(fn (Journal $r) => $r->status === Journal::STATUS_DRAFT),
-                Tables\Actions\Action::make('post')
-                    ->label('Post')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->requiresConfirmation()
-                    ->visible(fn (Journal $r) => $r->status === Journal::STATUS_DRAFT)
-                    ->action(function (Journal $r) {
-                        try {
-                            app(PostJournalAction::class)->execute($r, auth()->user());
-                            Notification::make()->title('Journal posted.')->success()->send();
-                        } catch (Throwable $e) {
-                            Notification::make()->title('Gagal post jurnal')->body($e->getMessage())->danger()->send();
-                        }
-                    }),
-                Tables\Actions\Action::make('reverse')
-                    ->label('Reverse')
-                    ->icon('heroicon-o-arrow-uturn-left')
-                    ->color('warning')
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Status')
+                    ->multiple()
+                    ->options([
+                        Journal::STATUS_DRAFT => 'Draft',
+                        Journal::STATUS_POSTED => 'Posted',
+                        Journal::STATUS_REVERSED => 'Reversed',
+                    ]),
+                Tables\Filters\SelectFilter::make('type')
+                    ->label('Jenis')
+                    ->multiple()
+                    ->options(self::TYPES),
+                Tables\Filters\SelectFilter::make('period_id')
+                    ->label('Periode')
+                    ->relationship('period', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\Filter::make('date_range')
+                    ->label('Rentang Tanggal')
                     ->form([
-                        Forms\Components\Textarea::make('reason')->required()->rows(2),
+                        Forms\Components\DatePicker::make('from')
+                            ->label('Dari')
+                            ->native(false)
+                            ->displayFormat('d M Y'),
+                        Forms\Components\DatePicker::make('until')
+                            ->label('Sampai')
+                            ->native(false)
+                            ->displayFormat('d M Y'),
                     ])
-                    ->requiresConfirmation()
-                    ->visible(fn (Journal $r) => $r->status === Journal::STATUS_POSTED)
-                    ->action(function (Journal $r, array $data) {
-                        try {
-                            app(ReverseJournalAction::class)->execute($r, auth()->user(), $data['reason'] ?? null);
-                            Notification::make()->title('Journal reversed.')->success()->send();
-                        } catch (Throwable $e) {
-                            Notification::make()->title('Gagal reverse jurnal')->body($e->getMessage())->danger()->send();
+                    ->query(fn (Builder $query, array $data) => $query
+                        ->when($data['from'] ?? null, fn ($q, $d) => $q->whereDate('date', '>=', $d))
+                        ->when($data['until'] ?? null, fn ($q, $d) => $q->whereDate('date', '<=', $d))
+                    )
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['from'] ?? null) {
+                            $indicators[] = 'Dari '.Carbon::parse($data['from'])->format('d M Y');
                         }
+                        if ($data['until'] ?? null) {
+                            $indicators[] = 'Sampai '.Carbon::parse($data['until'])->format('d M Y');
+                        }
+
+                        return $indicators;
                     }),
+                Tables\Filters\TernaryFilter::make('has_attachments')
+                    ->label('Lampiran')
+                    ->placeholder('Semua')
+                    ->trueLabel('Dengan lampiran')
+                    ->falseLabel('Tanpa lampiran')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereHas('attachments'),
+                        false: fn (Builder $query) => $query->whereDoesntHave('attachments'),
+                        blank: fn (Builder $query) => $query,
+                    ),
             ])
-            ->bulkActions([]);
+            ->filtersFormColumns(2)
+            ->actions([
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Lihat Baris')
+                        ->icon('heroicon-o-eye')
+                        ->slideOver()
+                        ->modalHeading(fn (Journal $r) => 'Jurnal '.($r->number ?? '—'))
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Tutup'),
+                    Tables\Actions\EditAction::make()
+                        ->visible(fn (Journal $r) => $r->status === Journal::STATUS_DRAFT),
+                    Tables\Actions\Action::make('post')
+                        ->label('Post')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->visible(fn (Journal $r) => $r->status === Journal::STATUS_DRAFT)
+                        ->action(function (Journal $r) {
+                            try {
+                                app(PostJournalAction::class)->execute($r, auth()->user());
+                                Notification::make()->title('Journal posted.')->success()->send();
+                            } catch (Throwable $e) {
+                                Notification::make()->title('Gagal post jurnal')->body($e->getMessage())->danger()->send();
+                            }
+                        }),
+                    Tables\Actions\Action::make('reverse')
+                        ->label('Reverse')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('warning')
+                        ->form([
+                            Forms\Components\Textarea::make('reason')->required()->rows(2),
+                        ])
+                        ->requiresConfirmation()
+                        ->visible(fn (Journal $r) => $r->status === Journal::STATUS_POSTED)
+                        ->action(function (Journal $r, array $data) {
+                            try {
+                                app(ReverseJournalAction::class)->execute($r, auth()->user(), $data['reason'] ?? null);
+                                Notification::make()->title('Journal reversed.')->success()->send();
+                            } catch (Throwable $e) {
+                                Notification::make()->title('Gagal reverse jurnal')->body($e->getMessage())->danger()->send();
+                            }
+                        }),
+                    Tables\Actions\Action::make('replicate')
+                        ->label('Duplikasi sebagai Draft')
+                        ->icon('heroicon-o-document-duplicate')
+                        ->color('gray')
+                        ->requiresConfirmation()
+                        ->action(function (Journal $r) {
+                            try {
+                                $clone = $r->replicate([
+                                    'number',
+                                    'status',
+                                    'posted_at',
+                                    'posted_by',
+                                    'reversed_by_journal_id',
+                                    'idempotency_key',
+                                ]);
+                                $clone->status = Journal::STATUS_DRAFT;
+                                $clone->date = now()->toDateString();
+                                $clone->created_by = auth()->id();
+                                $clone->source_app = 'accounting';
+                                $clone->source_id = null;
+                                $clone->save();
+
+                                foreach ($r->entries as $entry) {
+                                    $newEntry = $entry->replicate();
+                                    $newEntry->journal_id = $clone->id;
+                                    $newEntry->save();
+                                }
+
+                                Notification::make()
+                                    ->title('Jurnal diduplikasi sebagai draft baru')
+                                    ->body($clone->id)
+                                    ->success()
+                                    ->send();
+                            } catch (Throwable $e) {
+                                Notification::make()->title('Gagal duplikasi jurnal')->body($e->getMessage())->danger()->send();
+                            }
+                        }),
+                ])
+                    ->label('Aksi')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->size('sm')
+                    ->color('gray')
+                    ->button(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('post')
+                        ->label('Post Draft Terpilih')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalDescription('Hanya jurnal berstatus draft yang akan diposting.')
+                        ->action(function ($records) {
+                            $posted = 0;
+                            $failed = 0;
+                            foreach ($records as $r) {
+                                if ($r->status !== Journal::STATUS_DRAFT) {
+                                    continue;
+                                }
+                                try {
+                                    app(PostJournalAction::class)->execute($r, auth()->user());
+                                    $posted++;
+                                } catch (Throwable) {
+                                    $failed++;
+                                }
+                            }
+                            Notification::make()
+                                ->title('Bulk post selesai')
+                                ->body("Berhasil: {$posted}".($failed ? "  ·  Gagal: {$failed}" : ''))
+                                ->{$failed ? 'warning' : 'success'}()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Hapus Draft Terpilih')
+                        ->modalDescription('Hanya jurnal berstatus draft yang dapat dihapus. Lainnya dilewati.')
+                        ->before(function ($records, Tables\Actions\DeleteBulkAction $action) {
+                            $drafts = $records->filter(fn (Journal $r) => $r->status === Journal::STATUS_DRAFT);
+                            if ($drafts->isEmpty()) {
+                                Notification::make()->title('Tidak ada draft untuk dihapus')->warning()->send();
+                                $action->cancel();
+                            }
+                        })
+                        ->action(function ($records) {
+                            $deleted = 0;
+                            foreach ($records as $r) {
+                                if ($r->status === Journal::STATUS_DRAFT) {
+                                    $r->delete();
+                                    $deleted++;
+                                }
+                            }
+                            Notification::make()->title("{$deleted} draft dihapus")->success()->send();
+                        }),
+                ]),
+            ])
+            ->emptyStateIcon('heroicon-o-document-text')
+            ->emptyStateHeading('Belum ada jurnal')
+            ->emptyStateDescription('Mulai catat transaksi pertama untuk entitas ini.')
+            ->emptyStateActions([
+                Tables\Actions\CreateAction::make()
+                    ->label('Buat Jurnal Pertama')
+                    ->icon('heroicon-o-plus'),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make()
+                    ->columns(4)
+                    ->schema([
+                        Infolists\Components\TextEntry::make('number')
+                            ->label('No. Jurnal')
+                            ->fontFamily('mono')
+                            ->weight('medium')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('date')
+                            ->label('Tanggal')
+                            ->date('d M Y'),
+                        Infolists\Components\TextEntry::make('type')
+                            ->label('Jenis')
+                            ->badge()
+                            ->formatStateUsing(fn (string $state) => self::TYPES[$state] ?? $state),
+                        Infolists\Components\TextEntry::make('status')
+                            ->label('Status')
+                            ->badge()
+                            ->color(fn (string $state) => self::STATUS_COLORS[$state] ?? 'gray')
+                            ->formatStateUsing(fn (string $state) => ucfirst($state)),
+                        Infolists\Components\TextEntry::make('period.name')
+                            ->label('Periode')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('reference')
+                            ->label('Referensi')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('memo')
+                            ->label('Keterangan')
+                            ->columnSpan(2)
+                            ->placeholder('—'),
+                    ]),
+                Infolists\Components\Section::make('Baris Jurnal')
+                    ->schema([
+                        Infolists\Components\RepeatableEntry::make('entries')
+                            ->hiddenLabel()
+                            ->columns(12)
+                            ->schema([
+                                Infolists\Components\TextEntry::make('account.code')
+                                    ->label('Kode')
+                                    ->fontFamily('mono')
+                                    ->columnSpan(2),
+                                Infolists\Components\TextEntry::make('account.name')
+                                    ->label('Akun')
+                                    ->columnSpan(4),
+                                Infolists\Components\TextEntry::make('memo')
+                                    ->label('Catatan')
+                                    ->placeholder('—')
+                                    ->columnSpan(2),
+                                Infolists\Components\TextEntry::make('debit')
+                                    ->label('Debit')
+                                    ->money('IDR')
+                                    ->alignEnd()
+                                    ->fontFamily('mono')
+                                    ->columnSpan(2),
+                                Infolists\Components\TextEntry::make('credit')
+                                    ->label('Kredit')
+                                    ->money('IDR')
+                                    ->alignEnd()
+                                    ->fontFamily('mono')
+                                    ->columnSpan(2),
+                            ]),
+                    ]),
+                Infolists\Components\Section::make('Audit')
+                    ->columns(3)
+                    ->collapsed()
+                    ->schema([
+                        Infolists\Components\TextEntry::make('createdBy.name')
+                            ->label('Dibuat oleh')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('created_at')
+                            ->label('Dibuat')
+                            ->dateTime('d M Y H:i')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('postedBy.name')
+                            ->label('Diposting oleh')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('posted_at')
+                            ->label('Diposting')
+                            ->dateTime('d M Y H:i')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('source_app')
+                            ->label('Sumber')
+                            ->placeholder('—'),
+                        Infolists\Components\TextEntry::make('source_id')
+                            ->label('Source ID')
+                            ->fontFamily('mono')
+                            ->placeholder('—'),
+                    ]),
+            ]);
     }
 
     public static function getRelations(): array
