@@ -57,7 +57,7 @@ class Dashboard extends BaseDashboard
                     ->label('Penjualan')
                     ->icon('heroicon-o-shopping-cart')
                     ->color('success')
-                    ->url(fn () => $newAt('sales')),
+                    ->url(fn () => SalesEntry::getUrl(tenant: Filament::getTenant())),
                 Action::make('newJournalPurchase')
                     ->label('Pembelian')
                     ->icon('heroicon-o-truck')
