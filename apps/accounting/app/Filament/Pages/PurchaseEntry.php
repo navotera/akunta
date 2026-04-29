@@ -2,7 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Actions\RecordSalesAction;
+use App\Actions\RecordPurchaseAction;
 use App\Filament\Resources\JournalResource;
 use App\Models\Account;
 use App\Models\Partner;
@@ -16,20 +16,19 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
 use Filament\Support\RawJs;
-use Illuminate\Support\HtmlString;
 use Throwable;
 
-class SalesEntry extends Page implements HasForms
+class PurchaseEntry extends Page implements HasForms
 {
     use InteractsWithForms;
 
     protected static bool $shouldRegisterNavigation = false;
 
-    protected static string $view = 'filament.pages.sales-entry';
+    protected static string $view = 'filament.pages.purchase-entry';
 
-    protected static ?string $title = 'Penjualan Baru';
+    protected static ?string $title = 'Pembelian Baru';
 
-    protected static ?string $slug = 'penjualan/baru';
+    protected static ?string $slug = 'pembelian/baru';
 
     public ?array $data = [];
 
@@ -40,7 +39,7 @@ class SalesEntry extends Page implements HasForms
 
     public function getSubheading(): ?string
     {
-        return 'Catat transaksi penjualan secara cepat. Jurnal double-entry tercatat otomatis.';
+        return 'Catat transaksi pembelian secara cepat. Jurnal double-entry tercatat otomatis.';
     }
 
     public function mount(): void
@@ -51,13 +50,13 @@ class SalesEntry extends Page implements HasForms
         $defaultTaxCode = $entityId
             ? TaxCode::query()
                 ->where('entity_id', $entityId)
-                ->where('kind', TaxCode::KIND_OUTPUT_VAT)
+                ->where('kind', TaxCode::KIND_INPUT_VAT)
                 ->where('is_active', true)
                 ->orderBy('code')
                 ->first()
             : null;
 
-        $defaultTarget = $entityId
+        $defaultPayment = $entityId
             ? Account::query()
                 ->where('entity_id', $entityId)
                 ->where('is_postable', true)
@@ -70,20 +69,25 @@ class SalesEntry extends Page implements HasForms
                 ->value('id')
             : null;
 
-        $defaultRevenue = $entityId
+        $defaultPurchase = $entityId
             ? Account::query()
                 ->where('entity_id', $entityId)
                 ->where('is_postable', true)
                 ->where('is_active', true)
-                ->where('type', 'revenue')
+                ->whereIn('type', ['expense', 'asset'])
+                ->where(function ($q) {
+                    $q->where('name', 'like', 'Persediaan%')
+                        ->orWhere('name', 'like', 'Beban%')
+                        ->orWhere('name', 'like', 'Pembelian%');
+                })
                 ->orderBy('code')
                 ->value('id')
             : null;
 
         $this->form->fill([
             'date' => now()->toDateString(),
-            'target_account_id' => $defaultTarget,
-            'revenue_account_id' => $defaultRevenue,
+            'purchase_account_id' => $defaultPurchase,
+            'payment_account_id' => $defaultPayment,
             'tax_code_id' => $defaultTaxCode?->id,
             'with_tax' => $defaultTaxCode !== null,
             'subtotal' => 0,
@@ -98,7 +102,7 @@ class SalesEntry extends Page implements HasForms
         $moneyMask = RawJs::make("\$money(\$input, ',', '.', 0)");
 
         return [
-            Forms\Components\Tabs::make('SalesEntryTabs')
+            Forms\Components\Tabs::make('PurchaseEntryTabs')
                 ->vertical()
                 ->contained(false)
                 ->tabs([
@@ -114,21 +118,21 @@ class SalesEntry extends Page implements HasForms
                                 ->columnSpan(['default' => 12, 'md' => 4]),
 
                             Forms\Components\Select::make('partner_id')
-                                ->label('Pelanggan')
-                                ->placeholder('Tunai (tanpa pelanggan)')
+                                ->label('Vendor / Pemasok')
+                                ->placeholder('Tunai (tanpa vendor)')
                                 ->searchable()
                                 ->preload()
                                 ->native(false)
                                 ->options(fn () => $entityId ? Partner::query()
                                     ->where('entity_id', $entityId)
-                                    ->where('type', Partner::TYPE_CUSTOMER)
+                                    ->where('type', Partner::TYPE_VENDOR)
                                     ->orderBy('name')
                                     ->pluck('name', 'id')
                                     ->all() : [])
                                 ->columnSpan(['default' => 12, 'md' => 5]),
 
                             Forms\Components\TextInput::make('reference')
-                                ->label('No. Invoice')
+                                ->label('No. Faktur')
                                 ->maxLength(120)
                                 ->placeholder('opsional')
                                 ->columnSpan(['default' => 12, 'md' => 3]),
@@ -144,8 +148,8 @@ class SalesEntry extends Page implements HasForms
                         ->icon('heroicon-o-banknotes')
                         ->columns(12)
                         ->schema([
-                            Forms\Components\Select::make('target_account_id')
-                                ->label('Diterima Di')
+                            Forms\Components\Select::make('purchase_account_id')
+                                ->label('Akun Pembelian')
                                 ->required()
                                 ->searchable()
                                 ->preload()
@@ -154,16 +158,16 @@ class SalesEntry extends Page implements HasForms
                                     ->where('entity_id', $entityId)
                                     ->where('is_postable', true)
                                     ->where('is_active', true)
-                                    ->where('type', 'asset')
+                                    ->whereIn('type', ['expense', 'asset'])
                                     ->orderBy('code')
                                     ->get()
                                     ->mapWithKeys(fn (Account $a) => [$a->id => "{$a->code} — {$a->name}"])
                                     ->all() : [])
-                                ->helperText('Kas, Bank, atau Piutang Usaha.')
+                                ->helperText('Persediaan, Beban, atau Aset (di-debit).')
                                 ->columnSpan(['default' => 12, 'md' => 6]),
 
-                            Forms\Components\Select::make('revenue_account_id')
-                                ->label('Akun Pendapatan')
+                            Forms\Components\Select::make('payment_account_id')
+                                ->label('Dibayar Dari / Hutang')
                                 ->required()
                                 ->searchable()
                                 ->preload()
@@ -172,11 +176,12 @@ class SalesEntry extends Page implements HasForms
                                     ->where('entity_id', $entityId)
                                     ->where('is_postable', true)
                                     ->where('is_active', true)
-                                    ->where('type', 'revenue')
+                                    ->whereIn('type', ['asset', 'liability'])
                                     ->orderBy('code')
                                     ->get()
                                     ->mapWithKeys(fn (Account $a) => [$a->id => "{$a->code} — {$a->name}"])
                                     ->all() : [])
+                                ->helperText('Kas/Bank (cash) atau Hutang Usaha (kredit).')
                                 ->columnSpan(['default' => 12, 'md' => 6]),
 
                             Forms\Components\TextInput::make('subtotal')
@@ -193,7 +198,7 @@ class SalesEntry extends Page implements HasForms
                                 ->columnSpan(['default' => 12, 'md' => 6]),
 
                             Forms\Components\Toggle::make('with_tax')
-                                ->label('Kena PPN Keluaran')
+                                ->label('Kena PPN Masukan')
                                 ->live()
                                 ->columnSpan(['default' => 6, 'md' => 3]),
 
@@ -204,7 +209,7 @@ class SalesEntry extends Page implements HasForms
                                 ->native(false)
                                 ->options(fn () => $entityId ? TaxCode::query()
                                     ->where('entity_id', $entityId)
-                                    ->where('kind', TaxCode::KIND_OUTPUT_VAT)
+                                    ->where('kind', TaxCode::KIND_INPUT_VAT)
                                     ->where('is_active', true)
                                     ->orderBy('code')
                                     ->get()
@@ -217,7 +222,7 @@ class SalesEntry extends Page implements HasForms
                             Forms\Components\Placeholder::make('preview')
                                 ->hiddenLabel()
                                 ->columnSpan(12)
-                                ->content(fn (Get $get) => self::previewBlock($get, $entityId, TaxCode::KIND_OUTPUT_VAT, 'PPN Keluaran')),
+                                ->content(fn (Get $get) => SalesEntry::previewBlock($get, $entityId, TaxCode::KIND_INPUT_VAT, 'PPN Masukan')),
                         ]),
 
                     Forms\Components\Tabs\Tab::make('Lampiran')
@@ -234,39 +239,10 @@ class SalesEntry extends Page implements HasForms
                                 ->reorderable()
                                 ->openable()
                                 ->downloadable()
-                                ->helperText('Faktur, surat jalan, kuitansi (maks 10 MB per file).'),
+                                ->helperText('Faktur pajak, surat jalan, kuitansi (maks 10 MB per file).'),
                         ]),
                 ]),
         ];
-    }
-
-    public static function previewBlock(Get $get, ?string $entityId, string $taxKind, string $taxLabel): HtmlString
-    {
-        $sub = (float) ($get('subtotal') ?? 0);
-        $taxAmt = 0.0;
-        $taxBadge = null;
-        if ($get('with_tax') && $get('tax_code_id') && $entityId) {
-            $tc = TaxCode::query()->where('entity_id', $entityId)->find($get('tax_code_id'));
-            if ($tc && $tc->kind === $taxKind) {
-                $taxAmt = (float) $tc->computeOn((string) $sub);
-                $taxBadge = "{$tc->code} · {$tc->rate}%";
-            }
-        }
-        $total = $sub + $taxAmt;
-        $fmt = fn ($n) => 'Rp '.number_format($n, 0, ',', '.');
-
-        return new HtmlString(
-            '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;padding:0.75rem 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;">'
-            .'<div><div style="font-size:0.7rem;letter-spacing:0.18em;text-transform:uppercase;color:#6B7280;">Subtotal</div>'
-            .'<div style="font-family:\'JetBrains Mono\',monospace;font-variant-numeric:tabular-nums;font-size:1rem;margin-top:0.2rem;">'.$fmt($sub).'</div></div>'
-            .'<div><div style="font-size:0.7rem;letter-spacing:0.18em;text-transform:uppercase;color:#6B7280;">'.e($taxLabel)
-            .($taxBadge ? ' <span style="font-weight:400;color:#9CA3AF;">· '.e($taxBadge).'</span>' : '')
-            .'</div>'
-            .'<div style="font-family:\'JetBrains Mono\',monospace;font-variant-numeric:tabular-nums;font-size:1rem;margin-top:0.2rem;">'.$fmt($taxAmt).'</div></div>'
-            .'<div><div style="font-size:0.7rem;letter-spacing:0.18em;text-transform:uppercase;color:#0D3B2E;font-weight:600;">Total</div>'
-            .'<div style="font-family:\'JetBrains Mono\',monospace;font-variant-numeric:tabular-nums;font-size:1.15rem;margin-top:0.2rem;font-weight:600;">'.$fmt($total).'</div></div>'
-            .'</div>'
-        );
     }
 
     protected function getFormStatePath(): ?string
@@ -285,11 +261,11 @@ class SalesEntry extends Page implements HasForms
         }
 
         try {
-            $journal = app(RecordSalesAction::class)->execute([
+            $journal = app(RecordPurchaseAction::class)->execute([
                 'entity_id' => $entity->id,
                 'date' => $state['date'],
-                'target_account_id' => $state['target_account_id'],
-                'revenue_account_id' => $state['revenue_account_id'],
+                'purchase_account_id' => $state['purchase_account_id'],
+                'payment_account_id' => $state['payment_account_id'],
                 'subtotal' => $state['subtotal'],
                 'tax_code_id' => ! empty($state['with_tax']) ? ($state['tax_code_id'] ?? null) : null,
                 'partner_id' => $state['partner_id'] ?? null,
@@ -300,7 +276,7 @@ class SalesEntry extends Page implements HasForms
             ]);
 
             Notification::make()
-                ->title('Penjualan tercatat')
+                ->title('Pembelian tercatat')
                 ->body('Jurnal '.$journal->number.' (draft) berhasil dibuat. Lanjut review & post.')
                 ->success()
                 ->send();
@@ -310,7 +286,7 @@ class SalesEntry extends Page implements HasForms
                 'tenant' => $entity,
             ]));
         } catch (Throwable $e) {
-            Notification::make()->title('Gagal mencatat penjualan')->body($e->getMessage())->danger()->send();
+            Notification::make()->title('Gagal mencatat pembelian')->body($e->getMessage())->danger()->send();
         }
     }
 

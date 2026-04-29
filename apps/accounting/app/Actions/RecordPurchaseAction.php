@@ -16,31 +16,28 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
- * Record a sales transaction as a balanced general journal.
+ * Record a purchase transaction as a balanced general journal.
  *
  * Builds in a single DB transaction:
- *   D  Akun Penerima (Kas/Bank/Piutang)   = subtotal + ppn
- *   C    Akun Pendapatan                  = subtotal
- *   C    Tax Account (PPN Keluaran)       = ppn       — only if tax_code chosen
- *
- * Returns the saved Journal (status = draft). Caller redirects to journal
- * edit/post screen. PPN computation uses TaxCode->computeOn() — same path as
- * the rest of the codebase, no rounding drift.
+ *   D  Akun Pembelian (Persediaan/Beban)    = subtotal
+ *   D  PPN Masukan (input_vat tax account)  = ppn        — only if tax_code chosen
+ *   C    Akun Pembayaran (Kas/Bank/Hutang)  = subtotal + ppn
  */
-class RecordSalesAction
+class RecordPurchaseAction
 {
     /**
      * @param  array{
      *   entity_id: string,
      *   date: string,
-     *   target_account_id: string,
-     *   revenue_account_id: string,
+     *   purchase_account_id: string,
+     *   payment_account_id: string,
      *   subtotal: numeric,
      *   tax_code_id?: ?string,
      *   partner_id?: ?string,
      *   reference?: ?string,
      *   memo?: ?string,
      *   created_by?: ?string,
+     *   attachments?: array<int, string>,
      * }  $input
      */
     public function execute(array $input): Journal
@@ -53,8 +50,8 @@ class RecordSalesAction
             throw new RuntimeException('Subtotal harus lebih besar dari 0.');
         }
 
-        $target = Account::query()->where('entity_id', $entityId)->where('id', $input['target_account_id'])->firstOrFail();
-        $revenue = Account::query()->where('entity_id', $entityId)->where('id', $input['revenue_account_id'])->firstOrFail();
+        $purchase = Account::query()->where('entity_id', $entityId)->where('id', $input['purchase_account_id'])->firstOrFail();
+        $payment = Account::query()->where('entity_id', $entityId)->where('id', $input['payment_account_id'])->firstOrFail();
 
         $taxCode = ! empty($input['tax_code_id'])
             ? TaxCode::query()->where('entity_id', $entityId)->where('id', $input['tax_code_id'])->where('is_active', true)->first()
@@ -74,7 +71,7 @@ class RecordSalesAction
             throw new RuntimeException('Tidak ada periode terbuka yang mencakup tanggal ini. Buka periode dulu.');
         }
 
-        return DB::transaction(function () use ($entityId, $date, $subtotal, $taxAmount, $total, $target, $revenue, $taxCode, $period, $input) {
+        return DB::transaction(function () use ($entityId, $date, $subtotal, $taxAmount, $total, $purchase, $payment, $taxCode, $period, $input) {
             $journal = Journal::create([
                 'entity_id' => $entityId,
                 'period_id' => $period->id,
@@ -94,21 +91,11 @@ class RecordSalesAction
             JournalEntry::create([
                 'journal_id' => $journal->id,
                 'line_no' => $lineNo++,
-                'account_id' => $target->id,
+                'account_id' => $purchase->id,
                 'partner_id' => $partnerId,
-                'debit' => $total,
+                'debit' => $subtotal,
                 'credit' => '0',
-                'memo' => $input['memo'] ?? 'Penerimaan penjualan',
-            ]);
-
-            JournalEntry::create([
-                'journal_id' => $journal->id,
-                'line_no' => $lineNo++,
-                'account_id' => $revenue->id,
-                'partner_id' => $partnerId,
-                'debit' => '0',
-                'credit' => $subtotal,
-                'memo' => $input['memo'] ?? 'Pendapatan penjualan',
+                'memo' => $input['memo'] ?? 'Pembelian',
             ]);
 
             if ($taxCode && bccomp($taxAmount, '0', 2) > 0 && $taxCode->tax_account_id) {
@@ -119,11 +106,21 @@ class RecordSalesAction
                     'partner_id' => $partnerId,
                     'tax_code_id' => $taxCode->id,
                     'tax_base' => $subtotal,
-                    'debit' => '0',
-                    'credit' => $taxAmount,
-                    'memo' => 'PPN Keluaran '.$taxCode->code,
+                    'debit' => $taxAmount,
+                    'credit' => '0',
+                    'memo' => 'PPN Masukan '.$taxCode->code,
                 ]);
             }
+
+            JournalEntry::create([
+                'journal_id' => $journal->id,
+                'line_no' => $lineNo++,
+                'account_id' => $payment->id,
+                'partner_id' => $partnerId,
+                'debit' => '0',
+                'credit' => $total,
+                'memo' => $input['memo'] ?? 'Pembayaran pembelian',
+            ]);
 
             $this->attachFiles($journal, $input['attachments'] ?? []);
 
@@ -132,16 +129,13 @@ class RecordSalesAction
     }
 
     /**
-     * Persist FileUpload-saved paths as Attachment records on the journal.
-     *
-     * @param  array<int, string>  $paths  paths returned by Filament FileUpload
+     * @param  array<int, string>  $paths
      */
     private function attachFiles(Journal $journal, array $paths): void
     {
         if (empty($paths)) {
             return;
         }
-
         $disk = config('filesystems.default');
         foreach ($paths as $path) {
             if (! is_string($path) || $path === '') {
@@ -153,9 +147,7 @@ class RecordSalesAction
                 $size = Storage::disk($disk)->size($path);
                 $mime = Storage::disk($disk)->mimeType($path);
             } catch (\Throwable) {
-                // disk may not support introspection — leave defaults
             }
-
             $journal->attachments()->create([
                 'entity_id' => $journal->entity_id,
                 'filename' => basename($path),
@@ -171,7 +163,7 @@ class RecordSalesAction
 
     private function nextNumber(string $entityId, string $date): string
     {
-        $prefix = 'JS-'.Carbon::parse($date)->format('Ym');
+        $prefix = 'JP-'.Carbon::parse($date)->format('Ym');
         $last = Journal::query()
             ->where('entity_id', $entityId)
             ->where('number', 'like', $prefix.'-%')
