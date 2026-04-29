@@ -34,6 +34,13 @@ class CreateJournal extends CreateRecord
             'memo' => 'Pembelian — ',
             'prefix' => 'JP',
         ],
+        'expense' => [
+            'title' => 'Jurnal Biaya',
+            'subheading' => 'Catat pengeluaran biaya operasional. Debit Beban, Kredit Kas/Bank/Hutang.',
+            'type' => Journal::TYPE_GENERAL,
+            'memo' => 'Biaya — ',
+            'prefix' => 'JB',
+        ],
         Journal::TYPE_GENERAL => [
             'title' => 'Jurnal Umum',
             'subheading' => 'Catat transaksi double-entry umum. Setiap baris akan terkunci saat di-post.',

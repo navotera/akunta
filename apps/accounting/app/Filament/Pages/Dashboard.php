@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Resources\JournalResource;
-use App\Models\Journal;
 use App\Models\Period;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -55,27 +54,22 @@ class Dashboard extends BaseDashboard
         return [
             ActionGroup::make([
                 Action::make('newJournalSales')
-                    ->label('Jurnal Penjualan')
+                    ->label('Penjualan')
                     ->icon('heroicon-o-shopping-cart')
                     ->color('success')
                     ->url(fn () => $newAt('sales')),
                 Action::make('newJournalPurchase')
-                    ->label('Jurnal Pembelian')
+                    ->label('Pembelian')
                     ->icon('heroicon-o-truck')
                     ->color('info')
                     ->url(fn () => $newAt('purchase')),
-                Action::make('newJournalGeneral')
-                    ->label('Jurnal Umum')
-                    ->icon('heroicon-o-document-plus')
-                    ->color('gray')
-                    ->url(fn () => $newAt(Journal::TYPE_GENERAL)),
-                Action::make('newJournalAdjustment')
-                    ->label('Jurnal Penyesuaian')
-                    ->icon('heroicon-o-adjustments-horizontal')
+                Action::make('newJournalExpense')
+                    ->label('Biaya')
+                    ->icon('heroicon-o-banknotes')
                     ->color('warning')
-                    ->url(fn () => $newAt(Journal::TYPE_ADJUSTMENT)),
+                    ->url(fn () => $newAt('expense')),
             ])
-                ->label('+ Buat Jurnal')
+                ->label('New')
                 ->icon('heroicon-m-plus')
                 ->button()
                 ->color('primary'),
