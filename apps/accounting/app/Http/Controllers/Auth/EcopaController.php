@@ -90,7 +90,19 @@ class EcopaController extends EcopaAuthController
 
     protected function successRedirect(): string
     {
-        return \App\Filament\Pages\Dashboard::getUrl(panel: 'accounting');
+        $panel  = Filament::getPanel('accounting');
+        $user   = Auth::guard('web')->user();
+        $tenant = ($user && method_exists($user, 'getDefaultTenant'))
+            ? $user->getDefaultTenant($panel)
+            : null;
+
+        if ($tenant === null) {
+            // User authenticated but has no entity assigned. Bounce to root —
+            // RedirectGuestToEcopa won't loop because user IS authenticated.
+            return url('/');
+        }
+
+        return \App\Filament\Pages\Dashboard::getUrl(panel: 'accounting', tenant: $tenant);
     }
 
     protected function failureRedirect(): string

@@ -156,8 +156,12 @@ class AccountingPanelProvider extends PanelProvider
                 NavigationGroup::make('Operasional')->collapsible(false),
                 NavigationGroup::make('Laporan')->collapsible(false),
                 NavigationGroup::make('Master Data')->collapsible(true),
-                NavigationGroup::make('Pengaturan')->collapsible(true),
-                NavigationGroup::make('API')->collapsible(true),
+                // "Pengaturan" placed last + pushed to the right via .ms-auto class
+                // (top-nav layout). API resources/pages now live under Pengaturan
+                // group, so no separate API top-level group anymore.
+                NavigationGroup::make('Pengaturan')
+                    ->collapsible(true)
+                    ->extraTopbarAttributes(['class' => 'ms-auto']),
             ])
             ->tenant(Entity::class)
             ->tenantMenuItems([])

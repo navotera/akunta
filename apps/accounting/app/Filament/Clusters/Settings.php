@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Filament\Clusters;
 
-use App\Filament\Clusters\Settings\Pages\Cron;
-use App\Filament\Pages\Onboarding\CoaTemplate;
 use Filament\Clusters\Cluster;
 use Filament\Pages\SubNavigationPosition;
 
@@ -25,10 +23,6 @@ class Settings extends Cluster
 
     protected static ?int $navigationSort = 99;
 
+    /** Sub-nav rendered as vertical sidebar at the start (left). */
     protected static SubNavigationPosition $subNavigationPosition = SubNavigationPosition::Start;
-
-    public static function canAccess(): bool
-    {
-        return CoaTemplate::canAccess() || Cron::canAccess();
-    }
 }

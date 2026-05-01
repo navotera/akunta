@@ -18,9 +18,11 @@ class ApiTokenResource extends Resource
 
     protected static ?string $activeNavigationIcon = 'heroicon-s-key';
 
-    protected static ?string $navigationGroup = 'API';
+    protected static ?string $cluster = \App\Filament\Clusters\Settings::class;
 
-    protected static ?string $navigationLabel = 'Teknis';
+    protected static ?string $navigationLabel = 'Tokens';
+
+    protected static ?string $navigationGroup = 'API';
 
     protected static ?int $navigationSort = 10;
 

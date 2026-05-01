@@ -40,7 +40,27 @@
       "Bash(curl *)",
       "Bash(grep -n '\\\\$q\\\\|->relationship\\\\|Select::make' /Users/hendra/akunta/apps/accounting/app/Filament/Resources/JournalResource.php)",
       "Bash(grep -rn 'modifyQueryUsing.*$q\\\\b\\\\|modifyQueryUsing.*fn \\($q\\\\|getOptionLabel.*$q\\\\|->where.*$q\\\\b' /Users/hendra/akunta/apps/accounting/app/Filament/)",
-      "Bash(grep -v '$query')"
+      "Bash(grep -v '$query')",
+      "Bash(php -r 'require '\\\\''vendor/autoload.php'\\\\''; $app = require '\\\\''bootstrap/app.php'\\\\''; $app->make\\('\\\\''Illuminate\\\\Contracts\\\\Console\\\\Kernel'\\\\''\\)->bootstrap\\(\\); echo class_exists\\('\\\\''App\\\\Filament\\\\Resources\\\\JournalResource'\\\\''\\) ? '\\\\''JournalResource OK'\\\\'' : '\\\\''FAIL'\\\\''; echo PHP_EOL; echo class_exists\\('\\\\''App\\\\Filament\\\\Resources\\\\JournalResource\\\\Pages\\\\EditJournal'\\\\''\\) ? '\\\\''EditJournal OK'\\\\'' : '\\\\''FAIL'\\\\''; echo PHP_EOL; echo class_exists\\('\\\\''App\\\\Filament\\\\Resources\\\\JournalResource\\\\Pages\\\\ListJournals'\\\\''\\) ? '\\\\''ListJournals OK'\\\\'' : '\\\\''FAIL'\\\\''; echo PHP_EOL;')",
+      "Bash(./vendor/bin/pest --filter=Journal)",
+      "Bash(./vendor/bin/pest)",
+      "Bash(./vendor/bin/pint app/Filament/Resources/JournalResource.php app/Filament/Resources/JournalResource/Pages/EditJournal.php)",
+      "Bash(php *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(composer show *)",
+      "Bash(./vendor/bin/pest tests/Feature/Reports/)",
+      "Bash(./vendor/bin/pint app/Filament/Pages/TrialBalance.php app/Filament/Pages/BalanceSheet.php app/Filament/Pages/IncomeStatement.php app/Filament/Pages/GeneralLedger.php app/Services/Reporting/Export/XlsxExporter.php)",
+      "Bash(./vendor/bin/pint app/Services/Reporting/Export/XlsxExporter.php app/Services/Reporting/ComparativeReportService.php)",
+      "Bash(./vendor/bin/pint app/Filament/Resources/UserResource.php app/Filament/Resources/UserResource/ app/Filament/Resources/RoleResource.php app/Filament/Resources/RoleResource/ app/Filament/Resources/AuditLogResource.php app/Filament/Resources/AuditLogResource/ app/Providers/Filament/AccountingPanelProvider.php)",
+      "Bash(../../apps/accounting/vendor/bin/pint src/Models/User.php)",
+      "Bash(../../apps/accounting/vendor/bin/pint src/Models/AuditLog.php)",
+      "Bash(composer dump-autoload *)",
+      "Bash(./vendor/bin/pint app/Filament/Pages/Dashboard.php app/Filament/Resources/JournalResource/Pages/CreateJournal.php app/Providers/Filament/AccountingPanelProvider.php)",
+      "Bash(git commit *)",
+      "Bash(./vendor/bin/pint app/Filament/Pages/SalesEntry.php app/Filament/Pages/Dashboard.php app/Actions/RecordSalesAction.php)",
+      "Bash(./vendor/bin/pint app/Filament/Pages/SalesEntry.php app/Filament/Pages/PurchaseEntry.php app/Actions/RecordSalesAction.php app/Actions/RecordPurchaseAction.php app/Filament/Pages/Dashboard.php)",
+      "Bash(npm run *)"
     ]
   }
 }

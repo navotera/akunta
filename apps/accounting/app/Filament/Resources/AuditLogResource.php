@@ -22,7 +22,7 @@ class AuditLogResource extends Resource
 
     protected static ?string $activeNavigationIcon = 'heroicon-s-clock';
 
-    protected static ?string $navigationGroup = 'Pengaturan';
+    protected static ?string $cluster = \App\Filament\Clusters\Settings::class;
 
     protected static ?string $navigationLabel = 'Aktivitas';
 

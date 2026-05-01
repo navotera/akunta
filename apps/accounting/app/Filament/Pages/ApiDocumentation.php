@@ -10,9 +10,11 @@ class ApiDocumentation extends Page
 
     protected static ?string $activeNavigationIcon = 'heroicon-s-book-open';
 
-    protected static ?string $navigationGroup = 'API';
+    protected static ?string $cluster = \App\Filament\Clusters\Settings::class;
 
     protected static ?string $navigationLabel = 'Dokumentasi';
+
+    protected static ?string $navigationGroup = 'API';
 
     protected static ?string $title = 'Dokumentasi API';
 

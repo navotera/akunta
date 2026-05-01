@@ -1042,3 +1042,61 @@ Pending (deferred):
 - Webhook receiver in client apps for Ecopa user-lifecycle events (disable/role-change). For now, client apps poll `/api/user/{id}` on each login.
 - Apps-catalog integration on Ecopa side: list which Akunta apps a given user can access (already partially modeled via `Website` + `Division`).
 - Replace per-app Google socialite once Ecopa SSO is the dominant path. Keep Google as fallback during transition.
+
+## Locked 2026-04-30 — Jurnal Khusus: Resource per type (opsi B)
+
+**Context:** UMKM Indonesia pakai SAK-ETAP — terbiasa dgn Jurnal Penjualan / Pembelian / Penerimaan Kas / Pengeluaran Kas terpisah dari Jurnal Umum. Akunta v0.6 spec §8 awalnya cuma punya General/Adjustment/Closing. Non-akuntan tidak fluent debit/kredit → butuh wizard preset.
+
+**Two opsi dipertimbangkan:**
+
+| | Opsi A — Single Resource + tab filter | Opsi B — Resource per type |
+|---|---|---|
+| Footprint | Light (1 Resource extend) | 4 Resource baru |
+| Permission granularity | Per ability tab (kompleks) | Per Resource (Filament-native) |
+| Navigation | 1 menu w/ tabs | 4 menu items, clear |
+| Number sequence | Bercabang dlm 1 controller | Per Resource (clean) |
+| Form wizard | Switch by type field | Per Resource (clean) |
+| Risk | Permission bug, UX confusion | More boilerplate |
+
+**Decision:** Opsi B — 4 Resource baru sharing single `Journal` model + `journal_entries` table (preserve double-entry single source of truth). Discriminator via `type` column.
+
+**Why opsi B:**
+1. Permission per role (sales clerk hanya akses `SalesJournalResource`) trivial via Filament policy
+2. Number sequence per type (JS / JP / JKM / JKK) clean — counter per (entity, type, year-month)
+3. Nav group "Operasional" jelas — user lihat menu langsung tahu jenis transaksi
+4. Wizard form per type tidak campur — mengurangi konsumsi mental
+5. Tabel scope `where('type', X)` cheap, indexed
+
+**Why bukan tabel terpisah per jenis:** Memecah `journals` table = break double-entry guarantees yang sudah dibangun (DB-level balance constraint, immutable post-posting, period lock). Reporting cross-type (Trial Balance, Buku Besar) jadi UNION mahal. Single table + discriminator = idiomatik (STI / discriminator pattern).
+
+**Type constants tambahan:**
+- `Journal::TYPE_SALES = 'sales'`
+- `Journal::TYPE_PURCHASE = 'purchase'`
+- `Journal::TYPE_CASH_RECEIPT = 'cash_receipt'`
+- `Journal::TYPE_CASH_DISBURSEMENT = 'cash_disbursement'`
+
+**Migration footprint (12c-i):**
+- `journals.partner_id` (FK → partners.id, nullable; wajib utk sales/purchase via app validation, bukan DB constraint)
+- `journals.business_total` (numeric(20,2), nullable; gross sebelum tax — utk reporting)
+- `journal_templates.applies_to_type` (varchar nullable; null = template type-agnostic)
+- Extend `type` enum constraint utk 4 value baru
+
+**Phasing locked:**
+- 12c-i — Sales + Purchase (foundation AR/AP)
+- 12c-ii — Cash Receipt + Cash Disbursement
+- 12c-iii — Buku Pembantu Piutang/Hutang + Register PPN reports
+- 12c-iv — Template per-type + recurring per-type
+
+**Pending (12c-i):**
+- Migration + model TYPE constants + partner relation
+- 2 Action class (PostSalesJournalAction, PostPurchaseJournalAction)
+- 2 Filament Resource w/ Stepper wizard
+- `JournalNumberGenerator` service (atomic via row lock)
+- Pest tests: balance enforced, period lock honored, tax auto-inject correct, partner mandatory
+
+**Out of scope this lock:**
+- Inventory tracking di Sales/Purchase (deferred ke v2 Inventory app)
+- Multi-currency Sales/Purchase (deferred — v1 IDR only per spec §8)
+- Approval workflow per jurnal khusus (deferred — pakai existing draft → posted flow)
+
+**References:** spec §8.6, architecture §4.4.

@@ -22,7 +22,7 @@ class RoleResource extends Resource
 
     protected static ?string $activeNavigationIcon = 'heroicon-s-shield-check';
 
-    protected static ?string $navigationGroup = 'Pengaturan';
+    protected static ?string $cluster = \App\Filament\Clusters\Settings::class;
 
     protected static ?string $navigationLabel = 'Peran';
 

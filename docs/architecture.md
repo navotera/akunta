@@ -302,8 +302,9 @@ journals
 ├── id (PK, ulid)
 ├── entity_id (FK)
 ├── period_id (FK)
-├── type ('general'|'adjustment'|'closing'|'reversing'|'opening')
-├── number (auto, per entity+period)
+├── type ('general'|'adjustment'|'closing'|'reversing'|'opening'
+│        |'sales'|'purchase'|'cash_receipt'|'cash_disbursement')   -- 4 type khusus added 2026-04-30
+├── number (auto, per entity+period+type — number sequence per type)
 ├── date
 ├── reference (nullable)
 ├── memo
@@ -314,9 +315,11 @@ journals
 ├── posted_at (nullable)
 ├── posted_by (FK → users.id, nullable)
 ├── reversed_by_journal_id (FK self-ref, nullable)
+├── partner_id (FK → partners.id, nullable — wajib utk sales/purchase)  -- NEW 12c-i
+├── business_total (decimal(20,2), nullable — gross sebelum tax, untuk reporting) -- NEW 12c-i
 ├── created_by (FK → users.id)
 ├── created_at, updated_at
-└── IDX (entity_id, period_id, date)
+└── IDX (entity_id, period_id, date), IDX (entity_id, type, date), IDX (partner_id)
 
 -- Journal line
 journal_entries
@@ -340,6 +343,7 @@ journal_templates
 ├── code (e.g. 'payroll.gaji_bulanan')
 ├── name
 ├── source_app (e.g. 'payroll')
+├── applies_to_type (nullable — Jurnal Khusus filter, e.g. 'sales'|'purchase'|null=any) -- NEW 12c-i
 ├── lines_template (JSON — debit/credit rules with variables)
 ├── is_active
 └── UQ (entity_id, code)
@@ -393,6 +397,76 @@ PostgreSQL instance
 └── tenant_02K...
     └── …
 ```
+
+### 4.4 Jurnal Khusus — Resource Layout (Step 12c, opsi B) [added 2026-04-30]
+
+**Decision:** Resource per type (4 baru) sharing single `Journal` model + `journal_entries` table. Reject opsi A (single Resource + tab) karena permission/nav/number-sequence kurang clear.
+
+**Filament Resources (apps/accounting/app/Filament/Resources/):**
+
+```
+Operasional (nav group):
+ ├── SalesJournalResource              → Journal where type='sales'
+ ├── PurchaseJournalResource           → Journal where type='purchase'
+ ├── CashReceiptJournalResource        → Journal where type='cash_receipt'
+ ├── CashDisbursementJournalResource   → Journal where type='cash_disbursement'
+ ├── JournalResource (existing)        → Journal where type IN ('general','adjustment','closing','reversing','opening')
+ ├── JournalTemplateResource (existing)
+ └── RecurringJournalResource (existing)
+```
+
+Tiap khusus-Resource:
+- `getEloquentQuery()` override → `parent::getEloquentQuery()->where('type', static::TYPE)`
+- `mutateFormDataBeforeCreate()` → inject `type` constant
+- Pages: List + Create wizard (Stepper) — no Edit (immutable post-posting; reverse via reversing journal)
+- Table: filter by status, period, partner, date range
+- Policy: per-type ability (`viewAnySales`, `createSales`, dst.) → granular role per RBAC
+
+**Action class (app/Actions/Journal/Special/):**
+
+```
+PostSalesJournalAction         input: SalesJournalDto  → Journal (posted)
+PostPurchaseJournalAction      input: PurchaseJournalDto
+PostCashReceiptJournalAction   input: CashReceiptDto
+PostCashDisbursementJournalAction input: CashDisbursementDto
+```
+
+Setiap Action:
+- DB::transaction wrap
+- Generate `JournalEntry[]` dari header + items + tax codes (resolve via `TaxCode->account_id`)
+- Validate balanced (engine constraint juga enforce)
+- Honor period lock + idempotency_key
+- Fire hook `journal.before_post` / `journal.after_post` (existing — type-agnostic)
+
+**Number sequence service:**
+
+`App\Services\JournalNumberGenerator::next(Entity $entity, string $type, Carbon $date): string`
+
+Format per type:
+- sales: `JS-YYYY-MM-NNNN`
+- purchase: `JP-YYYY-MM-NNNN`
+- cash_receipt: `JKM-YYYY-MM-NNNN`
+- cash_disbursement: `JKK-YYYY-MM-NNNN`
+- general (existing): `JU-YYYY-MM-NNNN`
+
+Counter per (entity, type, year-month). Atomic via DB row lock (`SELECT … FOR UPDATE`).
+
+**Partner relation (Partner.php):**
+
+```php
+public function salesJournals(): HasMany {
+    return $this->hasMany(Journal::class)->where('type', Journal::TYPE_SALES);
+}
+public function purchaseJournals(): HasMany { /* type='purchase' */ }
+public function cashReceiptJournals(): HasMany { /* type='cash_receipt' */ }
+public function cashDisbursementJournals(): HasMany { /* type='cash_disbursement' */ }
+```
+
+**Migration order (12c-i):**
+
+1. `add_jurnal_khusus_columns_to_journals` — add `partner_id`, `business_total`, extend type enum
+2. `add_applies_to_type_to_journal_templates`
+3. Backfill: existing journals → `type` tetap, partner_id NULL (legitimate untuk general)
 
 ---
 

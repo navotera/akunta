@@ -571,6 +571,88 @@ COA default (Indonesia) 4-digit:
 - Journal entries **immutable** setelah posting — koreksi dilakukan via reversing/adjustment entry
 - Period lock: setelah closing journal, periode terkunci (tidak bisa ada entry baru di periode tsb)
 
+### 8.6 Jurnal Khusus (Special Journals) 🟡 [PROPOSED — added 2026-04-30]
+
+**Tujuan:** UMKM Indonesia terbiasa dengan jurnal khusus (SAK-ETAP) — pisah workflow per kategori transaksi rutin agar non-akuntan dapat input tanpa berpikir debit/kredit.
+
+**Storage strategy:** Single `journals` + `journal_entries` table (single source of truth). Discriminator via kolom `type`. Tidak ada tabel terpisah per jenis — preserve double-entry guarantees (balanced, immutable, period lock) yang sudah dibangun di §8.5.
+
+**Type constants tambahan** (extend `Journal::TYPE_*`):
+
+| Constant | Value | Indonesian | Number prefix |
+|----------|-------|------------|---------------|
+| `TYPE_SALES` | `sales` | Jurnal Penjualan | `JS-YYYY-MM-NNNN` |
+| `TYPE_PURCHASE` | `purchase` | Jurnal Pembelian | `JP-YYYY-MM-NNNN` |
+| `TYPE_CASH_RECEIPT` | `cash_receipt` | Jurnal Penerimaan Kas | `JKM-YYYY-MM-NNNN` |
+| `TYPE_CASH_DISBURSEMENT` | `cash_disbursement` | Jurnal Pengeluaran Kas | `JKK-YYYY-MM-NNNN` |
+
+(Existing types tetap: `general` → Jurnal Umum, `adjustment`, `closing`, `reversing`, `opening`.)
+
+**Auto-posting rules per jenis:**
+
+| Jenis | Trigger bisnis | Auto Debit | Auto Credit | Partner | Tax auto-inject |
+|-------|---------------|-----------|-------------|---------|-----------------|
+| Penjualan (JS) | Invoice keluar | AR / Kas | Pendapatan + PPN Keluaran | Customer wajib | PPN Out, PPh 23 (jasa) |
+| Pembelian (JP) | Invoice masuk | Inventory/Beban + PPN Masukan | AP / Kas | Vendor wajib | PPN In, PPh 21/23/4(2) |
+| Penerimaan Kas (JKM) | Pembayaran masuk | Kas/Bank | AR / Pendapatan tunai / Lain-lain | Customer (jika lunasi AR) | — |
+| Pengeluaran Kas (JKK) | Pembayaran keluar | AP / Beban | Kas/Bank | Vendor (jika lunasi AP) | PPh withholding |
+
+**Wizard form pattern (Filament Stepper):**
+
+1. **Header** — input bisnis: tanggal, nomor (auto-generated), partner, reference (no faktur eksternal), memo
+2. **Lines bisnis** — item-level: qty × harga, akun pendapatan/beban, cost center, project, tax code per line
+3. **Review jurnal** — read-only preview `JournalEntry[]` hasil generation. Validate balanced. Post / Save Draft.
+
+**Action class per type:**
+- `PostSalesJournalAction` — generate lines dari header + items + tax codes → return posted `Journal`
+- `PostPurchaseJournalAction`
+- `PostCashReceiptJournalAction`
+- `PostCashDisbursementJournalAction`
+
+Setiap Action wajib transactional + idempotent (idempotency_key dukung sumber eksternal).
+
+**Resource layout (opsi B — Resource per type, dipilih 2026-04-30):**
+
+```
+Filament nav group "Operasional":
+ ├── Jurnal Penjualan        (SalesJournalResource)
+ ├── Jurnal Pembelian        (PurchaseJournalResource)
+ ├── Jurnal Penerimaan Kas   (CashReceiptJournalResource)
+ ├── Jurnal Pengeluaran Kas  (CashDisbursementJournalResource)
+ ├── Jurnal Umum             (JournalResource — existing, scope ke type general/adjustment/closing)
+ ├── Template Jurnal         (JournalTemplateResource — existing)
+ └── Jurnal Berulang         (RecurringJournalResource — existing)
+```
+
+Setiap Resource khusus share `App\Models\Journal`, scope `where('type', …)`, policy + number sequence + form wizard sendiri.
+
+**Migration footprint (12c-i):**
+
+```sql
+ALTER TABLE journals ADD COLUMN partner_id ULID NULL REFERENCES partners(id);
+ALTER TABLE journals ADD COLUMN business_total NUMERIC(20,2) NULL; -- gross sebelum tax
+ALTER TABLE journal_templates ADD COLUMN applies_to_type VARCHAR NULL;
+-- type column sudah ada — extend enum constraint untuk 4 value baru
+```
+
+**Integrasi existing:**
+- `Partner` — relation `salesJournals()`, `purchaseJournals()`, `cashReceiptJournals()`, `cashDisbursementJournals()` via type-scoped `hasMany`
+- `JournalTemplate.applies_to_type` — template bisa scoped per jenis ("Penjualan tunai retail")
+- `RecurringJournal` — bisa schedule type apa saja
+- `TaxCode` — auto-inject line PPN/PPh berdasarkan tax_code yang dipilih di line bisnis
+
+**Reporting tambahan (phase 2 — 12c-iii):**
+- Buku Pembantu Piutang: filter `sales` + `cash_receipt` per partner
+- Buku Pembantu Hutang: filter `purchase` + `cash_disbursement` per partner
+- Register Faktur PPN Keluaran: filter `sales` + tax_code group PPN-Out
+- Register Faktur PPN Masukan: filter `purchase` + tax_code group PPN-In
+
+**Phasing:**
+- **12c-i** Sales + Purchase (foundation AR/AP — paling sering dipakai)
+- **12c-ii** Cash Receipt + Cash Disbursement
+- **12c-iii** Buku Pembantu + Register PPN reports
+- **12c-iv** Template per-type + recurring per-type
+
 ---
 
 ## 9. Perpajakan Indonesia 🟡 [PROPOSED — belum ada di original]

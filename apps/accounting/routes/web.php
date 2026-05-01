@@ -7,7 +7,14 @@ use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
 use App\Http\Middleware\VerifyEcopaSignature;
 use Illuminate\Support\Facades\Route;
 
+// Root → bounce ke /sso/login. Kalau Ecopa configured + user sudah login Ecopa,
+// Ecopa silent-approve → Akunta dashboard. Kalau belum login → form Ecopa muncul.
+// Kalau Ecopa unconfigured → fall through ke welcome view.
 Route::get('/', function () {
+    if (config('ecopa.client_id')) {
+        return redirect()->route('sso.login');
+    }
+
     return view('welcome');
 });
 
@@ -39,7 +46,50 @@ Route::get('/login', function () {
 // otherwise kick off OIDC redirect (Ecopa silent-approves when SSO session active).
 Route::get('/sso/login', function () {
     if (auth()->check()) {
-        return redirect(\App\Filament\Pages\Dashboard::getUrl(panel: 'accounting'));
+        $panel  = \Filament\Facades\Filament::getPanel('accounting');
+        $user   = auth()->user();
+        $tenant = method_exists($user, 'getDefaultTenant') ? $user->getDefaultTenant($panel) : null;
+
+        // SSO admin yang baru-pertama-kali masuk: belum punya assignment lokal
+        // tapi punya app_role=admin di Ecopa → boleh akses entitas mana pun.
+        if ($tenant === null
+            && method_exists($user, 'isSsoAdmin')
+            && $user->isSsoAdmin()) {
+            $tenant = \Akunta\Rbac\Models\Entity::query()->first();
+        }
+
+        if ($tenant !== null) {
+            return redirect(\App\Filament\Pages\Dashboard::getUrl(panel: 'accounting', tenant: $tenant));
+        }
+
+        // Session lacks ecopa.app_role (stale session from earlier flow before
+        // claims were stored). Force fresh OAuth once — second pass will either
+        // succeed (claims rebuilt) or land here again with retry=1.
+        $alreadyRetried = (bool) request()->query('retry');
+        $sessionStale   = session('ecopa.app_role') === null;
+
+        if ($sessionStale && ! $alreadyRetried && config('ecopa.client_id')) {
+            auth()->logout();
+            request()->session()->invalidate();
+            request()->session()->regenerateToken();
+
+            return redirect()->route('ecopa.login');
+        }
+
+        $diag = sprintf(
+            'user_email=%s · ecopa.app_role=%s · assignments=%d · entities=%d',
+            (string) ($user->email ?? '?'),
+            (string) (session('ecopa.app_role') ?? 'NULL'),
+            (int) ($user->assignments()?->whereNull('revoked_at')->count() ?? 0),
+            (int) \Akunta\Rbac\Models\Entity::query()->count(),
+        );
+
+        abort(403,
+            'Akun terdeteksi login tetapi belum ter-assign ke entitas Akunta. '.
+            'Solusi: (1) admin Ecopa set role Akunta = "admin" untuk user ini, lalu logout-login lagi; '.
+            'ATAU (2) admin Akunta meng-assign user ini ke salah satu entitas via /admin-accounting → Master Data → Pengguna.'.
+            "\n\nDiagnostic: {$diag}"
+        );
     }
 
     return config('ecopa.client_id')

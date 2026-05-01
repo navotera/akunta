@@ -10,6 +10,23 @@ class EditUser extends EditRecord
 {
     protected static string $resource = UserResource::class;
 
+    protected static string $view = 'filament.resources.user.edit-user';
+
+    public function hasCombinedRelationManagerTabsWithContent(): bool
+    {
+        return true;
+    }
+
+    public function getContentTabLabel(): ?string
+    {
+        return 'Identitas';
+    }
+
+    public function getContentTabIcon(): ?string
+    {
+        return 'heroicon-o-identification';
+    }
+
     protected function getHeaderActions(): array
     {
         return [
