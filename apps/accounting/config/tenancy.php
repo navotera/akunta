@@ -60,5 +60,12 @@ return [
         '/api/v1/accounts/*',
         '/api/v1/webhooks',
         '/api/v1/webhooks/*',
+        // SPA cookie-auth API — controllers handle tenant scoping themselves
+        // via Auth::user() + X-Tenant-Slug header. No DB swap required (control
+        // DB hosts all tenant data until tenant DB provisioning lands).
+        '/api/auth/*',
+        '/api/v1/me',
+        '/api/v1/spa/*',
+        '/sanctum/csrf-cookie',
     ],
 ];

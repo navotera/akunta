@@ -15,6 +15,7 @@
         "akunta/ui": "@dev",
         "dutchcodingcompany/filament-socialite": "^2.4",
         "laravel/framework": "^11.31",
+        "laravel/sanctum": "^4.3",
         "laravel/socialite": "^5.26",
         "laravel/tinker": "^2.9"
     },

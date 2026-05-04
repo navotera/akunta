@@ -1,0 +1,71 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api\Spa;
+
+use App\Actions\ApplyCoaTemplateAction;
+use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
+use App\Http\Controllers\Controller;
+use App\Models\Account;
+use App\Models\Period;
+use App\Services\Onboarding\CoaTemplateRegistry;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+
+class OnboardingController extends Controller
+{
+    use ResolvesTenant;
+
+    public function __construct(
+        private readonly CoaTemplateRegistry $registry,
+        private readonly ApplyCoaTemplateAction $apply,
+    ) {}
+
+    public function status(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+
+        $accountCount = Account::where('entity_id', $entity->id)->count();
+        $periodCount = Period::where('entity_id', $entity->id)->count();
+
+        return response()->json([
+            'data' => [
+                'entity_id' => $entity->id,
+                'entity_name' => $entity->name,
+                'has_accounts' => $accountCount > 0,
+                'account_count' => $accountCount,
+                'has_open_period' => $periodCount > 0,
+                'period_count' => $periodCount,
+                'completed' => $accountCount > 0 && $periodCount > 0,
+            ],
+        ]);
+    }
+
+    public function coaTemplates(): JsonResponse
+    {
+        return response()->json([
+            'data' => array_values($this->registry->available()),
+        ]);
+    }
+
+    public function applyCoa(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $data = $request->validate([
+            'template_key' => 'required|string|max:40',
+        ]);
+
+        $result = $this->apply->execute($entity->id, $data['template_key']);
+
+        return response()->json([
+            'data' => [
+                'entity_id' => $entity->id,
+                'template_key' => $data['template_key'],
+                'created' => $result['created'],
+                'skipped' => $result['skipped'],
+                'total' => $result['total'],
+            ],
+        ]);
+    }
+}

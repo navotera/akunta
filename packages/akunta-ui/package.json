@@ -1,0 +1,21 @@
+{
+  "name": "@akunta/ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens": "./src/tokens/index.ts",
+    "./money": "./src/money/index.ts",
+    "./utils": "./src/utils/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

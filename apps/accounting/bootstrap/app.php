@@ -19,6 +19,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'require.token.perms' => \App\Http\Middleware\RequireTokenPermissions::class,
         ]);
         $middleware->append(\App\Http\Middleware\TenantResolver::class);
+
+        // SPA cookie auth — promote first-party stateful requests on the
+        // configured Sanctum domains to use the web session guard.
+        $middleware->statefulApi();
+
         // akunta_entity is a non-sensitive tenant/entity ID, needs to be readable
         // by sibling apps on ECOSYSTEM_BASE_DOMAIN — exempt from Laravel's default
         // cookie encryption so all 3 apps see the same plaintext value.

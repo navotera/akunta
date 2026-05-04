@@ -4,6 +4,7 @@
 /modules/*/.phpunit.cache/
 /apps/*/vendor/
 /apps/*/node_modules/
+/packages/*/node_modules/
 /apps/*/.env
 /apps/*/storage/logs/*
 /apps/*/storage/framework/cache/data/*
