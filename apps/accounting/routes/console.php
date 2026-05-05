@@ -34,3 +34,11 @@ Schedule::command('accounting:prune-cron-logs')
     ->withoutOverlapping()
     ->onOneServer()
     ->name('accounting:prune-cron-logs');
+
+// Daily 02:30 — reconcile entities + assignments mirror against Ecopa.
+// Catches any webhook drops (cf. docs/cross-app-rbac.md §4).
+Schedule::command('ecopa:reconcile')
+    ->dailyAt('02:30')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->name('ecopa:reconcile');

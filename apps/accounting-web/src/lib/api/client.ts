@@ -30,12 +30,29 @@ function readActiveTenantId(): string | null {
   return localStorage.getItem('akunta.active_entity_id');
 }
 
-let csrfFetched = false;
-
+/** Refresh the CSRF cookie. Always re-fetches — Sanctum's token rotates on
+ *  session regeneration (e.g. after SSO callback) and a stale cached token
+ *  produces 419 CSRF mismatch on the first SPA mutation. */
 export async function ensureCsrfCookie(): Promise<void> {
-  if (csrfFetched) return;
   await fetch('/sanctum/csrf-cookie', { credentials: 'include' });
-  csrfFetched = true;
+}
+
+const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+async function performFetch(path: string, opts: ApiOptions, method: string, body: BodyInit | null | undefined, baseHeaders: Headers): Promise<Response> {
+  const headers = new Headers(baseHeaders);
+  if (MUTATING.has(method)) {
+    const xsrf = getCookie('XSRF-TOKEN');
+    if (xsrf) headers.set('X-XSRF-TOKEN', xsrf);
+  }
+
+  return fetch(path, {
+    ...opts,
+    method,
+    headers,
+    body,
+    credentials: 'include',
+  });
 }
 
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
@@ -50,22 +67,24 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   }
 
   const method = (opts.method ?? (opts.json !== undefined ? 'POST' : 'GET')).toUpperCase();
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-    await ensureCsrfCookie();
-    const xsrf = getCookie('XSRF-TOKEN');
-    if (xsrf) headers.set('X-XSRF-TOKEN', xsrf);
-  }
 
   const tenantSlug = opts.tenantSlug ?? readActiveTenantId();
   if (tenantSlug) headers.set('X-Tenant-Slug', tenantSlug);
 
-  const res = await fetch(path, {
-    ...opts,
-    method,
-    headers,
-    body,
-    credentials: 'include',
-  });
+  // Warm up CSRF cookie before the first mutating call so the cookie matches
+  // the current session token (rotated on every login / SSO callback).
+  if (MUTATING.has(method) && !getCookie('XSRF-TOKEN')) {
+    await ensureCsrfCookie();
+  }
+
+  let res = await performFetch(path, opts, method, body as BodyInit | null | undefined, headers);
+
+  // 419 = CSRF mismatch (Laravel). Token rotated mid-session (e.g. after
+  // background re-auth). Refresh once + retry transparently.
+  if (res.status === 419 && MUTATING.has(method)) {
+    await ensureCsrfCookie();
+    res = await performFetch(path, opts, method, body as BodyInit | null | undefined, headers);
+  }
 
   if (!res.ok) {
     let parsed: unknown = null;

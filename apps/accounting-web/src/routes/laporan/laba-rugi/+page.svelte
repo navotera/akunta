@@ -6,6 +6,7 @@
   import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   function firstOfMonth(): string {
     const d = new Date();
@@ -55,11 +56,11 @@
   {#snippet toolbar()}
     <label class="text-sm">
       <span class="block font-medium mb-1">Mulai</span>
-      <input type="date" class="rounded-md border border-border-default px-2 py-1.5" bind:value={periodStart} data-testid="report-period-start" />
+      <DateInput value={periodStart} onChange={(iso) => (periodStart = iso)} testId="report-period-start" />
     </label>
     <label class="text-sm">
       <span class="block font-medium mb-1">Sampai</span>
-      <input type="date" class="rounded-md border border-border-default px-2 py-1.5" bind:value={periodEnd} data-testid="report-period-end" />
+      <DateInput value={periodEnd} onChange={(iso) => (periodEnd = iso)} testId="report-period-end" />
     </label>
     <button
       type="button"

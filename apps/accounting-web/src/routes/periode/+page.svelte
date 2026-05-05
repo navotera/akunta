@@ -4,6 +4,7 @@
   import { auth } from '$lib/stores/auth.svelte.js';
   import { periodApi, type Period, type PeriodInput } from '$lib/api/period.js';
   import { ApiError } from '$lib/api/client.js';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   let items = $state<Period[]>([]);
   let loading = $state(true);
@@ -161,12 +162,12 @@
         </label>
         <label class="block">
           <span class="block font-medium mb-1">Mulai</span>
-          <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.start_date} />
+          <DateInput value={form.start_date} onChange={(iso) => (form.start_date = iso)} />
           {#if fieldErr('start_date')}<span class="text-xs text-danger">{fieldErr('start_date')}</span>{/if}
         </label>
         <label class="block">
           <span class="block font-medium mb-1">Selesai</span>
-          <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.end_date} />
+          <DateInput value={form.end_date} onChange={(iso) => (form.end_date = iso)} />
           {#if fieldErr('end_date')}<span class="text-xs text-danger">{fieldErr('end_date')}</span>{/if}
         </label>
       </div>

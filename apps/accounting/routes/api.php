@@ -41,12 +41,6 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::patch('accounts/{id}', [\App\Http\Controllers\Api\Spa\AccountController::class, 'update']);
         Route::delete('accounts/{id}', [\App\Http\Controllers\Api\Spa\AccountController::class, 'destroy']);
 
-        Route::get('partners', [\App\Http\Controllers\Api\Spa\PartnerController::class, 'index']);
-        Route::get('partners/{id}', [\App\Http\Controllers\Api\Spa\PartnerController::class, 'show']);
-        Route::post('partners', [\App\Http\Controllers\Api\Spa\PartnerController::class, 'store']);
-        Route::patch('partners/{id}', [\App\Http\Controllers\Api\Spa\PartnerController::class, 'update']);
-        Route::delete('partners/{id}', [\App\Http\Controllers\Api\Spa\PartnerController::class, 'destroy']);
-
         Route::get('periods', [\App\Http\Controllers\Api\Spa\PeriodController::class, 'index']);
         Route::get('periods/{id}', [\App\Http\Controllers\Api\Spa\PeriodController::class, 'show']);
         Route::post('periods', [\App\Http\Controllers\Api\Spa\PeriodController::class, 'store']);
@@ -87,6 +81,9 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::get('reports/balance-sheet', [\App\Http\Controllers\Api\Spa\ReportingController::class, 'balanceSheet']);
         Route::get('reports/income-statement', [\App\Http\Controllers\Api\Spa\ReportingController::class, 'incomeStatement']);
         Route::get('reports/general-ledger', [\App\Http\Controllers\Api\Spa\ReportingController::class, 'generalLedger']);
+        Route::get('reports/by-source-ref', [\App\Http\Controllers\Api\Spa\SourceRefController::class, 'bySourceRef']);
+
+        Route::get('source-refs', [\App\Http\Controllers\Api\Spa\SourceRefController::class, 'index']);
 
         Route::get('onboarding/status', [\App\Http\Controllers\Api\Spa\OnboardingController::class, 'status']);
         Route::get('onboarding/coa-templates', [\App\Http\Controllers\Api\Spa\OnboardingController::class, 'coaTemplates']);

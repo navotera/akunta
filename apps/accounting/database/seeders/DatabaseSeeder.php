@@ -12,12 +12,7 @@ class DatabaseSeeder extends Seeder
             PresetRolesSeeder::class,
             SuperAdminSeeder::class,
             SettingsPermissionsSeeder::class,
+            EcosystemBootstrapSeeder::class,
         ]);
-
-        if (filter_var(env('SEED_DEMO_DATA', false), FILTER_VALIDATE_BOOLEAN)) {
-            $this->call([
-                DemoDataSeeder::class,
-            ]);
-        }
     }
 }

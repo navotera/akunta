@@ -1,0 +1,1 @@
+import"../chunks/BxkistFy.js";import"../chunks/BjWrhpIQ.js";import{T as s}from"../chunks/DIPdvcg4.js";import{s as r}from"../chunks/By4tv4KZ.js";function i(o){s(o,{mode:"sales",get rows(){return r}})}export{i as component};

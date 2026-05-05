@@ -9,6 +9,7 @@ use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
 use App\Models\Period;
+use App\Models\SourceRefRegistry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -25,6 +26,9 @@ class InstantiateJournalTemplateAction
 {
     /**
      * @param  array<int, array{amount?: string|float|int, memo?: string}>  $overrides
+     * @param  array<int, array{ref_type: string, ref_id: string, ref_code?: ?string, ref_label?: ?string, ref_attrs?: ?array}>  $sourceRefs
+     *         keyed by template line_no. Each entry resolves to a tagged
+     *         JournalEntry + an upsert into source_ref_registry.
      */
     public function execute(
         JournalTemplate $template,
@@ -36,6 +40,7 @@ class InstantiateJournalTemplateAction
         ?string $sourceId = null,
         ?string $idempotencyKey = null,
         ?string $createdBy = null,
+        array $sourceRefs = [],
     ): Journal {
         if (! $template->is_active) {
             throw JournalException::notPosted('inactive_template');
@@ -79,13 +84,13 @@ class InstantiateJournalTemplateAction
             $resolved[] = [
                 'line_no'        => $tl->line_no,
                 'account_id'     => $tl->account_id,
-                'partner_id'     => $tl->partner_id,
                 'cost_center_id' => $tl->cost_center_id,
                 'project_id'     => $tl->project_id,
                 'branch_id'      => $tl->branch_id,
                 'debit'          => $debit,
                 'credit'         => $credit,
                 'memo'           => $overrides[$tl->line_no]['memo'] ?? $tl->memo,
+                'source'         => $sourceRefs[$tl->line_no] ?? null,
             ];
         }
 
@@ -110,19 +115,33 @@ class InstantiateJournalTemplateAction
                 'created_by'      => $createdBy,
             ]);
 
+            $effectiveSourceApp = $sourceApp ?? 'accounting';
+
             foreach ($resolved as $r) {
+                $src = $r['source'];
                 JournalEntry::create([
-                    'journal_id'     => $journal->id,
-                    'line_no'        => $r['line_no'],
-                    'account_id'     => $r['account_id'],
-                    'partner_id'     => $r['partner_id'],
-                    'cost_center_id' => $r['cost_center_id'],
-                    'project_id'     => $r['project_id'],
-                    'branch_id'      => $r['branch_id'],
-                    'debit'          => $r['debit'],
-                    'credit'         => $r['credit'],
-                    'memo'           => $r['memo'],
+                    'journal_id'      => $journal->id,
+                    'line_no'         => $r['line_no'],
+                    'account_id'      => $r['account_id'],
+                    'cost_center_id'  => $r['cost_center_id'],
+                    'project_id'      => $r['project_id'],
+                    'branch_id'       => $r['branch_id'],
+                    'debit'           => $r['debit'],
+                    'credit'          => $r['credit'],
+                    'memo'            => $r['memo'],
+                    'source_app'      => $src ? $effectiveSourceApp : null,
+                    'source_ref_type' => $src['ref_type'] ?? null,
+                    'source_ref_id'   => $src['ref_id']   ?? null,
+                    'metadata'        => $src ? ['source' => $src] : null,
                 ]);
+
+                if ($src && ! empty($src['ref_type']) && ! empty($src['ref_id'])) {
+                    SourceRefRegistry::ingest(
+                        $template->entity_id,
+                        $effectiveSourceApp,
+                        $src,
+                    );
+                }
             }
 
             return $journal;

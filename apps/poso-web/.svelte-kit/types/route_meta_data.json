@@ -1,0 +1,24 @@
+{
+	"/(app)": [
+		"src/routes/+layout.ts"
+	],
+	"/": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/(app)/purchases": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/purchases/new": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/sales": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/sales/new": [
+		"src/routes/+layout.ts"
+	],
+	"/(app)/[...path]": [
+		"src/routes/+layout.ts"
+	]
+}

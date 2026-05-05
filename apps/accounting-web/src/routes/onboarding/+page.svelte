@@ -5,6 +5,7 @@
   import { onboardingApi, type CoaTemplate, type OnboardingStatus } from '$lib/api/onboarding.js';
   import { periodApi } from '$lib/api/period.js';
   import { ApiError } from '$lib/api/client.js';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   let status = $state<OnboardingStatus | null>(null);
   let templates = $state<CoaTemplate[]>([]);
@@ -130,11 +131,11 @@
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="block font-medium mb-1">Mulai</span>
-            <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={periodForm.start_date} />
+            <DateInput value={periodForm.start_date} onChange={(iso) => (periodForm.start_date = iso)} />
           </label>
           <label class="block">
             <span class="block font-medium mb-1">Selesai</span>
-            <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={periodForm.end_date} />
+            <DateInput value={periodForm.end_date} onChange={(iso) => (periodForm.end_date = iso)} />
           </label>
         </div>
       </div>

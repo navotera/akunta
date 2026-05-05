@@ -37,7 +37,6 @@ class RecordSalesAction
      *   revenue_account_id: string,
      *   subtotal: numeric,
      *   tax_code_id?: ?string,
-     *   partner_id?: ?string,
      *   reference?: ?string,
      *   memo?: ?string,
      *   created_by?: ?string,
@@ -88,14 +87,12 @@ class RecordSalesAction
                 'created_by' => $input['created_by'] ?? null,
             ]);
 
-            $partnerId = $input['partner_id'] ?? null;
             $lineNo = 1;
 
             JournalEntry::create([
                 'journal_id' => $journal->id,
                 'line_no' => $lineNo++,
                 'account_id' => $target->id,
-                'partner_id' => $partnerId,
                 'debit' => $total,
                 'credit' => '0',
                 'memo' => $input['memo'] ?? 'Penerimaan penjualan',
@@ -105,7 +102,6 @@ class RecordSalesAction
                 'journal_id' => $journal->id,
                 'line_no' => $lineNo++,
                 'account_id' => $revenue->id,
-                'partner_id' => $partnerId,
                 'debit' => '0',
                 'credit' => $subtotal,
                 'memo' => $input['memo'] ?? 'Pendapatan penjualan',
@@ -116,7 +112,6 @@ class RecordSalesAction
                     'journal_id' => $journal->id,
                     'line_no' => $lineNo++,
                     'account_id' => $taxCode->tax_account_id,
-                    'partner_id' => $partnerId,
                     'tax_code_id' => $taxCode->id,
                     'tax_base' => $subtotal,
                     'debit' => '0',

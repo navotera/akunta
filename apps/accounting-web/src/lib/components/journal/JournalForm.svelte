@@ -8,6 +8,7 @@
   import type { AccountOption } from '$lib/api/account.js';
   import type { JournalSummary, JournalDetail } from '$lib/api/journal.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   interface Row {
     account_id: string;
@@ -105,12 +106,6 @@
     credits = credits.filter((_, idx) => idx !== i);
   }
 
-  function dateForInput(): string {
-    return date;
-  }
-  function setDate(e: Event) {
-    date = (e.target as HTMLInputElement).value;
-  }
 
   function payload(): FormPayload {
     const clean = (rows: Row[]) =>
@@ -166,13 +161,11 @@
     <section class="xl:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-3 rounded-lg border border-border-default bg-card-bg p-4">
       <label class="md:col-span-2 text-sm">
         <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
-        <input
-          type="date"
-          class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError('date') ? 'border-danger' : 'border-border-default'}"
-          value={dateForInput()}
-          oninput={setDate}
-          required
-          data-testid="journal-date"
+        <DateInput
+          value={date}
+          onChange={(iso) => (date = iso)}
+          testId="journal-date"
+          class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
         />
         {#if fieldError('date')}
           <span class="block mt-1 text-xs text-danger" data-testid="error-date">{fieldError('date')}</span>

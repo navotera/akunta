@@ -19,12 +19,15 @@ use Illuminate\Support\Facades\DB;
  *   - period totals (debit, credit, net change)
  *   - ending balance
  *
- * Optional partner_id / cost_center_id / project_id / branch_id filters.
+ * Optional cost_center_id / project_id / branch_id / source_app /
+ * source_ref_type / source_ref_id filters. Source-ref filters use
+ * the indexed cols on journal_entries written by the
+ * InstantiateJournalTemplateAction ingest path.
  */
 class GeneralLedgerService
 {
     /**
-     * @param  array<string, string|null>  $filters  partner_id, cost_center_id, project_id, branch_id
+     * @param  array<string, string|null>  $filters  cost_center_id, project_id, branch_id, source_app, source_ref_type, source_ref_id
      * @return array{
      *   account: object,
      *   period_start: string,
@@ -49,7 +52,7 @@ class GeneralLedgerService
             ->firstOrFail();
 
         $applyFilters = function ($q) use ($filters) {
-            foreach (['partner_id', 'cost_center_id', 'project_id', 'branch_id'] as $f) {
+            foreach (['cost_center_id', 'project_id', 'branch_id', 'source_app', 'source_ref_type', 'source_ref_id'] as $f) {
                 if (! empty($filters[$f])) {
                     $q->where("journal_entries.{$f}", $filters[$f]);
                 }
@@ -80,7 +83,10 @@ class GeneralLedgerService
                 'journal_entries.debit',
                 'journal_entries.credit',
                 'journal_entries.memo as line_memo',
-                'journal_entries.partner_id',
+                'journal_entries.source_app',
+                'journal_entries.source_ref_type',
+                'journal_entries.source_ref_id',
+                'journal_entries.metadata',
             )
             ->get();
 

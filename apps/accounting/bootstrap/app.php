@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => \App\Http\Middleware\TenantResolver::class,
             'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
             'require.token.perms' => \App\Http\Middleware\RequireTokenPermissions::class,
+            'ecosystem.assigned' => \App\Http\Middleware\EnforceEcosystemAssignment::class,
         ]);
         $middleware->append(\App\Http\Middleware\TenantResolver::class);
 

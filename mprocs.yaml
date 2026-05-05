@@ -1,0 +1,65 @@
+# mprocs — multi-app dev runner.
+#
+# Auto-start: 5 service inti (3 Laravel HTTP + 2 SvelteKit SPA).
+# On-demand : queue worker, scheduler, log tail — start dgn `s` saat butuh.
+#
+# Setiap pane melakukan pre-flight kill terhadap port-nya sendiri supaya
+# stale Vite/Laravel proc dari sesi sebelumnya tidak nge-block start.
+#
+# Kalau pakai Herd, comment 3 entri Laravel (ecopa/akunta/poso) — Herd handle
+# routing *.test otomatis.
+#
+# Run : `mprocs` from /Users/hendra/akunta/
+# Keys: j/k pindah panel · enter focus · r restart · x stop · s start · q quit · ? help
+
+procs:
+  ecopa:
+    shell: (lsof -ti :8001 2>/dev/null | xargs kill -9 2>/dev/null) ; php artisan serve --port=8001
+    cwd: ./ecopa
+    autostart: true
+
+  akunta:
+    shell: (lsof -ti :8000 2>/dev/null | xargs kill -9 2>/dev/null) ; php artisan serve --port=8000
+    cwd: ./apps/accounting
+    autostart: true
+
+  poso:
+    shell: (lsof -ti :8002 2>/dev/null | xargs kill -9 2>/dev/null) ; php artisan serve --port=8002
+    cwd: ./apps/poso
+    autostart: true
+
+  akunta-web:
+    shell: (lsof -ti :5175 2>/dev/null | xargs kill -9 2>/dev/null) ; bun run dev
+    cwd: ./apps/accounting-web
+    autostart: true
+
+  poso-web:
+    shell: (lsof -ti :5174 2>/dev/null | xargs kill -9 2>/dev/null) ; bun run dev
+    cwd: ./apps/poso-web
+    autostart: true
+
+  # On-demand panes
+  akunta-queue:
+    shell: php artisan queue:work --tries=3 --backoff=10
+    cwd: ./apps/accounting
+    autostart: false
+
+  akunta-schedule:
+    shell: php artisan schedule:work
+    cwd: ./apps/accounting
+    autostart: false
+
+  akunta-pail:
+    shell: php artisan pail --timeout=0
+    cwd: ./apps/accounting
+    autostart: false
+
+  ecopa-queue:
+    shell: php artisan queue:work --tries=3
+    cwd: ./ecopa
+    autostart: false
+
+  poso-queue:
+    shell: php artisan queue:work --tries=3
+    cwd: ./apps/poso
+    autostart: false

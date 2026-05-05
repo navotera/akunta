@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\DB;
  * List + summarize tax-bearing journal_entries within a period.
  *
  *   - $kind: TaxCode::KIND_OUTPUT_VAT (default), KIND_INPUT_VAT, or null = all
- *   - Returns one row per journal_entry that carries a tax_code_id, with
- *     denormalized partner NPWP/name + tax_base (DPP) + tax_amount.
+ *   - Returns one row per journal_entry that carries a tax_code_id, plus
+ *     tax_base (DPP) + tax_amount.
  *   - Used by both UI Tax Report page and e-Faktur CSV exporter.
  */
 class TaxReportService
@@ -25,7 +25,6 @@ class TaxReportService
         $q = DB::table('journal_entries as je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->join('tax_codes as t', 't.id', '=', 'je.tax_code_id')
-            ->leftJoin('partners as p', 'p.id', '=', 'je.partner_id')
             ->leftJoin('accounts as a', 'a.id', '=', 'je.account_id')
             ->where('j.entity_id', $entityId)
             ->where('j.status', Journal::STATUS_POSTED)
@@ -55,10 +54,6 @@ class TaxReportService
                 't.name as tax_name',
                 't.kind as tax_kind',
                 't.rate as tax_rate',
-                'p.id as partner_id',
-                'p.name as partner_name',
-                'p.npwp as partner_npwp',
-                'p.address as partner_address',
                 'a.code as account_code',
                 'a.name as account_name',
             )

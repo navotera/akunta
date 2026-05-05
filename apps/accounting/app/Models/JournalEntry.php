@@ -16,7 +16,6 @@ class JournalEntry extends Model
         'journal_id',
         'line_no',
         'account_id',
-        'partner_id',
         'cost_center_id',
         'project_id',
         'branch_id',
@@ -26,6 +25,9 @@ class JournalEntry extends Model
         'credit',
         'memo',
         'metadata',
+        'source_app',
+        'source_ref_type',
+        'source_ref_id',
     ];
 
     protected $casts = [
@@ -44,11 +46,6 @@ class JournalEntry extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
-    }
-
-    public function partner(): BelongsTo
-    {
-        return $this->belongsTo(Partner::class);
     }
 
     public function costCenter(): BelongsTo

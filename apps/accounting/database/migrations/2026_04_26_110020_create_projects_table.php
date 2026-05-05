@@ -13,7 +13,6 @@ return new class extends Migration
             $table->ulid('entity_id');
             $table->string('code', 40);
             $table->string('name');
-            $table->ulid('partner_id')->nullable();    // optional customer link
             $table->date('start_date')->nullable();
             $table->date('end_date')->nullable();
             $table->string('status', 16)->default('active'); // active, on_hold, closed
@@ -22,7 +21,6 @@ return new class extends Migration
             $table->timestamps();
 
             $table->foreign('entity_id')->references('id')->on('entities')->cascadeOnDelete();
-            $table->foreign('partner_id')->references('id')->on('partners')->nullOnDelete();
 
             $table->unique(['entity_id', 'code']);
             $table->index(['entity_id', 'status']);

@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('journal_entries', function (Blueprint $table) {
-            $table->ulid('cost_center_id')->nullable()->after('partner_id');
+            $table->ulid('cost_center_id')->nullable();
             $table->ulid('project_id')->nullable()->after('cost_center_id');
             $table->ulid('branch_id')->nullable()->after('project_id');
 

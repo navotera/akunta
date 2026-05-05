@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | SPA Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Where the SvelteKit accounting-web SPA is served. Used by Laravel-side
+    | flows (SSO callback, sso/login bounce) to redirect the browser back to
+    | the SPA after authentication. Falls back to APP_URL if unset.
+    |
+    */
+
+    'spa_url' => env('SPA_URL', env('APP_URL', 'http://localhost:5175')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

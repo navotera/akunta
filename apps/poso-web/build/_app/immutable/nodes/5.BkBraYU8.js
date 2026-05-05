@@ -1,0 +1,1 @@
+import"../chunks/BxkistFy.js";import"../chunks/BjWrhpIQ.js";import{T as r}from"../chunks/DIPdvcg4.js";import{p as t}from"../chunks/By4tv4KZ.js";function m(o){r(o,{mode:"purchases",get rows(){return t}})}export{m as component};

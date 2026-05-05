@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
- * GET /api/v1/accounts/{account}/balance?as_of=YYYY-MM-DD&partner_id=&cost_center_id=&project_id=&branch_id=
+ * GET /api/v1/accounts/{account}/balance?as_of=YYYY-MM-DD&cost_center_id=&project_id=&branch_id=
  *
  * Returns the account's running balance up to and including `as_of`.
  * Optional dimension filters scope the aggregation. Used by sibling apps
@@ -22,7 +22,6 @@ class AccountBalanceController extends Controller
     {
         $data = $request->validate([
             'as_of'          => 'nullable|date_format:Y-m-d',
-            'partner_id'     => 'nullable|string|size:26',
             'cost_center_id' => 'nullable|string|size:26',
             'project_id'     => 'nullable|string|size:26',
             'branch_id'      => 'nullable|string|size:26',
@@ -42,7 +41,7 @@ class AccountBalanceController extends Controller
             ->where('je.account_id', $acc->id)
             ->whereDate('j.date', '<=', $asOf);
 
-        foreach (['partner_id', 'cost_center_id', 'project_id', 'branch_id'] as $f) {
+        foreach (['cost_center_id', 'project_id', 'branch_id'] as $f) {
             if (! empty($data[$f])) {
                 $q->where("je.{$f}", $data[$f]);
             }
@@ -69,7 +68,6 @@ class AccountBalanceController extends Controller
             'total_credit'   => $tc,
             'balance'        => $balance,
             'filters'        => array_filter([
-                'partner_id'     => $data['partner_id']     ?? null,
                 'cost_center_id' => $data['cost_center_id'] ?? null,
                 'project_id'     => $data['project_id']     ?? null,
                 'branch_id'      => $data['branch_id']      ?? null,

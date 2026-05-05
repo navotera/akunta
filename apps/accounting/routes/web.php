@@ -58,8 +58,13 @@ Route::get('/sso/login', function () {
         }
 
         if ($tenant !== null) {
-            // SPA picks up tenant via cookie + /api/v1/me.
-            return redirect('/dashboard');
+            // SPA lives on a different host:port (Vite dev or static deploy).
+            // Redirect away to the configured SPA dashboard so /api/v1/me runs
+            // under the SPA origin (cookie + tenant resolved client-side).
+            $spaUrl = rtrim((string) config('app.spa_url'), '/');
+            $target = $spaUrl !== '' ? $spaUrl.'/dashboard' : '/dashboard';
+
+            return redirect()->away($target);
         }
 
         // Session lacks ecopa.app_role (stale session from earlier flow before

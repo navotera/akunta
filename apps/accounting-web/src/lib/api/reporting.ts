@@ -1,5 +1,13 @@
 import { api } from './client.js';
 
+export interface SourceRef {
+  ref_type: string;
+  ref_id: string;
+  ref_code?: string | null;
+  ref_label?: string | null;
+  ref_attrs?: Record<string, unknown> | null;
+}
+
 export interface ReportMeta {
   entity_id: string;
   entity_name: string;
@@ -66,8 +74,11 @@ export interface GeneralLedgerLine {
   debit: string;
   credit: string;
   line_memo: string | null;
-  partner_id: string | null;
   balance: string;
+  source_app: string | null;
+  source_ref_type: string | null;
+  source_ref_id: string | null;
+  metadata: { source?: SourceRef } | null;
 }
 
 export interface GeneralLedgerAccount {
@@ -120,7 +131,14 @@ export const reportingApi = {
     accountId: string,
     periodStart: string,
     periodEnd: string,
-    filters: { partner_id?: string; cost_center_id?: string; project_id?: string; branch_id?: string } = {},
+    filters: {
+      cost_center_id?: string;
+      project_id?: string;
+      branch_id?: string;
+      source_app?: string;
+      source_ref_type?: string;
+      source_ref_id?: string;
+    } = {},
     tenantSlug?: string | null,
   ) => {
     const params = new URLSearchParams({

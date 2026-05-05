@@ -33,7 +33,6 @@ class RecordPurchaseAction
      *   payment_account_id: string,
      *   subtotal: numeric,
      *   tax_code_id?: ?string,
-     *   partner_id?: ?string,
      *   reference?: ?string,
      *   memo?: ?string,
      *   created_by?: ?string,
@@ -85,14 +84,12 @@ class RecordPurchaseAction
                 'created_by' => $input['created_by'] ?? null,
             ]);
 
-            $partnerId = $input['partner_id'] ?? null;
             $lineNo = 1;
 
             JournalEntry::create([
                 'journal_id' => $journal->id,
                 'line_no' => $lineNo++,
                 'account_id' => $purchase->id,
-                'partner_id' => $partnerId,
                 'debit' => $subtotal,
                 'credit' => '0',
                 'memo' => $input['memo'] ?? 'Pembelian',
@@ -103,7 +100,6 @@ class RecordPurchaseAction
                     'journal_id' => $journal->id,
                     'line_no' => $lineNo++,
                     'account_id' => $taxCode->tax_account_id,
-                    'partner_id' => $partnerId,
                     'tax_code_id' => $taxCode->id,
                     'tax_base' => $subtotal,
                     'debit' => $taxAmount,
@@ -116,7 +112,6 @@ class RecordPurchaseAction
                 'journal_id' => $journal->id,
                 'line_no' => $lineNo++,
                 'account_id' => $payment->id,
-                'partner_id' => $partnerId,
                 'debit' => '0',
                 'credit' => $total,
                 'memo' => $input['memo'] ?? 'Pembayaran pembelian',

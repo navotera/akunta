@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatRupiah, parseRupiah } from '@akunta/ui';
   import type { AccountOption } from '$lib/api/account.js';
+  import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
 
   interface Row {
     account_id: string;
@@ -20,8 +21,8 @@
 
   let amountDisplay = $state(row.amount && Number(row.amount) > 0 ? formatRupiah(row.amount, { withSymbol: false }) : '');
 
-  function setAccount(e: Event) {
-    onChange({ ...row, account_id: (e.target as HTMLSelectElement).value });
+  function pickAccount(id: string) {
+    onChange({ ...row, account_id: id });
   }
   function setMemo(e: Event) {
     onChange({ ...row, memo: (e.target as HTMLInputElement).value || null });
@@ -44,17 +45,7 @@
     {index + 1}
   </div>
 
-  <select
-    class="w-full rounded-md border border-border-default px-2 py-1.5 text-sm focus:outline-none focus:border-primary"
-    value={row.account_id}
-    onchange={setAccount}
-    data-testid="entry-account"
-  >
-    <option value="">Pilih akun…</option>
-    {#each accounts as a (a.id)}
-      <option value={a.id}>{a.code} — {a.name}</option>
-    {/each}
-  </select>
+  <AccountCombobox {accounts} value={row.account_id} onSelect={pickAccount} />
 
   <input
     type="text"

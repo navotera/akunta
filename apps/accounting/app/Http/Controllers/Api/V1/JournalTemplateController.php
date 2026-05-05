@@ -112,13 +112,19 @@ class JournalTemplateController extends Controller
     public function instantiate(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
-            'date'             => 'required|date_format:Y-m-d',
-            'reference'        => 'nullable|string|max:120',
-            'memo'             => 'nullable|string|max:400',
-            'overrides'        => 'nullable|array',
+            'date'              => 'required|date_format:Y-m-d',
+            'reference'         => 'nullable|string|max:120',
+            'memo'              => 'nullable|string|max:400',
+            'overrides'         => 'nullable|array',
             'overrides.*.amount' => 'nullable|numeric|min:0',
             'overrides.*.memo'   => 'nullable|string|max:200',
-            'idempotency_key'  => 'nullable|string|max:120',
+            'idempotency_key'   => 'nullable|string|max:120',
+            'source_refs'       => 'nullable|array',
+            'source_refs.*.ref_type'  => 'required_with:source_refs.*|string|max:40',
+            'source_refs.*.ref_id'    => 'required_with:source_refs.*|string|max:80',
+            'source_refs.*.ref_code'  => 'nullable|string|max:80',
+            'source_refs.*.ref_label' => 'nullable|string|max:255',
+            'source_refs.*.ref_attrs' => 'nullable|array',
         ]);
 
         /** @var ApiToken $token */
@@ -136,6 +142,7 @@ class JournalTemplateController extends Controller
                 sourceApp: $token->app?->code ?? 'accounting',
                 idempotencyKey: $data['idempotency_key'] ?? null,
                 createdBy: $token->user_id,
+                sourceRefs: $data['source_refs'] ?? [],
             );
         } catch (JournalException $e) {
             return response()->json(['error' => 'instantiate_failed', 'message' => $e->getMessage()], 422);
@@ -163,7 +170,6 @@ class JournalTemplateController extends Controller
             'lines'             => $t->lines->map(fn ($l) => [
                 'line_no'        => $l->line_no,
                 'account_id'     => $l->account_id,
-                'partner_id'     => $l->partner_id,
                 'cost_center_id' => $l->cost_center_id,
                 'project_id'     => $l->project_id,
                 'branch_id'      => $l->branch_id,

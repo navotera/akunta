@@ -34,7 +34,6 @@ return new class extends Migration
             $table->ulid('template_id');
             $table->unsignedInteger('line_no');
             $table->ulid('account_id');
-            $table->ulid('partner_id')->nullable();
             $table->ulid('cost_center_id')->nullable();
             $table->ulid('project_id')->nullable();
             $table->ulid('branch_id')->nullable();
@@ -45,7 +44,6 @@ return new class extends Migration
 
             $table->foreign('template_id')->references('id')->on('journal_templates')->cascadeOnDelete();
             $table->foreign('account_id')->references('id')->on('accounts');
-            $table->foreign('partner_id')->references('id')->on('partners')->nullOnDelete();
             $table->foreign('cost_center_id')->references('id')->on('cost_centers')->nullOnDelete();
             $table->foreign('project_id')->references('id')->on('projects')->nullOnDelete();
             $table->foreign('branch_id')->references('id')->on('branches')->nullOnDelete();

@@ -26,7 +26,6 @@ class Project extends Model
         'entity_id',
         'code',
         'name',
-        'partner_id',
         'start_date',
         'end_date',
         'status',
@@ -44,11 +43,6 @@ class Project extends Model
     public function entity(): BelongsTo
     {
         return $this->belongsTo(Entity::class);
-    }
-
-    public function partner(): BelongsTo
-    {
-        return $this->belongsTo(Partner::class);
     }
 
     public function journalEntries(): HasMany

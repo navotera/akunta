@@ -143,7 +143,9 @@ class SeedSampleJournalTemplatesAction
                         'line_no'     => $i + 1,
                         'account_id'  => $accounts[$line['account_code']]->id,
                         'side'        => $line['side'],
-                        'amount'      => $line['amount'],
+                        // Sample templates store account-only — user fills the
+                        // amount when applying the template to a new journal.
+                        'amount'      => 0,
                         'memo'        => $line['memo'] ?? null,
                     ]);
                 }

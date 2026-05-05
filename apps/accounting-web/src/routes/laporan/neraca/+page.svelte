@@ -6,6 +6,7 @@
   import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<BalanceSheetData | null>(null);
@@ -49,7 +50,7 @@
   {#snippet toolbar()}
     <label class="text-sm">
       <span class="block font-medium mb-1">Per Tanggal</span>
-      <input type="date" class="rounded-md border border-border-default px-2 py-1.5" bind:value={asOf} data-testid="report-as-of" />
+      <DateInput value={asOf} onChange={(iso) => (asOf = iso)} testId="report-as-of" />
     </label>
     <button
       type="button"

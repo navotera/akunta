@@ -11,7 +11,6 @@ use App\Models\Branch;
 use App\Models\CostCenter;
 use App\Models\Journal;
 use App\Models\JournalTemplate;
-use App\Models\Partner;
 use App\Models\Period;
 use App\Models\Project;
 use App\Models\RecurringJournal;
@@ -68,7 +67,6 @@ class AppServiceProvider extends ServiceProvider
     {
         $rels = [
             'accounts'             => Account::class,
-            'partners'             => Partner::class,
             'periods'              => Period::class,
             'journals'             => Journal::class,
             'costCenters'          => CostCenter::class,
@@ -175,7 +173,6 @@ class AppServiceProvider extends ServiceProvider
             'lines'           => $j->entries->map(fn ($e) => [
                 'line_no'    => $e->line_no,
                 'account_id' => $e->account_id,
-                'partner_id' => $e->partner_id,
                 'debit'      => (string) $e->debit,
                 'credit'     => (string) $e->credit,
                 'memo'       => $e->memo,

@@ -89,12 +89,17 @@ class EcopaController extends EcopaAuthController
 
     protected function successRedirect(): string
     {
-        // SPA dashboard. Tenant is resolved client-side from /api/v1/me + cookie.
-        return url('/dashboard');
+        // SvelteKit SPA dashboard (lives on a different host:port). Tenant
+        // is resolved client-side from /api/v1/me + cookie.
+        $spa = rtrim((string) config('app.spa_url'), '/');
+
+        return ($spa !== '' ? $spa : url(''))."/dashboard";
     }
 
     protected function failureRedirect(): string
     {
-        return url('/login');
+        $spa = rtrim((string) config('app.spa_url'), '/');
+
+        return ($spa !== '' ? $spa : url(''))."/login";
     }
 }

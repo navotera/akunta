@@ -98,17 +98,21 @@ class ReportingController extends Controller
             'account_id' => 'required|string|size:26',
             'period_start' => 'required|date_format:Y-m-d',
             'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
-            'partner_id' => 'nullable|string|size:26',
-            'cost_center_id' => 'nullable|string|size:26',
-            'project_id' => 'nullable|string|size:26',
-            'branch_id' => 'nullable|string|size:26',
+            'cost_center_id'  => 'nullable|string|size:26',
+            'project_id'      => 'nullable|string|size:26',
+            'branch_id'       => 'nullable|string|size:26',
+            'source_app'      => 'nullable|string|max:40',
+            'source_ref_type' => 'nullable|string|max:40',
+            'source_ref_id'   => 'nullable|string|max:80',
         ]);
 
         $filters = array_filter([
-            'partner_id' => $data['partner_id'] ?? null,
-            'cost_center_id' => $data['cost_center_id'] ?? null,
-            'project_id' => $data['project_id'] ?? null,
-            'branch_id' => $data['branch_id'] ?? null,
+            'cost_center_id'  => $data['cost_center_id']  ?? null,
+            'project_id'      => $data['project_id']      ?? null,
+            'branch_id'       => $data['branch_id']       ?? null,
+            'source_app'      => $data['source_app']      ?? null,
+            'source_ref_type' => $data['source_ref_type'] ?? null,
+            'source_ref_id'   => $data['source_ref_id']   ?? null,
         ]);
 
         $report = $this->generalLedger->compute(

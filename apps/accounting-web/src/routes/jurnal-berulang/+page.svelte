@@ -5,6 +5,8 @@
   import { recurringApi, type RecurringJournal, type RecurringInput, type Frequency } from '$lib/api/recurring.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
+  import Combobox from '$lib/components/ui/Combobox.svelte';
+  import DateInput from '$lib/components/ui/DateInput.svelte';
 
   let items = $state<RecurringJournal[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
@@ -184,11 +186,12 @@
       <div class="grid grid-cols-2 gap-3 text-sm">
         <label class="col-span-2">
           <span class="block font-medium mb-1">Template <span class="text-danger">*</span></span>
-          <select class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.template_id}>
-            {#each templates as t (t.id)}
-              <option value={t.id}>{t.code} — {t.name}</option>
-            {/each}
-          </select>
+          <Combobox
+            options={templates.map((t) => ({ id: t.id, label: t.name, code: t.code, sublabel: t.description ?? null }))}
+            value={form.template_id}
+            placeholder="Cari template (kode atau nama)…"
+            onSelect={(id) => (form.template_id = id)}
+          />
           {#if fieldErr('template_id')}<span class="text-xs text-danger">{fieldErr('template_id')}</span>{/if}
         </label>
         <label class="col-span-2">
@@ -212,11 +215,11 @@
         </label>
         <label>
           <span class="block font-medium mb-1">Mulai <span class="text-danger">*</span></span>
-          <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.start_date} />
+          <DateInput value={form.start_date} onChange={(iso) => (form.start_date = iso)} />
         </label>
         <label>
           <span class="block font-medium mb-1">Selesai (opsional)</span>
-          <input type="date" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.end_date} />
+          <DateInput value={form.end_date ?? ''} onChange={(iso) => (form.end_date = iso || null)} />
         </label>
         <label class="col-span-2 flex items-center gap-2">
           <input type="checkbox" bind:checked={form.auto_post} />

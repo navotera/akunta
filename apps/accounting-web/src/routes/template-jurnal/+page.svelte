@@ -5,6 +5,7 @@
   import { templateApi, type JournalTemplateSummary, type JournalTemplateDetail, type JournalTemplateInput } from '$lib/api/template.js';
   import { accountApi, type Account } from '$lib/api/account.js';
   import { ApiError } from '$lib/api/client.js';
+  import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
 
   interface LineDraft {
     account_id: string;
@@ -192,12 +193,7 @@
         {#each form.lines as line, i (i)}
           <div class="grid grid-cols-[1.5rem_5fr_2fr_3fr_3fr_2rem] items-center gap-2 text-sm">
             <span class="text-xs text-text-muted text-center">{i + 1}</span>
-            <select class="rounded-md border border-border-default px-2 py-1.5" bind:value={line.account_id}>
-              <option value="">Pilih akun…</option>
-              {#each accounts as a (a.id)}
-                <option value={a.id}>{a.code} — {a.name}</option>
-              {/each}
-            </select>
+            <AccountCombobox {accounts} value={line.account_id} onSelect={(id) => (line.account_id = id)} />
             <select class="rounded-md border border-border-default px-2 py-1.5" bind:value={line.side}>
               <option value="debit">Debit</option>
               <option value="credit">Credit</option>

@@ -1,0 +1,27 @@
+.dark, [data-theme="dark"] {
+
+    --acc-bg-page:    #0F172A;
+    --acc-bg-card:    #111827;
+    --acc-bg-sidebar: #111827;
+    --acc-bg-topbar:  #111827;
+
+    --acc-border:      #1F2937;
+    --acc-border-soft: #111827;
+
+    --acc-gray-50:  #111827;
+    --acc-gray-100: #1F2937;
+    --acc-gray-200: #374151;
+    --acc-gray-300: #4B5563;
+    --acc-gray-400: #6B7280;
+    --acc-gray-500: #9CA3AF;
+    --acc-gray-600: #D1D5DB;
+    --acc-gray-700: #E5E7EB;
+    --acc-gray-900: #F9FAFB;
+
+    --acc-text:       #F9FAFB;
+    --acc-text-muted: #9CA3AF;
+
+    --acc-primary-light: rgba(37, 99, 235, 0.2);
+    --acc-paid-light:    rgba(22, 163, 74, 0.2);
+    --acc-unpaid-light:  rgba(220, 38, 38, 0.2);
+}

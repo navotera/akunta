@@ -109,6 +109,29 @@ table .tabnum.ak-dim,
   background: var(--m-bg-page);
 }
 
+/* Animated green dot — active period indicator in topbar dropdown */
+@keyframes ak-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(23, 198, 83, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(23, 198, 83, 0);
+  }
+}
+.ak-period-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+.ak-period-dot--active {
+  background: #17C653;
+  animation: ak-pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.ak-period-dot--idle {
+  background: #C4CADA;
+}
+
 /* Sidebar nav item — matches prior Filament fi-sidebar-item */
 .ak-nav-item {
   display: flex;
