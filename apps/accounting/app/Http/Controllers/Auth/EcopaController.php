@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Auth;
 
 use Akunta\EcopaClient\Http\EcopaAuthController;
 use App\Models\User;
-use Filament\Facades\Filament;
 use Illuminate\Support\Facades\Auth;
 
 class EcopaController extends EcopaAuthController
@@ -90,23 +89,12 @@ class EcopaController extends EcopaAuthController
 
     protected function successRedirect(): string
     {
-        $panel  = Filament::getPanel('accounting');
-        $user   = Auth::guard('web')->user();
-        $tenant = ($user && method_exists($user, 'getDefaultTenant'))
-            ? $user->getDefaultTenant($panel)
-            : null;
-
-        if ($tenant === null) {
-            // User authenticated but has no entity assigned. Bounce to root —
-            // RedirectGuestToEcopa won't loop because user IS authenticated.
-            return url('/');
-        }
-
-        return \App\Filament\Pages\Dashboard::getUrl(panel: 'accounting', tenant: $tenant);
+        // SPA dashboard. Tenant is resolved client-side from /api/v1/me + cookie.
+        return url('/dashboard');
     }
 
     protected function failureRedirect(): string
     {
-        return Filament::getPanel('accounting')->getLoginUrl() ?? '/admin-accounting/login';
+        return url('/login');
     }
 }

@@ -2,16 +2,139 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('https://fonts.bunny.net/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('https://fonts.bunny.net/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
 :root {
   color-scheme: light;
+  --m-primary: #1B84FF;
+  --m-primary-light: #EFF6FF;
+  --m-primary-active: #056EE9;
+  --m-bg-page: #FAFAFB;
+  --m-bg-card: #FFFFFF;
+  --m-border: #DBDFE9;
+  --m-text: #252F4A;
+  --m-text-muted: #78829D;
 }
 
-html,
-body {
+html, body {
   height: 100%;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: var(--m-bg-page);
+  color: var(--m-text);
+  font-size: 14px;
+  letter-spacing: -0.005em;
 }
 
-/* tabular-nums helper for amount columns */
+/* Tabular numbers helper for amount columns */
 .tabnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* Akunta dim — values where |n| < 10 (incl. 0) appear muted grey + low opacity.
+ * Lives outside @layer so cascade reliably wins. Selectors target generic
+ * fi-wi-* descendants (legacy Filament markup) AND tabnum cells. */
+.ak-dim,
+table .tabnum.ak-dim,
+.fi-wi .ak-dim {
+  color: var(--m-text-muted) !important;
+  opacity: 0.5;
+}
+
+/* Pill — matches prior Filament status pills */
+.ak-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* Card — matches prior Filament panel chrome */
+.ak-card {
+  background: var(--m-bg-card);
+  border: 1px solid var(--m-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Section heading — small bold uppercase tracking-wider */
+.ak-section-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--m-text-muted);
+}
+
+/* Table — matches prior Filament fi-ta chrome */
+.ak-table {
+  width: 100%;
+  font-size: 0.875rem;
+}
+.ak-table thead {
+  background: var(--m-bg-page);
+}
+.ak-table thead th {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--m-text-muted);
+  padding: 0.625rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--m-border);
+}
+.ak-table tbody td {
+  padding: 0.625rem 1rem;
+  border-top: 1px solid #F1F1F4;
+}
+.ak-table tbody tr:hover {
+  background: var(--m-bg-page);
+}
+
+/* Sidebar nav item — matches prior Filament fi-sidebar-item */
+.ak-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--m-text);
+  transition: background-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ak-nav-item:hover {
+  background: var(--m-bg-page);
+  color: var(--m-primary);
+}
+.ak-nav-item.is-active {
+  background: var(--m-primary-light);
+  color: var(--m-primary-active);
+  font-weight: 600;
+}
+.ak-nav-item .ak-nav-icon {
+  width: 1rem;
+  text-align: center;
+  font-size: 0.95rem;
+  opacity: 0.85;
 }

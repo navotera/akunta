@@ -106,7 +106,7 @@
 
   async function destroy(s: JournalTemplateSummary) {
     if (!confirm(`Hapus template ${s.name}?`)) return;
-    try { await templateApi.destroy(s.id); await load(); }
+    try { await templateApi.destroy(s.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -124,7 +124,7 @@
     </div>
     <button
       type="button"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       onclick={openCreate}
     >
       + Template Baru
@@ -145,24 +145,19 @@
             <th class="px-4 py-3 text-left">Deskripsi</th>
             <th class="px-4 py-3 text-center">Baris</th>
             <th class="px-4 py-3 text-center">Aktif</th>
-            <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {#each items as t (t.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg">
+            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(t)}>
               <td class="px-4 py-2 font-mono">{t.code}</td>
               <td class="px-4 py-2 font-medium">{t.name}</td>
               <td class="px-4 py-2 text-text-muted">{t.description ?? '—'}</td>
               <td class="px-4 py-2 text-center">{t.lines_count}</td>
               <td class="px-4 py-2 text-center">{t.is_active ? '✓' : '—'}</td>
-              <td class="px-4 py-2 text-right space-x-2">
-                <button class="text-primary hover:underline text-xs" onclick={() => openEdit(t)}>Edit</button>
-                <button class="text-danger hover:underline text-xs" onclick={() => destroy(t)}>Hapus</button>
-              </td>
             </tr>
           {:else}
-            <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada template.</td></tr>
+            <tr><td colspan="5" class="px-4 py-10 text-center text-text-muted">Belum ada template.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -217,16 +212,29 @@
         </button>
       </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
-        <button
-          type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
-          onclick={save}
-          disabled={saving}
-        >
-          {saving ? 'Menyimpan…' : 'Simpan'}
-        </button>
+      <div class="mt-5 flex items-center justify-between gap-2">
+        <div>
+          {#if editing}
+            <button
+              type="button"
+              class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+              onclick={() => destroy({ id: editing!.id, name: editing!.name } as JournalTemplateSummary)}
+            >
+              Hapus
+            </button>
+          {/if}
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          <button
+            type="button"
+            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+            onclick={save}
+            disabled={saving}
+          >
+            {saving ? 'Menyimpan…' : 'Simpan'}
+          </button>
+        </div>
       </div>
     </div>
   </div>

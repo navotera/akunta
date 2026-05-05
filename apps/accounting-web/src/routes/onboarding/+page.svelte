@@ -108,7 +108,7 @@
       <div class="mt-5 flex justify-end">
         <button
           type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
           onclick={applyCoa}
           disabled={busy || !selectedKey}
         >
@@ -142,7 +142,7 @@
         <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={() => (step = 1)}>← Kembali</button>
         <button
           type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
           onclick={createPeriod}
           disabled={busy}
         >
@@ -161,7 +161,7 @@
       </p>
       <button
         type="button"
-        class="mt-4 rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+        class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
         onclick={finish}
       >
         Ke Dashboard →

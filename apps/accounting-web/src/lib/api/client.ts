@@ -25,6 +25,11 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+function readActiveTenantId(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem('akunta.active_entity_id');
+}
+
 let csrfFetched = false;
 
 export async function ensureCsrfCookie(): Promise<void> {
@@ -51,7 +56,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     if (xsrf) headers.set('X-XSRF-TOKEN', xsrf);
   }
 
-  const tenantSlug = opts.tenantSlug ?? null;
+  const tenantSlug = opts.tenantSlug ?? readActiveTenantId();
   if (tenantSlug) headers.set('X-Tenant-Slug', tenantSlug);
 
   const res = await fetch(path, {

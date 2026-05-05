@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\DB;
  *   - Skip kalau salah satu account.code belum ada di entity (CoA template
  *     belum diterapkan dulu).
  *
- * Dipakai dari Filament header action di ListJournalTemplates supaya user baru
- * bisa lihat contoh nyata bagaimana template + jurnal berulang bekerja.
+ * Dipakai sebagai onboarding-helper supaya user baru bisa lihat contoh
+ * nyata bagaimana template + jurnal berulang bekerja.
  */
 class SeedSampleJournalTemplatesAction
 {

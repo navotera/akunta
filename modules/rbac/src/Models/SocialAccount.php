@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Akunta\Rbac\Models;
 
-use DutchCodingCompany\FilamentSocialite\Models\Contracts\FilamentSocialiteUser as FilamentSocialiteUserContract;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -20,12 +19,8 @@ use Laravel\Socialite\Contracts\User as SocialiteUserContract;
  * @property string|null $avatar_url
  * @property \Illuminate\Support\Carbon $linked_at
  * @property \Illuminate\Support\Carbon|null $last_used_at
- *
- * Implements `FilamentSocialiteUserContract` so filament-socialite plugin can
- * use this model as the link table. Field mapping overrides map plugin's
- * expected `provider_id` → our `provider_user_id` column.
  */
-class SocialAccount extends Model implements FilamentSocialiteUserContract
+class SocialAccount extends Model
 {
     use HasUlids;
 

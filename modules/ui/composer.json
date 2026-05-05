@@ -1,13 +1,12 @@
 {
     "name": "akunta/ui",
-    "description": "Shared Filament v3 components: entity switcher, period badge, common form fields, table columns.",
+    "description": "Shared UI service-provider stub (Filament v3 widgets retired in Phase 5; SvelteKit SPA owns UI now).",
     "type": "library",
     "license": "proprietary",
     "require": {
         "php": "^8.3",
         "akunta/core": "*",
         "akunta/rbac": "*",
-        "filament/filament": "^3.2",
         "illuminate/support": "^11.0"
     },
     "require-dev": {

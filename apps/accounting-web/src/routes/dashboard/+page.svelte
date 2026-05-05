@@ -100,7 +100,7 @@
         <p class="text-xs font-bold uppercase tracking-wider text-text-muted">Aksi Cepat</p>
         <a
           href="/journals/new"
-          class="mt-2 inline-flex items-center justify-center rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+          class="mt-2 inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
         >
           + Jurnal Baru
         </a>

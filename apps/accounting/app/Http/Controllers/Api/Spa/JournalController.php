@@ -12,7 +12,6 @@ use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
-use Filament\Facades\Filament;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -227,7 +226,7 @@ class JournalController extends Controller
             $entity = Entity::where('slug', $tenantSlug)->first()
                   ?? Entity::find($tenantSlug);
         }
-        $entity ??= Auth::user()?->getDefaultTenant(Filament::getDefaultPanel());
+        $entity ??= Auth::user()?->getDefaultTenant();
 
         if (! $entity instanceof Entity) {
             throw ValidationException::withMessages(['tenant' => 'Tenant not resolvable.']);

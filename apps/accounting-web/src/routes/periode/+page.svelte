@@ -65,7 +65,7 @@
 
   async function close(p: Period) {
     if (!confirm(`Tutup periode ${p.name}?`)) return;
-    try { await periodApi.close(p.id); await load(); }
+    try { await periodApi.close(p.id); closeForm(); await load(); }
     catch (e) {
       const msg = e instanceof ApiError ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body) : (e as Error).message;
       alert(msg);
@@ -74,13 +74,13 @@
 
   async function reopen(p: Period) {
     if (!confirm(`Buka kembali periode ${p.name}?`)) return;
-    try { await periodApi.reopen(p.id); await load(); }
+    try { await periodApi.reopen(p.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
 
   async function destroy(p: Period) {
     if (!confirm(`Hapus periode ${p.name}?`)) return;
-    try { await periodApi.destroy(p.id); await load(); }
+    try { await periodApi.destroy(p.id); closeForm(); await load(); }
     catch (e) {
       const msg = e instanceof ApiError ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body) : (e as Error).message;
       alert(msg);
@@ -106,7 +106,7 @@
     </div>
     <button
       type="button"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       onclick={openCreate}
     >
       + Periode Baru
@@ -126,12 +126,11 @@
             <th class="px-4 py-3 text-left">Mulai</th>
             <th class="px-4 py-3 text-left">Selesai</th>
             <th class="px-4 py-3 text-left">Status</th>
-            <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {#each items as p (p.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg">
+            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(p)}>
               <td class="px-4 py-2 font-medium">{p.name}</td>
               <td class="px-4 py-2">{p.start_date}</td>
               <td class="px-4 py-2">{p.end_date}</td>
@@ -140,18 +139,9 @@
                   {p.status}
                 </span>
               </td>
-              <td class="px-4 py-2 text-right space-x-2">
-                {#if p.status === 'open'}
-                  <button class="text-primary hover:underline text-xs" onclick={() => openEdit(p)}>Edit</button>
-                  <button class="text-warning hover:underline text-xs" onclick={() => close(p)}>Tutup</button>
-                  <button class="text-danger hover:underline text-xs" onclick={() => destroy(p)}>Hapus</button>
-                {:else}
-                  <button class="text-primary hover:underline text-xs" onclick={() => reopen(p)}>Buka Lagi</button>
-                {/if}
-              </td>
             </tr>
           {:else}
-            <tr><td colspan="5" class="px-4 py-10 text-center text-text-muted">Belum ada periode.</td></tr>
+            <tr><td colspan="4" class="px-4 py-10 text-center text-text-muted">Belum ada periode.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -181,16 +171,48 @@
         </label>
       </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
-        <button
-          type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
-          onclick={save}
-          disabled={saving}
-        >
-          {saving ? 'Menyimpan…' : 'Simpan'}
-        </button>
+      <div class="mt-5 flex items-center justify-between gap-2">
+        <div class="flex gap-2">
+          {#if editing}
+            {#if editing.status === 'open'}
+              <button
+                type="button"
+                class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
+                onclick={() => close(editing!)}
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+                onclick={() => destroy(editing!)}
+              >
+                Hapus
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white"
+                onclick={() => reopen(editing!)}
+              >
+                Buka Lagi
+              </button>
+            {/if}
+          {/if}
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          {#if !editing || editing.status === 'open'}
+            <button
+              type="button"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+              onclick={save}
+              disabled={saving}
+            >
+              {saving ? 'Menyimpan…' : 'Simpan'}
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
   </div>

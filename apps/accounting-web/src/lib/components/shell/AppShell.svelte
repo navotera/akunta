@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { tenant } from '$lib/stores/tenant.svelte.js';
 
   interface NavItem {
     href: string;
@@ -52,27 +53,48 @@
     await auth.logout();
     goto('/login', { replaceState: true });
   }
+
+  let entityMenuOpen = $state(false);
+
+  function pickEntity(id: string) {
+    tenant.switch(id);
+    entityMenuOpen = false;
+    // Force a hard reload so every onMount() refetches with the new tenant.
+    if (typeof window !== 'undefined') window.location.reload();
+    else invalidateAll();
+  }
+
+  function handleClickOutside(node: HTMLElement, cb: () => void) {
+    function onDoc(e: MouseEvent) {
+      if (!node.contains(e.target as Node)) cb();
+    }
+    document.addEventListener('mousedown', onDoc);
+    return { destroy() { document.removeEventListener('mousedown', onDoc); } };
+  }
 </script>
 
 <div class="flex min-h-screen bg-page-bg">
-  <aside class="hidden w-60 shrink-0 flex-col border-r border-border-default bg-card-bg md:flex">
-    <header class="px-5 py-4 border-b border-border-soft">
-      <strong class="block text-base font-bold tracking-tight">Akunta</strong>
-      <span class="block text-xs text-text-muted">Accounting</span>
+  <!-- Sidebar — matches Filament fi-sidebar slim 240px / Metronic Demo3 light -->
+  <aside class="hidden w-60 shrink-0 flex-col border-r border-border-default bg-sidebar-bg md:flex">
+    <header class="flex items-center gap-2.5 px-5 py-4 border-b border-border-soft">
+      <span class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm">
+        A
+      </span>
+      <div class="flex flex-col leading-tight">
+        <strong class="text-[0.95rem] font-bold tracking-tight text-text-strong">Akunta</strong>
+        <span class="text-[0.65rem] font-medium uppercase tracking-wider text-text-muted">Accounting</span>
+      </div>
     </header>
 
     <nav class="flex-1 overflow-y-auto py-3">
       {#each groups as g (g.title)}
         <div class="mb-4">
-          <p class="px-5 text-[10px] font-bold uppercase tracking-wider text-text-muted">{g.title}</p>
-          <ul class="mt-1">
+          <p class="px-5 mb-1 ak-section-title">{g.title}</p>
+          <ul>
             {#each g.items as it (it.href)}
               <li>
-                <a
-                  href={it.href}
-                  class="mx-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors {isActive(it) ? 'bg-primary-light text-primary' : 'text-text-default hover:bg-page-bg'}"
-                >
-                  <span class="w-5 text-center text-base">{it.icon}</span>
+                <a href={it.href} class="ak-nav-item {isActive(it) ? 'is-active' : ''}">
+                  <span class="ak-nav-icon">{it.icon}</span>
                   <span>{it.label}</span>
                 </a>
               </li>
@@ -85,11 +107,11 @@
     <footer class="border-t border-border-soft px-3 py-3">
       {#if auth.user}
         <div class="flex items-center gap-3 px-2 py-1.5">
-          <span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-light text-primary font-bold">
+          <span class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-light text-primary font-bold">
             {auth.user.name.charAt(0).toUpperCase()}
           </span>
           <div class="min-w-0 flex-1">
-            <strong class="block truncate text-sm font-semibold">{auth.user.name}</strong>
+            <strong class="block truncate text-sm font-semibold text-text-default">{auth.user.name}</strong>
             <span class="block truncate text-xs text-text-muted">{auth.user.email}</span>
           </div>
           <button
@@ -98,6 +120,7 @@
             onclick={logout}
             title="Keluar"
             data-testid="logout-button"
+            aria-label="Keluar"
           >
             ⏻
           </button>
@@ -106,7 +129,92 @@
     </footer>
   </aside>
 
-  <main class="min-w-0 flex-1">
-    {@render children?.()}
-  </main>
+  <!-- Main column with topbar -->
+  <div class="flex min-w-0 flex-1 flex-col">
+    <header class="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b border-border-default bg-topbar-bg px-6">
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded-md border border-border-default text-text-muted hover:bg-page-bg md:hidden"
+          aria-label="Menu"
+        >
+          ☰
+        </button>
+        <div class="hidden md:block">
+          <input
+            type="text"
+            placeholder="Cari menu, data, laporan…  ⌘K"
+            class="h-9 w-72 rounded-md border border-border-default bg-page-bg px-3 text-sm placeholder:text-text-muted focus:outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        {#if tenant.available.length > 0}
+          <div class="relative" use:handleClickOutside={() => (entityMenuOpen = false)}>
+            <button
+              type="button"
+              class="flex h-9 items-center gap-2 rounded-md border border-border-default bg-card-bg px-3 text-sm font-medium text-text-default hover:border-primary"
+              onclick={() => (entityMenuOpen = !entityMenuOpen)}
+              data-testid="entity-switcher"
+              aria-haspopup="listbox"
+              aria-expanded={entityMenuOpen}
+            >
+              <span class="flex h-5 w-5 items-center justify-center rounded bg-primary-light text-[0.625rem] font-bold text-primary">
+                {(tenant.name ?? '?').charAt(0).toUpperCase()}
+              </span>
+              <span class="max-w-[10rem] truncate">{tenant.name ?? 'Pilih entitas'}</span>
+              <span class="text-text-muted text-xs">▾</span>
+            </button>
+
+            {#if entityMenuOpen}
+              <ul
+                class="absolute right-0 mt-1 w-64 overflow-hidden rounded-md border border-border-default bg-card-bg shadow-lg z-20"
+                role="listbox"
+              >
+                <li class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted">
+                  Pilih Entitas ({tenant.available.length})
+                </li>
+                {#each tenant.available as t (t.id)}
+                  <li>
+                    <button
+                      type="button"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {tenant.id === t.id ? 'bg-primary-light text-primary-active font-semibold' : 'text-text-default'}"
+                      onclick={() => pickEntity(t.id)}
+                      role="option"
+                      aria-selected={tenant.id === t.id}
+                    >
+                      <span class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary">
+                        {t.name.charAt(0).toUpperCase()}
+                      </span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate">{t.name}</span>
+                        {#if t.slug}<span class="block truncate text-xs text-text-muted">{t.slug}</span>{/if}
+                      </span>
+                      {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {/if}
+
+        <button class="flex h-9 w-9 items-center justify-center rounded-md border border-border-default text-text-muted hover:bg-page-bg" aria-label="Notifikasi">
+          🔔
+        </button>
+        {#if auth.user}
+          <span class="hidden lg:flex items-center gap-2 rounded-md border border-border-default px-2 py-1.5">
+            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-light text-primary text-xs font-bold">
+              {auth.user.name.charAt(0).toUpperCase()}
+            </span>
+            <span class="text-sm font-medium text-text-default">{auth.user.name}</span>
+          </span>
+        {/if}
+      </div>
+    </header>
+
+    <main class="min-w-0 flex-1">
+      {@render children?.()}
+    </main>
+  </div>
 </div>

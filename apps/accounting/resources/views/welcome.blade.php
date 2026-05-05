@@ -513,11 +513,11 @@
         <div class="marquee-track">
             <span>Pembukuan yang jujur untuk UKM Indonesia</span>
             <span>Double-entry · Payroll · Cash Management</span>
-            <span>Laravel 11 · Filament v3 · PostgreSQL</span>
+            <span>Laravel 11 · SvelteKit · PostgreSQL</span>
             <span>Multi-tenant per database</span>
             <span>Pembukuan yang jujur untuk UKM Indonesia</span>
             <span>Double-entry · Payroll · Cash Management</span>
-            <span>Laravel 11 · Filament v3 · PostgreSQL</span>
+            <span>Laravel 11 · SvelteKit · PostgreSQL</span>
             <span>Multi-tenant per database</span>
         </div>
     </div>
@@ -688,7 +688,7 @@
                         <li><a href="/docs/spec.md">Spec v0.6</a></li>
                         <li><a href="/docs/architecture.md">Architecture</a></li>
                         <li><a href="/docs/decisions.md">Decisions log</a></li>
-                        <li><a href="https://filamentphp.com">Filament v3</a></li>
+                        <li><a href="https://kit.svelte.dev">SvelteKit</a></li>
                     </ul>
                 </div>
                 <div>

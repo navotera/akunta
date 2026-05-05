@@ -11,14 +11,12 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Cross-app entity sync (step 13, spec §8.3).
  *
- * Every request that visits a tenant-scoped Filament route (URL carries {tenant})
- * writes `akunta_entity` cookie pointing at the visited entity id. Cookie domain
- * is ECOSYSTEM_BASE_DOMAIN so sibling apps (accounting/payroll/cash-mgmt) all
- * read + respect the same value.
+ * Writes `akunta_entity` cookie at ECOSYSTEM_BASE_DOMAIN so sibling apps
+ * (accounting/payroll/cash-mgmt) read + respect the same active entity.
  *
- * Read side lives in App\Models\User::getDefaultTenant — when Filament resolves
- * "/admin-{app}" without an explicit tenant, it reads the cookie and picks that
- * entity if the user still has access.
+ * Read side lives in App\Models\User::getDefaultTenant — picks the cookie's
+ * entity when present and accessible. The SvelteKit SPA also persists the
+ * selection to localStorage and forwards it via X-Tenant-Slug header.
  *
  * Cookie shape:
  *   - name: akunta_entity

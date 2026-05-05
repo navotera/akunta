@@ -5,15 +5,13 @@ namespace App\Models;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User as RbacUser;
 use App\Http\Middleware\SharedEntitySelector;
-use Filament\Models\Contracts\HasDefaultTenant;
-use Filament\Models\Contracts\HasTenants;
-use Filament\Panel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
-class User extends RbacUser implements HasDefaultTenant, HasTenants
+class User extends RbacUser
 {
-    public function getTenants(Panel $panel): array|Collection
+    /** @return Collection<int, Entity> */
+    public function getTenants(): Collection
     {
         if ($this->isSsoAdmin()) {
             return Entity::query()->get();
@@ -59,11 +57,11 @@ class User extends RbacUser implements HasDefaultTenant, HasTenants
     }
 
     /**
-     * Cross-app entity sync (step 13): prefer entity pointed at by the shared
-     * cookie so switching in one app propagates to siblings. Fallback = first
-     * accessible entity if cookie absent / invalid / inaccessible.
+     * Cross-app entity sync: prefer the entity pointed at by the shared
+     * SharedEntitySelector cookie so switching in one app propagates to
+     * siblings. Fallback = first accessible entity if cookie absent / invalid.
      */
-    public function getDefaultTenant(Panel $panel): ?Model
+    public function getDefaultTenant(): ?Entity
     {
         $cookieEntityId = request()?->cookie(SharedEntitySelector::COOKIE_NAME);
 
@@ -74,8 +72,6 @@ class User extends RbacUser implements HasDefaultTenant, HasTenants
             }
         }
 
-        $tenants = $this->getTenants($panel);
-
-        return $tenants instanceof Collection ? $tenants->first() : ($tenants[0] ?? null);
+        return $this->getTenants()->first();
     }
 }

@@ -3,7 +3,7 @@
 namespace App\Support;
 
 use App\Models\Period;
-use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Auth;
 
 class ActivePeriod
 {
@@ -19,8 +19,7 @@ class ActivePeriod
         }
         self::$resolved = true;
 
-        $tenant = Filament::getTenant();
-        $entityId = $tenant?->getKey();
+        $entityId = self::currentEntityId();
 
         $base = Period::query()->where('status', Period::STATUS_OPEN);
         if ($entityId) {
@@ -65,8 +64,7 @@ class ActivePeriod
 
     public static function options(): \Illuminate\Support\Collection
     {
-        $tenant = Filament::getTenant();
-        $entityId = $tenant?->getKey();
+        $entityId = self::currentEntityId();
 
         $query = Period::query()->where('status', Period::STATUS_OPEN);
         if ($entityId) {
@@ -90,5 +88,20 @@ class ActivePeriod
     {
         self::$resolved = false;
         self::$cached = null;
+    }
+
+    protected static function currentEntityId(): ?string
+    {
+        // X-Tenant-Slug header takes precedence (SPA + machine-to-machine).
+        $slug = request()?->header('X-Tenant-Slug');
+        if (is_string($slug) && $slug !== '') {
+            $entity = \Akunta\Rbac\Models\Entity::where('slug', $slug)->first()
+                ?? \Akunta\Rbac\Models\Entity::find($slug);
+            if ($entity) {
+                return $entity->getKey();
+            }
+        }
+
+        return Auth::user()?->getDefaultTenant()?->getKey();
     }
 }

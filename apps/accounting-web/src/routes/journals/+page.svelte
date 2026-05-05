@@ -44,7 +44,7 @@
     </div>
     <a
       href="/journals/new"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       data-testid="create-journal"
     >
       + Buat Jurnal

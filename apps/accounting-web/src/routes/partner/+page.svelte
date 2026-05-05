@@ -83,7 +83,7 @@
 
   async function destroy(p: Partner) {
     if (!confirm(`Hapus partner ${p.name}?`)) return;
-    try { await partnerApi.destroy(p.id); await load(); }
+    try { await partnerApi.destroy(p.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -101,7 +101,7 @@
     </div>
     <button
       type="button"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B]"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       onclick={openCreate}
     >
       + Partner Baru
@@ -123,7 +123,7 @@
         <option value="other">Other</option>
       </select>
     </label>
-    <button class="rounded-md bg-[#0F172A] px-3 py-1.5 text-sm font-semibold text-white" onclick={() => { page = 1; load(); }}>
+    <button class="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white" onclick={() => { page = 1; load(); }}>
       Filter
     </button>
   </div>
@@ -142,24 +142,19 @@
             <th class="px-4 py-3 text-left">Tipe</th>
             <th class="px-4 py-3 text-left">Email</th>
             <th class="px-4 py-3 text-center">Aktif</th>
-            <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {#each items as p (p.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg">
+            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(p)}>
               <td class="px-4 py-2 font-mono">{p.code ?? '—'}</td>
               <td class="px-4 py-2">{p.name}</td>
               <td class="px-4 py-2 capitalize">{p.type}</td>
               <td class="px-4 py-2">{p.email ?? '—'}</td>
               <td class="px-4 py-2 text-center">{p.is_active ? '✓' : '—'}</td>
-              <td class="px-4 py-2 text-right space-x-2">
-                <button class="text-primary hover:underline text-xs" onclick={() => openEdit(p)}>Edit</button>
-                <button class="text-danger hover:underline text-xs" onclick={() => destroy(p)}>Hapus</button>
-              </td>
             </tr>
           {:else}
-            <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada partner.</td></tr>
+            <tr><td colspan="5" class="px-4 py-10 text-center text-text-muted">Belum ada partner.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -223,16 +218,29 @@
         </label>
       </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
-        <button
-          type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
-          onclick={save}
-          disabled={saving}
-        >
-          {saving ? 'Menyimpan…' : 'Simpan'}
-        </button>
+      <div class="mt-5 flex items-center justify-between gap-2">
+        <div>
+          {#if editing}
+            <button
+              type="button"
+              class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+              onclick={() => destroy(editing!)}
+            >
+              Hapus
+            </button>
+          {/if}
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          <button
+            type="button"
+            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+            onclick={save}
+            disabled={saving}
+          >
+            {saving ? 'Menyimpan…' : 'Simpan'}
+          </button>
+        </div>
       </div>
     </div>
   </div>

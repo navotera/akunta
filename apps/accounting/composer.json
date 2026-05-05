@@ -13,7 +13,6 @@
         "akunta/ecopa-client": "@dev",
         "akunta/rbac": "@dev",
         "akunta/ui": "@dev",
-        "dutchcodingcompany/filament-socialite": "^2.4",
         "laravel/framework": "^11.31",
         "laravel/sanctum": "^4.3",
         "laravel/socialite": "^5.26",
@@ -89,8 +88,7 @@
     "scripts": {
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan package:discover --ansi",
-            "@php artisan filament:upgrade"
+            "@php artisan package:discover --ansi"
         ],
         "post-update-cmd": [
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force"

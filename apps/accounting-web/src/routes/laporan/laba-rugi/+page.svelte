@@ -63,7 +63,7 @@
     </label>
     <button
       type="button"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
       onclick={load}
       disabled={loading}
       data-testid="report-run"

@@ -1,5 +1,6 @@
 import { authApi, type AuthUser } from '$lib/api/auth.js';
 import { ApiError } from '$lib/api/client.js';
+import { tenant } from './tenant.svelte.js';
 
 interface AuthState {
   user: AuthUser | null;
@@ -32,10 +33,12 @@ export const auth = {
     state.error = null;
     try {
       state.user = await authApi.me();
+      tenant.hydrate(state.user);
       return state.user;
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         state.user = null;
+        tenant.clear();
         return null;
       }
       state.error = e instanceof Error ? e.message : String(e);
@@ -50,6 +53,7 @@ export const auth = {
     state.error = null;
     try {
       state.user = await authApi.login(email, password, remember);
+      tenant.hydrate(state.user);
       return state.user;
     } catch (e) {
       state.error = e instanceof Error ? e.message : String(e);
@@ -64,6 +68,7 @@ export const auth = {
       await authApi.logout();
     } finally {
       state.user = null;
+      tenant.clear();
     }
   },
 };

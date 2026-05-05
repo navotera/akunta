@@ -59,10 +59,10 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Filament v3 multi-tenant uses `tenant->{resourcePlural}()` for query
-     * scoping. Entity model lives in shared Rbac module so we register the
-     * accounting-side HasMany relations dynamically — keeps Rbac module
-     * decoupled from app-specific models.
+     * Entity model lives in the shared Rbac module so we register the
+     * accounting-side HasMany relations dynamically — keeps the Rbac module
+     * decoupled from app-specific models. Used by tenant-scoped queries
+     * across Spa controllers and reporting services.
      */
     protected function registerEntityRelations(): void
     {

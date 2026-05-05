@@ -73,7 +73,7 @@
     <button
       type="submit"
       disabled={submitting}
-      class="w-full rounded-md bg-[#0F172A] px-4 py-2 font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+      class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active disabled:opacity-50"
       data-testid="login-submit"
     >
       {submitting ? 'Memproses…' : 'Masuk'}

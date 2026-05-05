@@ -134,7 +134,7 @@ class RecordSalesAction
     /**
      * Persist FileUpload-saved paths as Attachment records on the journal.
      *
-     * @param  array<int, string>  $paths  paths returned by Filament FileUpload
+     * @param  array<int, string>  $paths  storage paths previously persisted by the upload pipeline
      */
     private function attachFiles(Journal $journal, array $paths): void
     {

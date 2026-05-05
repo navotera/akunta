@@ -8,8 +8,8 @@ use App\Http\Middleware\VerifyEcopaSignature;
 use Illuminate\Support\Facades\Route;
 
 // Root → bounce ke /sso/login. Kalau Ecopa configured + user sudah login Ecopa,
-// Ecopa silent-approve → Akunta dashboard. Kalau belum login → form Ecopa muncul.
-// Kalau Ecopa unconfigured → fall through ke welcome view.
+// Ecopa silent-approve → SPA dashboard. Kalau belum login → form Ecopa muncul.
+// Kalau Ecopa unconfigured → fall through ke welcome view (Laravel default).
 Route::get('/', function () {
     if (config('ecopa.client_id')) {
         return redirect()->route('sso.login');
@@ -46,9 +46,8 @@ Route::get('/login', function () {
 // otherwise kick off OIDC redirect (Ecopa silent-approves when SSO session active).
 Route::get('/sso/login', function () {
     if (auth()->check()) {
-        $panel  = \Filament\Facades\Filament::getPanel('accounting');
-        $user   = auth()->user();
-        $tenant = method_exists($user, 'getDefaultTenant') ? $user->getDefaultTenant($panel) : null;
+        $user = auth()->user();
+        $tenant = method_exists($user, 'getDefaultTenant') ? $user->getDefaultTenant() : null;
 
         // SSO admin yang baru-pertama-kali masuk: belum punya assignment lokal
         // tapi punya app_role=admin di Ecopa → boleh akses entitas mana pun.
@@ -59,7 +58,8 @@ Route::get('/sso/login', function () {
         }
 
         if ($tenant !== null) {
-            return redirect(\App\Filament\Pages\Dashboard::getUrl(panel: 'accounting', tenant: $tenant));
+            // SPA picks up tenant via cookie + /api/v1/me.
+            return redirect('/dashboard');
         }
 
         // Session lacks ecopa.app_role (stale session from earlier flow before
@@ -87,7 +87,7 @@ Route::get('/sso/login', function () {
         abort(403,
             'Akun terdeteksi login tetapi belum ter-assign ke entitas Akunta. '.
             'Solusi: (1) admin Ecopa set role Akunta = "admin" untuk user ini, lalu logout-login lagi; '.
-            'ATAU (2) admin Akunta meng-assign user ini ke salah satu entitas via /admin-accounting → Master Data → Pengguna.'.
+            'ATAU (2) admin Akunta meng-assign user ini ke salah satu entitas via SPA → Master Data → Pengguna.'.
             "\n\nDiagnostic: {$diag}"
         );
     }

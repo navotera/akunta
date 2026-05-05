@@ -85,17 +85,18 @@
   }
 
   async function pause(r: RecurringJournal) {
-    try { await recurringApi.pause(r.id); await load(); }
+    try { await recurringApi.pause(r.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
   async function resume(r: RecurringJournal) {
-    try { await recurringApi.resume(r.id); await load(); }
+    try { await recurringApi.resume(r.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
   async function run(r: RecurringJournal) {
     if (!confirm(`Jalankan ${r.name} sekarang?`)) return;
     try {
       const res = await recurringApi.run(r.id);
+      closeForm();
       await load();
       if (res.journal_id) goto(`/journals/${res.journal_id}`);
       else alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
@@ -103,7 +104,7 @@
   }
   async function destroy(r: RecurringJournal) {
     if (!confirm(`Hapus ${r.name}?`)) return;
-    try { await recurringApi.destroy(r.id); await load(); }
+    try { await recurringApi.destroy(r.id); closeForm(); await load(); }
     catch (e) { alert(e instanceof Error ? e.message : String(e)); }
   }
 
@@ -127,7 +128,7 @@
     </div>
     <button
       type="button"
-      class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
       onclick={openCreate}
       disabled={templates.length === 0}
       title={templates.length === 0 ? 'Buat template jurnal dulu' : undefined}
@@ -151,12 +152,11 @@
             <th class="px-4 py-3 text-left">Mulai</th>
             <th class="px-4 py-3 text-left">Next Run</th>
             <th class="px-4 py-3 text-left">Status</th>
-            <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
           {#each items as r (r.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg">
+            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(r)}>
               <td class="px-4 py-2 font-medium">{r.name}</td>
               <td class="px-4 py-2 font-mono text-xs">{r.template_code ?? r.template_id.slice(0, 8)}</td>
               <td class="px-4 py-2 capitalize">{r.frequency}</td>
@@ -167,19 +167,9 @@
                   {r.status}
                 </span>
               </td>
-              <td class="px-4 py-2 text-right space-x-2">
-                <button class="text-primary hover:underline text-xs" onclick={() => openEdit(r)}>Edit</button>
-                {#if r.status === 'active'}
-                  <button class="text-warning hover:underline text-xs" onclick={() => pause(r)}>Pause</button>
-                {:else if r.status === 'paused'}
-                  <button class="text-paid hover:underline text-xs" onclick={() => resume(r)}>Resume</button>
-                {/if}
-                <button class="text-primary hover:underline text-xs" onclick={() => run(r)}>Run</button>
-                <button class="text-danger hover:underline text-xs" onclick={() => destroy(r)}>Hapus</button>
-              </td>
             </tr>
           {:else}
-            <tr><td colspan="7" class="px-4 py-10 text-center text-text-muted">Belum ada schedule.</td></tr>
+            <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada schedule.</td></tr>
           {/each}
         </tbody>
       </table>
@@ -234,16 +224,53 @@
         </label>
       </div>
 
-      <div class="mt-5 flex justify-end gap-2">
-        <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
-        <button
-          type="button"
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
-          onclick={save}
-          disabled={saving}
-        >
-          {saving ? 'Menyimpan…' : 'Simpan'}
-        </button>
+      <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap gap-2">
+          {#if editing}
+            {#if editing.status === 'active'}
+              <button
+                type="button"
+                class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
+                onclick={() => pause(editing!)}
+              >
+                Pause
+              </button>
+            {:else if editing.status === 'paused'}
+              <button
+                type="button"
+                class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white"
+                onclick={() => resume(editing!)}
+              >
+                Resume
+              </button>
+            {/if}
+            <button
+              type="button"
+              class="rounded-md border border-primary/40 bg-primary-light px-3 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
+              onclick={() => run(editing!)}
+            >
+              Run Sekarang
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+              onclick={() => destroy(editing!)}
+            >
+              Hapus
+            </button>
+          {/if}
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          <button
+            type="button"
+            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+            onclick={save}
+            disabled={saving}
+          >
+            {saving ? 'Menyimpan…' : 'Simpan'}
+          </button>
+        </div>
       </div>
     </div>
   </div>

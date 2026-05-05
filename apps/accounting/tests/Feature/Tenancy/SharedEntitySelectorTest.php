@@ -106,8 +106,8 @@ it('does not set cookie on routes without {tenant} parameter', function () {
 it('getDefaultTenant returns cookie entity when user has access', function () {
     $this->app['request']->cookies->set(SharedEntitySelector::COOKIE_NAME, $this->entityB->id);
 
-    $panel = \Filament\Facades\Filament::getPanel('accounting');
-    $default = $this->user->getDefaultTenant($panel);
+    
+    $default = $this->user->getDefaultTenant();
 
     expect($default?->id)->toBe($this->entityB->id);
 });
@@ -118,15 +118,15 @@ it('getDefaultTenant falls back to first accessible entity when cookie entity is
 
     $this->app['request']->cookies->set(SharedEntitySelector::COOKIE_NAME, $inaccessibleEntity->id);
 
-    $panel = \Filament\Facades\Filament::getPanel('accounting');
-    $default = $this->user->getDefaultTenant($panel);
+    
+    $default = $this->user->getDefaultTenant();
 
     expect($default?->id)->toBeIn([$this->entityA->id, $this->entityB->id]);
 });
 
 it('getDefaultTenant falls back when no cookie present', function () {
-    $panel = \Filament\Facades\Filament::getPanel('accounting');
-    $default = $this->user->getDefaultTenant($panel);
+    
+    $default = $this->user->getDefaultTenant();
 
     expect($default)->not->toBeNull()
         ->and($default->id)->toBeIn([$this->entityA->id, $this->entityB->id]);
@@ -135,8 +135,8 @@ it('getDefaultTenant falls back when no cookie present', function () {
 it('getDefaultTenant handles missing entity (stale cookie) gracefully', function () {
     $this->app['request']->cookies->set(SharedEntitySelector::COOKIE_NAME, 'non-existent-ulid');
 
-    $panel = \Filament\Facades\Filament::getPanel('accounting');
-    $default = $this->user->getDefaultTenant($panel);
+    
+    $default = $this->user->getDefaultTenant();
 
     expect($default?->id)->toBeIn([$this->entityA->id, $this->entityB->id]);
 });
