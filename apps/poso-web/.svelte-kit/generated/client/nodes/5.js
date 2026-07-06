@@ -1,1 +1,1 @@
-export { default as component } from "../../../../src/routes/(app)/purchases/+page.svelte";
+export { default as component } from "../../../../src/routes/(app)/integrations/akunta/auto-post/+page.svelte";

@@ -7,6 +7,7 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { sourceFromName } from '$lib/components/reporting/sourceFromName.js';
 
   function firstOfMonth(): string {
     const d = new Date();
@@ -83,37 +84,81 @@
       renderSection('Harga Pokok Penjualan', report.cogs),
       renderSection('Beban Operasional', report.expenses),
     ]}
+    {@const revenueTotal = Number(report.revenue.total)}
+    {@const grossMargin = revenueTotal > 0
+      ? (Number(report.gross_profit) / revenueTotal) * 100
+      : 0}
+    {@const netMargin = revenueTotal > 0
+      ? (Number(report.net_income) / revenueTotal) * 100
+      : 0}
+
+    <div class="ak-pl-kpis">
+      <div class="ak-pl-kpi">
+        <p class="ak-pl-kpi__label">Pendapatan</p>
+        <p class="ak-pl-kpi__value">{formatRupiah(report.revenue.total)}</p>
+      </div>
+      <div class="ak-pl-kpi">
+        <p class="ak-pl-kpi__label">Beban Pokok</p>
+        <p class="ak-pl-kpi__value">{formatRupiah(report.cogs.total)}</p>
+      </div>
+      <div class="ak-pl-kpi">
+        <p class="ak-pl-kpi__label">Laba Kotor</p>
+        <p class="ak-pl-kpi__value">{formatRupiah(report.gross_profit)}</p>
+        <p class="ak-pl-kpi__sub">margin {grossMargin.toFixed(1)}%</p>
+      </div>
+      <div class="ak-pl-kpi">
+        <p class="ak-pl-kpi__label">Laba Bersih</p>
+        <p class="ak-pl-kpi__value {Number(report.net_income) >= 0 ? 'text-paid' : 'text-danger'}" data-testid="net-income">
+          {formatRupiah(report.net_income)}
+        </p>
+        <p class="ak-pl-kpi__sub">margin {netMargin.toFixed(1)}%</p>
+      </div>
+    </div>
+
     <table class="w-full text-sm">
+      <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
+        <tr>
+          <th class="px-4 py-2 text-left w-24">Kode</th>
+          <th class="px-4 py-2 text-left">Akun</th>
+          <th class="px-4 py-2 text-right w-40">Nilai</th>
+          <th class="px-4 py-2 text-right w-32">Sumber</th>
+        </tr>
+      </thead>
       <tbody>
         {#each sections as sec}
           <tr class="bg-page-bg">
-            <td colspan="2" class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">{sec.label}</td>
-            <td class="px-4 py-2"></td>
+            <td colspan="4" class="px-4 py-2 text-xs font-bold uppercase tracking-wider text-text-muted">{sec.label}</td>
           </tr>
           {#each sec.lines as r (r.id)}
             <tr class="border-t border-border-soft">
-              <td class="px-4 py-2 font-mono w-24">{r.code}</td>
+              <td class="px-4 py-2 font-mono">{r.code}</td>
               <td class="px-4 py-2">{r.name}</td>
               <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(r.balance)}</td>
+              <td class="px-4 py-2 text-right">
+                <span class="ak-source-pill">{sourceFromName(r.name)}</span>
+              </td>
             </tr>
           {/each}
           <tr class="border-t border-border-default">
             <td class="px-4 py-2"></td>
             <td class="px-4 py-2 font-semibold">Total {sec.label}</td>
             <td class="px-4 py-2 text-right font-mono tabnum font-semibold">{formatRupiah(sec.total)}</td>
+            <td class="px-4 py-2"></td>
           </tr>
         {/each}
         <tr class="border-t-2 border-border-default bg-page-bg">
           <td class="px-4 py-2"></td>
           <td class="px-4 py-2 font-semibold">Laba Kotor</td>
           <td class="px-4 py-2 text-right font-mono tabnum font-semibold">{formatRupiah(report.gross_profit)}</td>
+          <td class="px-4 py-2"></td>
         </tr>
         <tr class="border-t-2 border-border-default bg-page-bg">
           <td class="px-4 py-2"></td>
           <td class="px-4 py-2 text-base font-bold">Laba Bersih (YTD)</td>
-          <td class="px-4 py-2 text-right font-mono tabnum text-base font-bold {Number(report.net_income) >= 0 ? 'text-paid' : 'text-danger'}" data-testid="net-income">
+          <td class="px-4 py-2 text-right font-mono tabnum text-base font-bold {Number(report.net_income) >= 0 ? 'text-paid' : 'text-danger'}">
             {formatRupiah(report.net_income)}
           </td>
+          <td class="px-4 py-2"></td>
         </tr>
       </tbody>
     </table>

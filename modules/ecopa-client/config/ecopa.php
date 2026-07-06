@@ -21,6 +21,10 @@ return [
     // Bearer token for /api/* server-to-server calls (Ecopa "Company App" token)
     'api_token'     => env('ECOPA_API_TOKEN'),
 
+    // This app's own slug as registered in Ecopa websites table. Used to filter
+    // out the current app from "Ekosistem" sidebar (only show sister apps).
+    'self_slug'     => env('ECOPA_SELF_SLUG'),
+
     // Shared secret used to verify webhook signatures from Ecopa.
     // Provided by Ecopa admin during app registration (auto-generated on first
     // metadata sync; copy from Ecopa Apps Management → SSO/Webhook tab).

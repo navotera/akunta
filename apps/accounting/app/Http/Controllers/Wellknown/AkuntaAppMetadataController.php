@@ -17,6 +17,14 @@ class AkuntaAppMetadataController extends Controller
 {
     public function show(): JsonResponse
     {
+        // Sanctum SPA cookie auth requires the OAuth callback to land on the
+        // same origin where the session cookie was set — the SPA host. The
+        // Vite/SvelteKit proxy forwards `/auth/*` back to Laravel, so the
+        // callback route still runs server-side but the browser stays on the
+        // SPA origin and keeps both the session cookie and the OAuth `state`.
+        // Falls back to APP_URL when no dedicated SPA URL is configured.
+        $callbackBase = rtrim((string) (config('app.spa_url') ?: config('app.url')), '/');
+
         return response()->json([
             'slug'    => 'akunta-accounting',
             'name'    => 'Akunta Accounting',
@@ -24,7 +32,7 @@ class AkuntaAppMetadataController extends Controller
             'url'     => config('app.url') . '/admin-accounting',
             'icon'    => config('app.url') . '/favicon.ico',
             'redirect_uris' => [
-                config('app.url') . '/auth/ecopa/callback',
+                $callbackBase . '/auth/ecopa/callback',
             ],
             'roles' => [
                 ['code' => 'admin',      'label' => 'Admin Akuntansi', 'description' => 'Full access — kelola periode, akun, jurnal, posting, reverse, laporan.'],

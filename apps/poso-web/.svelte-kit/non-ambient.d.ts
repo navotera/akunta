@@ -29,20 +29,23 @@ declare module "$app/types" {
 	type MatcherParam<M> = M extends (param : string) => param is (infer U extends string) ? U : string;
 
 	export interface AppTypes {
-		RouteId(): "/(app)" | "/" | "/(app)/purchases" | "/(app)/purchases/new" | "/(app)/sales" | "/(app)/sales/new" | "/(app)/[...path]";
+		RouteId(): "/(app)" | "/" | "/(app)/integrations" | "/(app)/integrations/akunta" | "/(app)/integrations/akunta/auto-post" | "/(app)/purchases" | "/(app)/purchases/new" | "/(app)/sales" | "/(app)/sales/new" | "/(app)/[...path]";
 		RouteParams(): {
 			"/(app)/[...path]": { path: string }
 		};
 		LayoutParams(): {
 			"/(app)": { path?: string };
 			"/": { path?: string };
+			"/(app)/integrations": Record<string, never>;
+			"/(app)/integrations/akunta": Record<string, never>;
+			"/(app)/integrations/akunta/auto-post": Record<string, never>;
 			"/(app)/purchases": Record<string, never>;
 			"/(app)/purchases/new": Record<string, never>;
 			"/(app)/sales": Record<string, never>;
 			"/(app)/sales/new": Record<string, never>;
 			"/(app)/[...path]": { path: string }
 		};
-		Pathname(): "/" | "/purchases" | "/purchases/new" | "/sales" | "/sales/new" | `/${string}` & {};
+		Pathname(): "/" | "/integrations/akunta/auto-post" | "/purchases" | "/purchases/new" | "/sales" | "/sales/new" | `/${string}` & {};
 		ResolvedPathname(): `${"" | `/${string}`}${ReturnType<AppTypes['Pathname']>}`;
 		Asset(): string & {};
 	}

@@ -91,6 +91,13 @@ Route::middleware(['web', 'auth:sanctum'])
 
         Route::get('widgets/financial-pulse', [\App\Http\Controllers\Api\Spa\Widgets\FinancialPulseController::class, 'show']);
         Route::get('widgets/recent-journals', [\App\Http\Controllers\Api\Spa\Widgets\RecentJournalsController::class, 'index']);
+        Route::get('widgets/ecosystem', [\App\Http\Controllers\Api\Spa\Widgets\EcosystemController::class, 'index']);
+
+        Route::get('webhooks', [\App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'index']);
+        Route::post('webhooks', [\App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'store']);
+        Route::patch('webhooks/{id}', [\App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'update']);
+        Route::delete('webhooks/{id}', [\App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'destroy']);
+        Route::post('webhooks/{id}/rotate-secret', [\App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'rotateSecret']);
     });
 
 Route::prefix('v1')

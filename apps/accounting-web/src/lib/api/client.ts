@@ -7,6 +7,13 @@
 export interface ApiOptions extends RequestInit {
   json?: unknown;
   tenantSlug?: string | null;
+  /**
+   * When true, a 401 response will throw `ApiError` without redirecting to the
+   * Ecopa login page. Used by auth bootstrap (`me`, `login`) so callers can
+   * handle "not logged in" state explicitly. All other callers get a global
+   * redirect on auth failure.
+   */
+  skipAuthRedirect?: boolean;
 }
 
 export class ApiError extends Error {
@@ -17,6 +24,28 @@ export class ApiError extends Error {
     this.status = status;
     this.body = body;
   }
+}
+
+const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
+
+/**
+ * Redirect the browser to the Ecopa OIDC login flow on Akunta backend. The
+ * Laravel route `ecopa.login` (`/auth/ecopa/redirect`) handles both the
+ * Ecopa-configured case (kicks off OAuth) and the unconfigured case (falls
+ * back to a 404 — same as before SPA migration).
+ *
+ * Guards:
+ *  - SSR safety: noop when `window` is undefined.
+ *  - Loop guard: noop when already on /auth/* or /login, since those pages
+ *    already coordinate with the same backend route.
+ */
+export function redirectToEcopaLogin(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname;
+  if (path.startsWith('/auth/') || path === '/login') return;
+  // Use full assignment so the SPA history is replaced — user shouldn't be
+  // able to "back" into a stale auth state.
+  window.location.href = ECOPA_LOGIN_PATH;
 }
 
 function getCookie(name: string): string | null {
@@ -92,6 +121,13 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
       parsed = await res.json();
     } catch {
       parsed = await res.text();
+    }
+    // Auth failure: bounce browser to Ecopa OIDC flow unless caller opted out
+    // (e.g. auth bootstrap that needs to surface the unauthenticated state).
+    // 419 here = CSRF mismatch that survived our one retry — treat as expired
+    // session.
+    if ((res.status === 401 || res.status === 419) && !opts.skipAuthRedirect) {
+      redirectToEcopaLogin();
     }
     throw new ApiError(res.status, parsed);
   }

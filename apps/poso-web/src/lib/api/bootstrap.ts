@@ -30,7 +30,11 @@ export type PosoBootstrap = {
 };
 
 export function getBootstrap() {
-  return api<{ data: PosoBootstrap }>('/api/v1/me').then((response) => response.data);
+  // skipAuthRedirect: bootstrap surfaces 401 to caller (context store) so it
+  // can render an unauthenticated state instead of bouncing mid-render.
+  return api<{ data: PosoBootstrap }>('/api/v1/me', { skipAuthRedirect: true }).then(
+    (response) => response.data,
+  );
 }
 
 export function selectEntity(entityId: string) {

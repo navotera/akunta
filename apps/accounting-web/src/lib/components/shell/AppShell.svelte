@@ -5,6 +5,9 @@
   import { auth } from '$lib/stores/auth.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
+  import { palette } from '$lib/stores/palette.svelte.js';
+  import { ecosystem } from '$lib/stores/ecosystem.svelte.js';
+  import type { EcosystemApp, EcosystemStatus } from '$lib/api/ecosystem.js';
 
   interface NavItem {
     href?: string;
@@ -20,7 +23,7 @@
       title: 'Operasional',
       items: [
         {
-          label: 'Jurnal',
+          label: 'Jurnal & Buku Besar',
           icon: '✎',
           match: ['/journals', '/jurnal-berulang'],
           href: '/journals',
@@ -38,6 +41,7 @@
         { href: '/akun', label: 'Bagan Akun', icon: '⊞' },
         { href: '/periode', label: 'Periode', icon: '⌚' },
         { href: '/template-jurnal', label: 'Template Jurnal', icon: '☰' },
+        { href: '/integrasi', label: 'Integrasi', icon: '⌘' },
       ],
     },
     {
@@ -89,6 +93,54 @@
     void tenant.id;
     if (tenant.id) period.refresh();
   });
+
+  $effect(() => {
+    // Fetch ecosystem apps once user is loaded.
+    if (auth.user && ecosystem.apps.length === 0 && !ecosystem.loading) {
+      ecosystem.refresh();
+    }
+  });
+
+  const ECO_ICON: Record<string, string> = {
+    sales: '🛒',
+    buy: '📦',
+    inventory: '📦',
+    payroll: '👥',
+    invoice: '🧾',
+    tax: '⚖',
+    bank: '🏦',
+    app: '◎',
+  };
+
+  const ECO_STATUS_CLASS: Record<EcosystemStatus, string> = {
+    ok: 'ak-eco-dot--ok',
+    warn: 'ak-eco-dot--warn',
+    err: 'ak-eco-dot--err',
+    syncing: 'ak-eco-dot--syncing',
+    off: 'ak-eco-dot--off',
+  };
+
+  function openApp(app: EcosystemApp) {
+    if (!app.url) return;
+    window.open(app.url, '_blank', 'noopener,noreferrer');
+  }
+
+  // Dev preview: when Ecopa is not configured / user has no SSO link, render
+  // a static preview list so the section is visible. Cleared as soon as real
+  // data arrives. Toggle off via `?eco=hide` query param.
+  const ECO_PREVIEW: EcosystemApp[] = [
+    { slug: '_p_sales', label: 'App Penjualan', url: null, logo_url: null, app_role: null, icon_key: 'sales', status: 'ok', count: 142 },
+    { slug: '_p_buy', label: 'App Pembelian', url: null, logo_url: null, app_role: null, icon_key: 'buy', status: 'ok', count: 38 },
+    { slug: '_p_inv', label: 'App Inventory', url: null, logo_url: null, app_role: null, icon_key: 'inventory', status: 'ok', count: 11 },
+    { slug: '_p_pay', label: 'App Payroll', url: null, logo_url: null, app_role: null, icon_key: 'payroll', status: 'warn', count: 1 },
+    { slug: '_p_inv2', label: 'App Invoice', url: null, logo_url: null, app_role: null, icon_key: 'invoice', status: 'ok', count: 27 },
+    { slug: '_p_tax', label: 'App e-Faktur', url: null, logo_url: null, app_role: null, icon_key: 'tax', status: 'syncing', count: null },
+  ];
+
+  let showingPreview = $derived(
+    ecosystem.apps.length === 0 && !ecosystem.loading && !ecosystem.error,
+  );
+  let displayedApps = $derived(showingPreview ? ECO_PREVIEW : ecosystem.apps);
 
   function pickPeriod(id: string) {
     period.switch(id);
@@ -206,6 +258,53 @@
           </ul>
         </div>
       {/each}
+
+      <div class="mb-4">
+        <div class="flex items-center justify-between px-5 mb-1">
+          <p class="ak-section-title m-0">Ekosistem</p>
+          <button
+            type="button"
+            class="text-text-muted hover:text-primary text-xs"
+            style="background: transparent; padding: 2px 4px; line-height: 1;"
+            onclick={() => ecosystem.refresh()}
+            aria-label="Refresh sinkronisasi"
+            title="Refresh"
+          >
+            ↻
+          </button>
+        </div>
+        <ul>
+          {#if ecosystem.loading && displayedApps.length === 0}
+            <li class="px-5 py-1.5 text-xs text-text-muted">Memuat…</li>
+          {:else if displayedApps.length === 0}
+            <li class="px-5 py-1.5 text-xs text-text-muted">
+              {ecosystem.error ? 'Tidak terhubung' : 'Belum ada app terhubung'}
+            </li>
+          {:else}
+            {#each displayedApps as app (app.slug)}
+              <li>
+                <button
+                  type="button"
+                  class="ak-nav-item ak-eco-item"
+                  style="background: transparent; width: 100%; text-align: left; cursor: {app.url ? 'pointer' : 'default'};"
+                  onclick={() => openApp(app)}
+                  title={app.url ?? app.label}
+                >
+                  <span class="ak-nav-icon" aria-hidden="true">{ECO_ICON[app.icon_key] ?? ECO_ICON.app}</span>
+                  <span class="flex-1 truncate">{app.label}</span>
+                  {#if app.count !== null}
+                    <span class="ak-eco-count">{app.count}</span>
+                  {/if}
+                  <span class="ak-eco-dot {ECO_STATUS_CLASS[app.status]}" aria-label={app.status}></span>
+                </button>
+              </li>
+            {/each}
+            {#if showingPreview}
+              <li class="px-5 pt-1 text-[0.65rem] uppercase tracking-wider text-text-muted">Preview · belum tersinkron</li>
+            {/if}
+          {/if}
+        </ul>
+      </div>
     </nav>
 
     <footer class="border-t border-border-soft px-3 py-3">
@@ -243,6 +342,17 @@
           aria-label="Menu"
         >
           ☰
+        </button>
+        <button
+          type="button"
+          class="flex h-9 items-center gap-2 rounded-md border border-border-default bg-card-bg px-3 text-sm text-text-muted hover:border-primary hover:text-text-default"
+          onclick={() => palette.show()}
+          data-testid="palette-trigger"
+          aria-label="Pencarian cepat"
+        >
+          <span aria-hidden="true">⌕</span>
+          <span class="hidden sm:inline">Cari…</span>
+          <kbd class="hidden sm:inline rounded border border-border-soft bg-page-bg px-1.5 py-0.5 text-[0.65rem] font-medium">⌘K</kbd>
         </button>
       </div>
       <div class="flex items-center gap-2">

@@ -1,14 +1,17 @@
 import { getBootstrap, selectEntity, type PosoBootstrap, type PosoEntity } from '$lib/api/bootstrap';
+import { ApiError, redirectToEcopaLogin } from '$lib/api/client';
 
 type ContextState = {
   loading: boolean;
   error: string | null;
+  unauthenticated: boolean;
   data: PosoBootstrap | null;
 };
 
 const state = $state<ContextState>({
   loading: false,
   error: null,
+  unauthenticated: false,
   data: null
 });
 
@@ -37,12 +40,26 @@ export const posoContext = {
     return state.data?.user ?? { name: 'Andi Darmawan', role: 'Administrator' };
   },
 
+  get unauthenticated() {
+    return state.unauthenticated;
+  },
+
   async refresh(): Promise<void> {
     state.loading = true;
     state.error = null;
+    state.unauthenticated = false;
     try {
       state.data = await getBootstrap();
     } catch (error) {
+      // 401 from /api/v1/me = local Sanctum session expired or never set up.
+      // Bounce to Ecopa OIDC for re-validation. Bootstrap opted out of the
+      // global redirect (so callers can react), so trigger it here explicitly.
+      if (error instanceof ApiError && (error.status === 401 || error.status === 419)) {
+        state.unauthenticated = true;
+        state.data = null;
+        redirectToEcopaLogin();
+        return;
+      }
       state.error = error instanceof Error ? error.message : String(error);
     } finally {
       state.loading = false;

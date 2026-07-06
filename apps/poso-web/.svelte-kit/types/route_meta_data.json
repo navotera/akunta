@@ -6,6 +6,9 @@
 		"src/routes/+layout.ts",
 		"src/routes/+layout.ts"
 	],
+	"/(app)/integrations/akunta/auto-post": [
+		"src/routes/+layout.ts"
+	],
 	"/(app)/purchases": [
 		"src/routes/+layout.ts"
 	],

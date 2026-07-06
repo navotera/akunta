@@ -36,12 +36,33 @@ class EcopaClient
 
     /**
      * Verify the state parameter from a callback. Returns true if valid.
+     *
+     * On mismatch, logs diagnostic context (session id, stored vs incoming
+     * state presence) at warning level so deployments hitting "State
+     * mismatch — possible CSRF" can tell whether the cause is host/cookie
+     * scope drift (stored=null) vs actual replay (stored present but
+     * different value).
      */
     public function verifyState(string $incomingState): bool
     {
         $stored = Session::pull('ecopa.state');
+        $ok = $stored !== null && hash_equals((string) $stored, $incomingState);
 
-        return $stored !== null && hash_equals((string) $stored, $incomingState);
+        if (! $ok) {
+            \Illuminate\Support\Facades\Log::warning('ecopa.oauth.state_mismatch', [
+                'session_id'      => Session::getId(),
+                'stored_present'  => $stored !== null,
+                'stored_len'      => $stored !== null ? strlen((string) $stored) : 0,
+                'incoming_len'    => strlen($incomingState),
+                'callback_host'   => request()?->getHttpHost(),
+                'session_cookie'  => request()?->cookie(config('session.cookie')) ? 'present' : 'absent',
+                'session_driver'  => config('session.driver'),
+                'session_domain'  => config('session.domain'),
+                'redirect_uri'    => $this->config['redirect_uri'] ?? null,
+            ]);
+        }
+
+        return $ok;
     }
 
     /**

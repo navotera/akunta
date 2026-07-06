@@ -61,6 +61,79 @@ beforeEach(function () {
 it('rejects unauthenticated widget endpoints', function () {
     $this->getJson('/api/v1/spa/widgets/financial-pulse')->assertStatus(401);
     $this->getJson('/api/v1/spa/widgets/recent-journals')->assertStatus(401);
+    $this->getJson('/api/v1/spa/widgets/ecosystem')->assertStatus(401);
+});
+
+it('returns empty ecosystem list when user has no main_tier_user_id', function () {
+    $this->user->main_tier_user_id = null;
+    $this->user->save();
+
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/ecosystem');
+
+    $res->assertOk()
+        ->assertJsonPath('data', [])
+        ->assertJsonPath('meta.source', 'no-sso');
+});
+
+it('returns ecosystem apps from Ecopa filtering self_slug and tagging icon_key', function () {
+    config()->set('ecopa.self_slug', 'akunta-accounting');
+
+    $this->user->main_tier_user_id = 'ecopa-uuid-123';
+    $this->user->save();
+
+    $fake = new class extends \Akunta\EcopaClient\EcopaClient
+    {
+        public function __construct() {}
+
+        public function fetchUserApps(string $userId): array
+        {
+            return [
+                ['slug' => 'akunta-accounting', 'name' => 'Akunta', 'url' => 'https://acc.x', 'logo_url' => null, 'app_role' => 'admin', 'scopes' => null, 'granted_at' => null],
+                ['slug' => 'poso-pos', 'name' => 'POSO Penjualan', 'url' => 'https://poso.x', 'logo_url' => null, 'app_role' => 'operator', 'scopes' => null, 'granted_at' => null],
+                ['slug' => 'pay-roll', 'name' => 'Payroll HR', 'url' => 'https://pay.x', 'logo_url' => null, 'app_role' => 'admin', 'scopes' => null, 'granted_at' => null],
+            ];
+        }
+    };
+    $this->app->instance(\Akunta\EcopaClient\EcopaClient::class, $fake);
+
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/ecosystem');
+
+    $res->assertOk()
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.slug', 'poso-pos')
+        ->assertJsonPath('data.0.icon_key', 'sales')
+        ->assertJsonPath('data.0.status', 'ok')
+        ->assertJsonPath('data.1.slug', 'pay-roll')
+        ->assertJsonPath('data.1.icon_key', 'payroll')
+        ->assertJsonPath('meta.source', 'ecopa');
+});
+
+it('returns empty data with error meta when Ecopa is unreachable', function () {
+    $this->user->main_tier_user_id = 'ecopa-uuid-123';
+    $this->user->save();
+
+    $fake = new class extends \Akunta\EcopaClient\EcopaClient
+    {
+        public function __construct() {}
+
+        public function fetchUserApps(string $userId): array
+        {
+            throw new \Akunta\EcopaClient\Exceptions\EcopaException('boom');
+        }
+    };
+    $this->app->instance(\Akunta\EcopaClient\EcopaClient::class, $fake);
+
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/ecosystem');
+
+    $res->assertOk()
+        ->assertJsonPath('data', [])
+        ->assertJsonPath('meta.error', 'unreachable');
 });
 
 it('returns financial pulse with current and previous month numbers', function () {

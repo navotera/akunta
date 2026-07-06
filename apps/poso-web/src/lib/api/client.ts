@@ -28,7 +28,30 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
+
+/**
+ * Bounce browser to Ecopa OIDC login on POSO Laravel backend. Mirrors Akunta
+ * SPA behavior — on 401 the SPA hands off auth to Ecopa instead of showing a
+ * local login form.
+ */
+export function redirectToEcopaLogin(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname;
+  if (path.startsWith('/auth/') || path === '/login') return;
+  window.location.href = `${baseUrl}${ECOPA_LOGIN_PATH}`;
+}
+
+export interface ApiInit extends RequestInit {
+  /**
+   * Skip the global Ecopa redirect on 401. Used by auth bootstrap calls
+   * (`me`, context refresh) so callers can surface unauthenticated state
+   * explicitly.
+   */
+  skipAuthRedirect?: boolean;
+}
+
+export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   headers.set('X-Requested-With', 'XMLHttpRequest');
@@ -58,6 +81,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       body = await response.json();
     } catch {
       body = await response.text();
+    }
+    if ((response.status === 401 || response.status === 419) && !init.skipAuthRedirect) {
+      redirectToEcopaLogin();
     }
     throw new ApiError(response.status, body);
   }

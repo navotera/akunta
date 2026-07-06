@@ -7,6 +7,7 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { sourceFromName } from '$lib/components/reporting/sourceFromName.js';
 
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<BalanceSheetData | null>(null);
@@ -76,7 +77,10 @@
             {#each sectionRows(report.assets) as r (r.id)}
               <tr class="border-t border-border-soft">
                 <td class="px-3 py-2 font-mono w-20">{r.code}</td>
-                <td class="px-3 py-2">{r.name}</td>
+                <td class="px-3 py-2">
+                  <span>{r.name}</span>
+                  <span class="ak-source-pill ml-2">{sourceFromName(r.name)}</span>
+                </td>
                 <td class="px-3 py-2 text-right font-mono tabnum">{formatRupiah(r.balance)}</td>
               </tr>
             {/each}
@@ -96,7 +100,10 @@
             {#each sectionRows(report.liabilities) as r (r.id)}
               <tr class="border-t border-border-soft">
                 <td class="px-3 py-2 font-mono w-20">{r.code}</td>
-                <td class="px-3 py-2">{r.name}</td>
+                <td class="px-3 py-2">
+                  <span>{r.name}</span>
+                  <span class="ak-source-pill ml-2">{sourceFromName(r.name)}</span>
+                </td>
                 <td class="px-3 py-2 text-right font-mono tabnum">{formatRupiah(r.balance)}</td>
               </tr>
             {/each}
@@ -109,7 +116,10 @@
             {#each sectionRows(report.equity) as r (r.id)}
               <tr class="border-t border-border-soft">
                 <td class="px-3 py-2 font-mono w-20">{r.code}</td>
-                <td class="px-3 py-2">{r.name}</td>
+                <td class="px-3 py-2">
+                  <span>{r.name}</span>
+                  <span class="ak-source-pill ml-2">{sourceFromName(r.name)}</span>
+                </td>
                 <td class="px-3 py-2 text-right font-mono tabnum">{formatRupiah(r.balance)}</td>
               </tr>
             {/each}

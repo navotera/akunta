@@ -9,17 +9,19 @@ export const nodes = [
 	() => import('./nodes/5'),
 	() => import('./nodes/6'),
 	() => import('./nodes/7'),
-	() => import('./nodes/8')
+	() => import('./nodes/8'),
+	() => import('./nodes/9')
 ];
 
 export const server_loads = [];
 
 export const dictionary = {
 		"/": [3],
-		"/(app)/purchases": [5,[2]],
-		"/(app)/purchases/new": [6,[2]],
-		"/(app)/sales": [7,[2]],
-		"/(app)/sales/new": [8,[2]],
+		"/(app)/integrations/akunta/auto-post": [5,[2]],
+		"/(app)/purchases": [6,[2]],
+		"/(app)/purchases/new": [7,[2]],
+		"/(app)/sales": [8,[2]],
+		"/(app)/sales/new": [9,[2]],
 		"/(app)/[...path]": [4,[2]]
 	};
 
