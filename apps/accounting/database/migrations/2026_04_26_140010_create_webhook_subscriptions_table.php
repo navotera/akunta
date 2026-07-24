@@ -9,7 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('webhook_subscriptions', function (Blueprint $table) {
-            $table->ulid('id')->primary();
+            $table->ulid('id');
+            $table->primary('id');
             // Optional scoping — null = global (any entity)
             $table->ulid('entity_id')->nullable();
             // Subscriber app (Sales, Inventory, etc.) — not enforced FK to allow external subscribers

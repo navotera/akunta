@@ -9,7 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('journals', function (Blueprint $table) {
-            $table->ulid('id')->primary();
+            $table->ulid('id');
+            $table->primary('id');
             $table->ulid('entity_id');
             $table->ulid('period_id');
             $table->string('type', 16);

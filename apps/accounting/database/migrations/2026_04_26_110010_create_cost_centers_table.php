@@ -9,7 +9,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('cost_centers', function (Blueprint $table) {
-            $table->ulid('id')->primary();
+            $table->ulid('id');
+            $table->primary('id');
             $table->ulid('entity_id');
             $table->string('code', 40);
             $table->string('name');

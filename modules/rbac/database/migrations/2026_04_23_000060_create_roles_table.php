@@ -16,7 +16,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('roles', function (Blueprint $table) {
-            $table->ulid('id')->primary();
+            $table->ulid('id');
+            $table->primary('id');
             $table->foreignUlid('tenant_id')->nullable()->constrained('tenants')->cascadeOnDelete();
             $table->string('code');
             $table->string('name');
