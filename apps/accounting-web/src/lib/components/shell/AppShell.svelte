@@ -83,6 +83,7 @@
 
   let entityMenuOpen = $state(false);
   let periodMenuOpen = $state(false);
+  let ecosystemRequested = $state(false);
 
   onMount(() => {
     if (tenant.id) period.refresh();
@@ -95,9 +96,11 @@
   });
 
   $effect(() => {
-    // Fetch ecosystem apps once user is loaded.
-    if (auth.user && ecosystem.apps.length === 0 && !ecosystem.loading) {
-      ecosystem.refresh();
+    // Fetch once per shell mount. An empty/error response must not create a
+    // reactive retry loop; the refresh button remains available for retries.
+    if (auth.user && !ecosystemRequested) {
+      ecosystemRequested = true;
+      void ecosystem.refresh();
     }
   });
 

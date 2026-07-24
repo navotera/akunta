@@ -138,8 +138,7 @@ class ReportingController extends Controller
         $tenantSlug = $request->header('X-Tenant-Slug');
         $entity = null;
         if ($tenantSlug) {
-            $entity = Entity::where('slug', $tenantSlug)->first()
-                  ?? Entity::find($tenantSlug);
+            $entity = Entity::find($tenantSlug);
         }
         $entity ??= Auth::user()?->getDefaultTenant();
 

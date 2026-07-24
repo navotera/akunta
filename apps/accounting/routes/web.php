@@ -21,6 +21,14 @@ Route::get('/', function () {
 // App self-description (consumed by Ecopa during app registration)
 Route::get('/.well-known/akunta-app.json', [AkuntaAppMetadataController::class, 'show']);
 
+// The accounting UI is served by the SvelteKit SPA. Keep the backend URL as a
+// safe entrypoint for bookmarks and stale SSO redirects.
+Route::get('/dashboard', function () {
+    $spaUrl = rtrim((string) config('app.spa_url'), '/');
+
+    return redirect()->away($spaUrl.'/dashboard');
+});
+
 // Ecopa webhook receiver (lifecycle events). HMAC-verified, no CSRF.
 Route::post('/webhooks/ecopa', [EcopaWebhookController::class, 'handle'])
     ->middleware(['api', VerifyEcopaSignature::class])

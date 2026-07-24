@@ -95,8 +95,7 @@ class ActivePeriod
         // X-Tenant-Slug header takes precedence (SPA + machine-to-machine).
         $slug = request()?->header('X-Tenant-Slug');
         if (is_string($slug) && $slug !== '') {
-            $entity = \Akunta\Rbac\Models\Entity::where('slug', $slug)->first()
-                ?? \Akunta\Rbac\Models\Entity::find($slug);
+            $entity = \Akunta\Rbac\Models\Entity::find($slug);
             if ($entity) {
                 return $entity->getKey();
             }
