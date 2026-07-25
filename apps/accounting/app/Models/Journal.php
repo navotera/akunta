@@ -25,6 +25,10 @@ class Journal extends Model
 
     public const TYPE_OPENING = 'opening';
 
+    public const MODE_INTERNAL = 'internal';
+
+    public const MODE_FISCAL = 'fiscal';
+
     public const STATUS_DRAFT = 'draft';
 
     public const STATUS_POSTED = 'posted';
@@ -35,6 +39,7 @@ class Journal extends Model
         'entity_id',
         'period_id',
         'type',
+        'journal_mode',
         'number',
         'date',
         'reference',
@@ -60,6 +65,7 @@ class Journal extends Model
     protected $attributes = [
         'status' => self::STATUS_DRAFT,
         'type' => self::TYPE_GENERAL,
+        'journal_mode' => self::MODE_INTERNAL,
         'source_app' => 'accounting',
     ];
 

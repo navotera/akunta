@@ -40,7 +40,7 @@ class AccountController extends Controller
         return response()->json([
             'data' => $query->limit(500)->get([
                 'id', 'code', 'name', 'type', 'normal_balance',
-                'parent_account_id', 'is_postable', 'is_active',
+                'parent_account_id', 'is_postable', 'is_active', 'is_fiskal',
             ]),
         ]);
     }
@@ -108,6 +108,7 @@ class AccountController extends Controller
             'parent_account_id' => 'nullable|string|size:26|different:id',
             'is_postable' => 'sometimes|boolean',
             'is_active' => 'sometimes|boolean',
+            'is_fiskal' => 'sometimes|boolean',
         ]);
     }
 
@@ -122,6 +123,7 @@ class AccountController extends Controller
             'parent_account_id' => $a->parent_account_id,
             'is_postable' => (bool) $a->is_postable,
             'is_active' => (bool) $a->is_active,
+            'is_fiskal' => (bool) $a->is_fiskal,
         ];
     }
 }

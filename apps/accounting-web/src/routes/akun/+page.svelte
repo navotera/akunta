@@ -8,7 +8,10 @@
 
   type ViewMode = 'list' | 'tree' | 'tview';
 
-  interface TreeNode { account: Account; children: TreeNode[]; }
+  interface TreeNode {
+    account: Account;
+    children: TreeNode[];
+  }
 
   let items = $state<Account[]>([]);
   let viewMode = $state<ViewMode>('list');
@@ -17,16 +20,24 @@
   let error = $state<string | null>(null);
 
   const TYPE_LABEL: Record<string, string> = {
-    asset: 'Aktiva', liability: 'Kewajiban', equity: 'Ekuitas',
-    revenue: 'Pendapatan', expense: 'Biaya', cogs: 'HPP',
-    contra_asset: 'Kontra Aktiva', contra_liability: 'Kontra Kewajiban',
-    contra_equity: 'Kontra Ekuitas', contra_revenue: 'Kontra Pendapatan',
+    asset: 'Aktiva',
+    liability: 'Kewajiban',
+    equity: 'Ekuitas',
+    revenue: 'Pendapatan',
+    expense: 'Biaya',
+    cogs: 'HPP',
+    contra_asset: 'Kontra Aktiva',
+    contra_liability: 'Kontra Kewajiban',
+    contra_equity: 'Kontra Ekuitas',
+    contra_revenue: 'Kontra Pendapatan',
   };
 
   const filtered = $derived.by(() => {
     if (!treeSearch.trim()) return items;
     const q = treeSearch.trim().toLowerCase();
-    return items.filter((a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+    return items.filter(
+      (a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q),
+    );
   });
 
   function buildTree(rows: Account[]): TreeNode[] {
@@ -48,7 +59,8 @@
     const ids = new Set(subset.map((a) => a.id));
     const byParent = new Map<string, Account[]>();
     for (const a of subset) {
-      const parentKey = a.parent_account_id && ids.has(a.parent_account_id) ? a.parent_account_id : '__root__';
+      const parentKey =
+        a.parent_account_id && ids.has(a.parent_account_id) ? a.parent_account_id : '__root__';
       if (!byParent.has(parentKey)) byParent.set(parentKey, []);
       byParent.get(parentKey)!.push(a);
     }
@@ -66,8 +78,14 @@
   let editing = $state<Account | null>(null);
   let creating = $state(false);
   let form = $state<AccountInput>({
-    code: '', name: '', type: 'asset', normal_balance: 'debit',
-    parent_account_id: null, is_postable: true, is_active: true,
+    code: '',
+    name: '',
+    type: 'asset',
+    normal_balance: 'debit',
+    parent_account_id: null,
+    is_postable: true,
+    is_active: true,
+    is_fiskal: false,
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
@@ -87,7 +105,10 @@
   onMount(async () => {
     if (!auth.user) {
       const u = await auth.refresh();
-      if (!u) { goto('/login', { replaceState: true }); return; }
+      if (!u) {
+        goto('/login', { replaceState: true });
+        return;
+      }
     }
     await load();
   });
@@ -96,8 +117,14 @@
     creating = true;
     editing = null;
     form = {
-      code: '', name: '', type: 'asset', normal_balance: 'debit',
-      parent_account_id: null, is_postable: true, is_active: true,
+      code: '',
+      name: '',
+      type: 'asset',
+      normal_balance: 'debit',
+      parent_account_id: null,
+      is_postable: true,
+      is_active: true,
+      is_fiskal: false,
     };
     formErrors = null;
   }
@@ -106,13 +133,23 @@
     creating = false;
     editing = a;
     form = {
-      code: a.code, name: a.name, type: a.type, normal_balance: a.normal_balance,
-      parent_account_id: a.parent_account_id, is_postable: a.is_postable, is_active: a.is_active,
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      normal_balance: a.normal_balance,
+      parent_account_id: a.parent_account_id,
+      is_postable: a.is_postable,
+      is_active: a.is_active,
+      is_fiskal: a.is_fiskal,
     };
     formErrors = null;
   }
 
-  function closeForm() { editing = null; creating = false; formErrors = null; }
+  function closeForm() {
+    editing = null;
+    creating = false;
+    formErrors = null;
+  }
 
   async function save() {
     saving = true;
@@ -144,7 +181,10 @@
       closeForm();
       await load();
     } catch (e) {
-      const msg = e instanceof ApiError ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body) : (e as Error).message;
+      const msg =
+        e instanceof ApiError
+          ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body)
+          : (e as Error).message;
       alert(msg);
     }
   }
@@ -174,14 +214,12 @@
   <!-- Tabs + search -->
   <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
     <div class="inline-flex rounded-md border border-border-default bg-card-bg p-0.5 text-sm">
-      {#each [
-        { id: 'list', label: 'List' },
-        { id: 'tree', label: 'Tree' },
-        { id: 'tview', label: 'T-view' },
-      ] as t}
+      {#each [{ id: 'list', label: 'List' }, { id: 'tree', label: 'Tree' }, { id: 'tview', label: 'T-view' }] as t}
         <button
           type="button"
-          class="rounded px-3 py-1.5 font-medium transition-colors {viewMode === t.id ? 'bg-primary-light text-primary-active' : 'text-text-muted hover:text-text-default'}"
+          class="rounded px-3 py-1.5 font-medium transition-colors {viewMode === t.id
+            ? 'bg-primary-light text-primary-active'
+            : 'text-text-muted hover:text-text-default'}"
           onclick={() => (viewMode = t.id as ViewMode)}
           data-testid="coa-tab-{t.id}"
         >
@@ -202,7 +240,9 @@
   {#if loading}
     <div class="text-text-muted">Memuat…</div>
   {:else if error}
-    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">{error}</div>
+    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">
+      {error}
+    </div>
   {:else if viewMode === 'list'}
     <div class="overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs">
       <table class="ak-table">
@@ -214,6 +254,7 @@
             <th>Normal</th>
             <th class="text-center">Postable</th>
             <th class="text-center">Aktif</th>
+            <th class="text-center">Fiskal</th>
           </tr>
         </thead>
         <tbody>
@@ -223,27 +264,38 @@
               <td>{a.name}</td>
               <td class="capitalize">{TYPE_LABEL[a.type] ?? a.type}</td>
               <td>
-                <span class="ak-pill {a.normal_balance === 'debit' ? 'bg-info-light text-info' : 'bg-warning-light text-warning'}">
+                <span
+                  class="ak-pill {a.normal_balance === 'debit'
+                    ? 'bg-info-light text-info'
+                    : 'bg-warning-light text-warning'}"
+                >
                   {a.normal_balance}
                 </span>
               </td>
               <td class="text-center">{a.is_postable ? '✓' : '—'}</td>
               <td class="text-center">{a.is_active ? '✓' : '—'}</td>
+              <td class="text-center">{a.is_fiskal ? '✓' : '-'}</td>
             </tr>
           {:else}
-            <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada akun.</td></tr>
+            <tr
+              ><td colspan="7" class="px-4 py-10 text-center text-text-muted">Belum ada akun.</td
+              ></tr
+            >
           {/each}
         </tbody>
       </table>
     </div>
   {:else if viewMode === 'tree'}
     <div class="rounded-lg border border-border-default bg-card-bg shadow-xs">
-      <div class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem] gap-2 border-b border-border-default bg-page-bg px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted">
+      <div
+        class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem_3.5rem] gap-2 border-b border-border-default bg-page-bg px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
+      >
         <span>Akun</span>
         <span>Tipe</span>
         <span>Normal</span>
         <span class="text-center">Post</span>
         <span class="text-center">Aktif</span>
+        <span class="text-center">Fiskal</span>
       </div>
       {#each treeData as node (node.account.id)}
         <CoaTreeNode {node} onSelect={openEdit} />
@@ -254,16 +306,23 @@
   {:else if viewMode === 'tview'}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <section class="rounded-lg border border-border-default bg-card-bg shadow-xs">
-        <header class="flex items-center justify-between border-b border-border-default bg-info-light px-4 py-2">
+        <header
+          class="flex items-center justify-between border-b border-border-default bg-info-light px-4 py-2"
+        >
           <strong class="text-info">Debit-normal</strong>
-          <span class="ak-pill bg-card-bg text-info">{filtered.filter((a) => a.normal_balance === 'debit').length}</span>
+          <span class="ak-pill bg-card-bg text-info"
+            >{filtered.filter((a) => a.normal_balance === 'debit').length}</span
+          >
         </header>
-        <div class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem] gap-2 border-b border-border-soft bg-page-bg px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider text-text-muted">
+        <div
+          class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem_3.5rem] gap-2 border-b border-border-soft bg-page-bg px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider text-text-muted"
+        >
           <span>Akun</span>
           <span>Tipe</span>
           <span>Normal</span>
           <span class="text-center">Post</span>
           <span class="text-center">Aktif</span>
+          <span class="text-center">Fiskal</span>
         </div>
         {#each debitTree as node (node.account.id)}
           <CoaTreeNode {node} onSelect={openEdit} />
@@ -273,16 +332,23 @@
       </section>
 
       <section class="rounded-lg border border-border-default bg-card-bg shadow-xs">
-        <header class="flex items-center justify-between border-b border-border-default bg-warning-light px-4 py-2">
+        <header
+          class="flex items-center justify-between border-b border-border-default bg-warning-light px-4 py-2"
+        >
           <strong class="text-warning">Credit-normal</strong>
-          <span class="ak-pill bg-card-bg text-warning">{filtered.filter((a) => a.normal_balance === 'credit').length}</span>
+          <span class="ak-pill bg-card-bg text-warning"
+            >{filtered.filter((a) => a.normal_balance === 'credit').length}</span
+          >
         </header>
-        <div class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem] gap-2 border-b border-border-soft bg-page-bg px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider text-text-muted">
+        <div
+          class="grid grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem_3.5rem] gap-2 border-b border-border-soft bg-page-bg px-3 py-2 text-[0.625rem] font-semibold uppercase tracking-wider text-text-muted"
+        >
           <span>Akun</span>
           <span>Tipe</span>
           <span>Normal</span>
           <span class="text-center">Post</span>
           <span class="text-center">Aktif</span>
+          <span class="text-center">Fiskal</span>
         </div>
         {#each creditTree as node (node.account.id)}
           <CoaTreeNode {node} onSelect={openEdit} />
@@ -295,23 +361,39 @@
 </div>
 
 {#if creating || editing}
-  <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4" onclick={closeForm}>
-    <div class="w-full max-w-lg rounded-lg bg-card-bg p-6 shadow-lg" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div
+    class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+    onclick={closeForm}
+  >
+    <div
+      class="w-full max-w-lg rounded-lg bg-card-bg p-6 shadow-lg"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+    >
       <h2 class="mb-4 text-lg font-bold">{editing ? `Edit Akun ${editing.code}` : 'Akun Baru'}</h2>
       <div class="grid grid-cols-2 gap-3 text-sm">
         <label class="col-span-1">
           <span class="block font-medium mb-1">Kode <span class="text-danger">*</span></span>
-          <input class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.code} />
+          <input
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.code}
+          />
           {#if fieldErr('code')}<span class="text-xs text-danger">{fieldErr('code')}</span>{/if}
         </label>
         <label class="col-span-1">
           <span class="block font-medium mb-1">Nama <span class="text-danger">*</span></span>
-          <input class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.name} />
+          <input
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.name}
+          />
           {#if fieldErr('name')}<span class="text-xs text-danger">{fieldErr('name')}</span>{/if}
         </label>
         <label class="col-span-1">
           <span class="block font-medium mb-1">Tipe</span>
-          <select class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.type}>
+          <select
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.type}
+          >
             <option value="asset">Asset</option>
             <option value="liability">Liability</option>
             <option value="equity">Equity</option>
@@ -322,7 +404,10 @@
         </label>
         <label class="col-span-1">
           <span class="block font-medium mb-1">Normal Balance</span>
-          <select class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.normal_balance}>
+          <select
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.normal_balance}
+          >
             <option value="debit">Debit</option>
             <option value="credit">Credit</option>
           </select>
@@ -334,6 +419,10 @@
         <label class="col-span-1 flex items-center gap-2 mt-2">
           <input type="checkbox" bind:checked={form.is_active} />
           <span>Aktif</span>
+        </label>
+        <label class="col-span-1 flex items-center gap-2 mt-2">
+          <input type="checkbox" bind:checked={form.is_fiskal} />
+          <span>Fiskal</span>
         </label>
       </div>
 
@@ -350,7 +439,11 @@
           {/if}
         </div>
         <div class="flex gap-2">
-          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          <button
+            type="button"
+            class="text-sm text-text-muted hover:text-text-default"
+            onclick={closeForm}>Batal</button
+          >
           <button
             type="button"
             class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"

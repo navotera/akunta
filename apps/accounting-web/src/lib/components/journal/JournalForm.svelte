@@ -6,7 +6,7 @@
   import TemplateSidebar from './TemplateSidebar.svelte';
   import RecentJournalCard from './RecentJournalCard.svelte';
   import type { AccountOption } from '$lib/api/account.js';
-  import type { JournalSummary, JournalDetail } from '$lib/api/journal.js';
+  import type { JournalMode, JournalSummary, JournalDetail } from '$lib/api/journal.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
@@ -33,6 +33,7 @@
 
   export interface FormPayload {
     number: string;
+    journal_mode: JournalMode;
     date: string;
     memo: string;
     entries_debit: Row[];
@@ -62,6 +63,7 @@
 
   let date = $state(initial?.date ?? new Date().toISOString().slice(0, 10));
   let number = $state(initial?.number ?? '');
+  let journalMode = $state<JournalMode>(initial?.journal_mode ?? 'internal');
   let memo = $state(initial?.memo ?? '');
 
   let debits = $state<Row[]>(
@@ -86,6 +88,24 @@
   const debitTotal = $derived(debits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const creditTotal = $derived(credits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const balanced = $derived(debitTotal > 0 && Math.abs(debitTotal - creditTotal) < 0.005);
+  const visibleAccounts = $derived(
+    journalMode === 'fiscal' ? accounts.filter((account) => account.is_fiskal) : accounts,
+  );
+
+  function toggleJournalMode() {
+    if (initial || saving) return;
+
+    journalMode = journalMode === 'fiscal' ? 'internal' : 'fiscal';
+    if (journalMode === 'fiscal') {
+      const fiscalAccountIds = new Set(visibleAccounts.map((account) => account.id));
+      debits = debits.map((row) =>
+        fiscalAccountIds.has(row.account_id) ? row : { ...row, account_id: '' },
+      );
+      credits = credits.map((row) =>
+        fiscalAccountIds.has(row.account_id) ? row : { ...row, account_id: '' },
+      );
+    }
+  }
 
   function addDebit() {
     debits = [...debits, blankRow()];
@@ -106,12 +126,11 @@
     credits = credits.filter((_, idx) => idx !== i);
   }
 
-
   function payload(): FormPayload {
-    const clean = (rows: Row[]) =>
-      rows.filter((r) => r.account_id && Number(r.amount) > 0);
+    const clean = (rows: Row[]) => rows.filter((r) => r.account_id && Number(r.amount) > 0);
     return {
       number,
+      journal_mode: journalMode,
       date,
       memo,
       entries_debit: clean(debits),
@@ -150,15 +169,39 @@
 <div class="ak-journal-shell">
   <header class="px-6 pt-4 pb-2">
     <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
-    <div class="flex items-baseline gap-3 mt-1">
-      <h1 class="text-2xl font-bold leading-tight text-text-default">{title}</h1>
-      <span class="text-sm font-medium text-text-muted">Tampilan T-account</span>
+    <div class="flex flex-wrap items-center justify-between gap-3 mt-1">
+      <div class="flex items-baseline gap-3">
+        <h1 class="text-2xl font-bold leading-tight text-text-default">{title}</h1>
+        <span class="text-sm font-medium text-text-muted">Tampilan T-account</span>
+      </div>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-full border border-border-default bg-card-bg p-1 text-sm shadow-xs disabled:cursor-not-allowed disabled:opacity-70"
+        onclick={toggleJournalMode}
+        disabled={!!initial || saving}
+        aria-label="Ubah mode jurnal"
+        aria-pressed={journalMode === 'fiscal'}
+        data-testid="journal-mode-toggle"
+      >
+        <span
+          class="rounded-full px-3 py-1 font-medium {journalMode === 'internal'
+            ? 'bg-primary text-white'
+            : 'text-text-muted'}">Intern</span
+        >
+        <span
+          class="rounded-full px-3 py-1 font-medium {journalMode === 'fiscal'
+            ? 'bg-warning text-white'
+            : 'text-text-muted'}">Fiskal</span
+        >
+      </button>
     </div>
   </header>
 
   <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 px-6 pb-32">
     <!-- Header field strip (flat, no card) -->
-    <section class="xl:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-3 rounded-lg border border-border-default bg-card-bg p-4">
+    <section
+      class="xl:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-3 rounded-lg border border-border-default bg-card-bg p-4"
+    >
       <label class="md:col-span-2 text-sm">
         <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
         <DateInput
@@ -168,38 +211,63 @@
           class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
         />
         {#if fieldError('date')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-date">{fieldError('date')}</span>
+          <span class="block mt-1 text-xs text-danger" data-testid="error-date"
+            >{fieldError('date')}</span
+          >
         {/if}
       </label>
       <label class="md:col-span-3 text-sm">
         <span class="block font-medium mb-1">No. Bukti <span class="text-danger">*</span></span>
         <input
           type="text"
-          class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError('number') ? 'border-danger' : 'border-border-default'}"
+          class="w-full rounded-md border bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
+            'number',
+          )
+            ? 'border-danger'
+            : 'border-border-default'}"
           bind:value={number}
-          required
+          placeholder="Dibuat otomatis saat disimpan"
+          readonly
           data-testid="journal-number"
         />
+        {#if !number && !initial}
+          <span class="block mt-1 text-xs text-text-muted"
+            >Kode: {journalMode === 'fiscal' ? 'JF' : 'JI'}-{date
+              .slice(0, 7)
+              .replace('-', '')}-XXXX</span
+          >
+        {/if}
         {#if fieldError('number')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-number">{fieldError('number')}</span>
+          <span class="block mt-1 text-xs text-danger" data-testid="error-number"
+            >{fieldError('number')}</span
+          >
         {/if}
       </label>
       <label class="md:col-span-7 text-sm">
         <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span>
         <input
           type="text"
-          class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError('memo') ? 'border-danger' : 'border-border-default'}"
+          class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
+            'memo',
+          )
+            ? 'border-danger'
+            : 'border-border-default'}"
           placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
           bind:value={memo}
           required
           data-testid="journal-memo"
         />
         {#if fieldError('memo')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-memo">{fieldError('memo')}</span>
+          <span class="block mt-1 text-xs text-danger" data-testid="error-memo"
+            >{fieldError('memo')}</span
+          >
         {/if}
       </label>
       {#if serverMessage || fieldError('entries') || fieldError('tenant')}
-        <div class="md:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger" data-testid="form-banner">
+        <div
+          class="md:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
+          data-testid="form-banner"
+        >
           {fieldError('entries') ?? fieldError('tenant') ?? serverMessage}
         </div>
       {/if}
@@ -207,14 +275,17 @@
 
     <!-- Main: debit + credit panels + lampiran -->
     <div class="xl:col-span-9 flex flex-col gap-4">
-      <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs" data-testid="debit-panel">
+      <section
+        class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs"
+        data-testid="debit-panel"
+      >
         <PanelHeader side="debit" total={debitTotal} />
         <div class="flex flex-col gap-2">
           {#each debits as row, i (i)}
             <EntryRow
               {row}
               index={i}
-              {accounts}
+              accounts={visibleAccounts}
               onChange={(n) => updateDebit(i, n)}
               onRemove={() => removeDebit(i)}
             />
@@ -223,14 +294,17 @@
         <AddLineButton side="debit" onclick={addDebit} />
       </section>
 
-      <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs" data-testid="credit-panel">
+      <section
+        class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs"
+        data-testid="credit-panel"
+      >
         <PanelHeader side="credit" total={creditTotal} />
         <div class="flex flex-col gap-2">
           {#each credits as row, i (i)}
             <EntryRow
               {row}
               index={i}
-              {accounts}
+              accounts={visibleAccounts}
               onChange={(n) => updateCredit(i, n)}
               onRemove={() => removeCredit(i)}
             />
@@ -241,7 +315,9 @@
 
       <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
         <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">Lampiran</h2>
-        <div class="rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted">
+        <div
+          class="rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted"
+        >
           Klik atau seret file ke sini
           <p class="text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</p>
         </div>
@@ -256,7 +332,9 @@
   </div>
 
   <!-- Sticky footer -->
-  <div class="fixed bottom-0 left-0 right-0 z-20 flex items-center justify-between gap-3 border-t border-border-default bg-card-bg px-6 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]">
+  <div
+    class="fixed bottom-0 left-0 right-0 z-20 flex items-center justify-between gap-3 border-t border-border-default bg-card-bg px-6 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]"
+  >
     <BalancePill {debits} {credits} />
     <div class="flex items-center gap-3">
       <button

@@ -9,6 +9,7 @@ export interface Account {
   parent_account_id: string | null;
   is_postable: boolean;
   is_active: boolean;
+  is_fiskal: boolean;
 }
 
 export type AccountOption = Account;
@@ -21,6 +22,7 @@ export interface AccountInput {
   parent_account_id?: string | null;
   is_postable?: boolean;
   is_active?: boolean;
+  is_fiskal?: boolean;
 }
 
 export const accountApi = {

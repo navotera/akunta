@@ -78,6 +78,7 @@ class RecordSalesAction
                 'entity_id' => $entityId,
                 'period_id' => $period->id,
                 'type' => Journal::TYPE_GENERAL,
+                'journal_mode' => $input['journal_mode'] ?? Journal::MODE_INTERNAL,
                 'number' => $this->nextNumber($entityId, $date),
                 'date' => $date,
                 'reference' => $input['reference'] ?? null,

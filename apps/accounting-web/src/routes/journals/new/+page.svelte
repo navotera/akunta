@@ -49,6 +49,7 @@
     try {
       const created = await journalApi.create({
         number: payload.number,
+        journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
         entries_debit: payload.entries_debit,
@@ -70,6 +71,7 @@
     try {
       const created = await journalApi.create({
         number: payload.number,
+        journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
         entries_debit: payload.entries_debit,

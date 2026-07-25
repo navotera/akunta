@@ -12,10 +12,12 @@ use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
+use App\Services\JournalNumberGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -24,6 +26,7 @@ class JournalController extends Controller
     public function __construct(
         private readonly PostJournalAction $postJournal,
         private readonly ReverseJournalAction $reverseJournal,
+        private readonly JournalNumberGenerator $numberGenerator,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -82,7 +85,12 @@ class JournalController extends Controller
                 'entity_id' => $entity->id,
                 'period_id' => $period->id,
                 'type' => $data['type'] ?? Journal::TYPE_GENERAL,
-                'number' => $data['number'],
+                'journal_mode' => $data['journal_mode'] ?? Journal::MODE_INTERNAL,
+                'number' => ($data['number'] ?? null) ?: $this->numberGenerator->next(
+                    $entity->id,
+                    $data['date'],
+                    $data['journal_mode'] ?? Journal::MODE_INTERNAL,
+                ),
                 'date' => $data['date'],
                 'memo' => $data['memo'],
                 'reference' => $data['reference'] ?? null,
@@ -115,7 +123,6 @@ class JournalController extends Controller
         DB::transaction(function () use ($journal, $data, $entity, $period) {
             $journal->fill([
                 'period_id' => $period->id,
-                'number' => $data['number'],
                 'date' => $data['date'],
                 'memo' => $data['memo'],
                 'reference' => $data['reference'] ?? null,
@@ -190,7 +197,8 @@ class JournalController extends Controller
                 'entity_id' => $source->entity_id,
                 'period_id' => $period->id,
                 'type' => $source->type,
-                'number' => $source->number.'-COPY-'.substr((string) \Illuminate\Support\Str::ulid(), -6),
+                'journal_mode' => $source->journal_mode,
+                'number' => $source->number.'-COPY-'.substr((string) Str::ulid(), -6),
                 'date' => $source->date,
                 'memo' => $source->memo,
                 'reference' => $source->reference,
@@ -255,7 +263,8 @@ class JournalController extends Controller
     private function validatePayload(Request $request): array
     {
         return $request->validate([
-            'number' => 'required|string|max:40',
+            'number' => 'nullable|string|max:40',
+            'journal_mode' => 'sometimes|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
             'date' => 'required|date_format:Y-m-d',
             'memo' => 'required|string|max:400',
             'reference' => 'nullable|string|max:120',
@@ -342,6 +351,7 @@ class JournalController extends Controller
         return [
             'id' => $j->id,
             'number' => $j->number,
+            'journal_mode' => $j->journal_mode,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
             'status' => $j->status,
@@ -373,6 +383,7 @@ class JournalController extends Controller
         return [
             'id' => $j->id,
             'number' => $j->number,
+            'journal_mode' => $j->journal_mode,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
             'status' => $j->status,

@@ -1,8 +1,11 @@
 import { api } from './client.js';
 
+export type JournalMode = 'internal' | 'fiscal';
+
 export interface JournalSummary {
   id: string;
   number: string;
+  journal_mode: JournalMode;
   date: string;
   type: string;
   status: 'draft' | 'posted' | 'reversed';
@@ -22,6 +25,7 @@ export interface JournalEntry {
 export interface JournalDetail {
   id: string;
   number: string;
+  journal_mode: JournalMode;
   date: string;
   type: string;
   status: 'draft' | 'posted' | 'reversed';
@@ -41,6 +45,7 @@ export interface JournalListResponse {
 
 export interface JournalPayload {
   number: string;
+  journal_mode: JournalMode;
   date: string;
   memo: string;
   reference?: string | null;
@@ -61,7 +66,9 @@ export const journalApi = {
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}`, { tenantSlug }).then((r) => r.data),
 
   create: (payload: JournalPayload, tenantSlug?: string | null) =>
-    api<{ data: JournalDetail }>('/api/v1/spa/journals', { json: payload, tenantSlug }).then((r) => r.data),
+    api<{ data: JournalDetail }>('/api/v1/spa/journals', { json: payload, tenantSlug }).then(
+      (r) => r.data,
+    ),
 
   update: (id: string, payload: JournalPayload, tenantSlug?: string | null) =>
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}`, {

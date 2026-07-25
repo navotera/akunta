@@ -30,9 +30,11 @@
   });
 
   function statusColor(s: JournalSummary['status']): string {
-    return s === 'posted' ? 'bg-paid-light text-paid'
-      : s === 'reversed' ? 'bg-warning-light text-warning'
-      : 'bg-page-bg text-text-muted';
+    return s === 'posted'
+      ? 'bg-paid-light text-paid'
+      : s === 'reversed'
+        ? 'bg-warning-light text-warning'
+        : 'bg-page-bg text-text-muted';
   }
 </script>
 
@@ -54,13 +56,16 @@
   {#if loading}
     <div class="text-text-muted">Memuat…</div>
   {:else if error}
-    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">{error}</div>
+    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">
+      {error}
+    </div>
   {:else}
     <div class="overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs">
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
             <th class="px-4 py-3 text-left">No. Jurnal</th>
+            <th class="px-4 py-3 text-left">Mode</th>
             <th class="px-4 py-3 text-left">Tanggal</th>
             <th class="px-4 py-3 text-left">Keterangan</th>
             <th class="px-4 py-3 text-right">Total</th>
@@ -69,19 +74,39 @@
         </thead>
         <tbody>
           {#each items as j (j.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => goto(`/journals/${j.id}`)}>
+            <tr
+              class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+              onclick={() => goto(`/journals/${j.id}`)}
+            >
               <td class="px-4 py-3 font-mono">{j.number}</td>
+              <td class="px-4 py-3">
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {j.journal_mode ===
+                  'fiscal'
+                    ? 'bg-warning-light text-warning'
+                    : 'bg-info-light text-info'}"
+                >
+                  {j.journal_mode === 'fiscal' ? 'Fiskal' : 'Intern'}
+                </span>
+              </td>
               <td class="px-4 py-3">{j.date}</td>
               <td class="px-4 py-3">{j.memo ?? '—'}</td>
               <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(j.total)}</td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(j.status)}">
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(
+                    j.status,
+                  )}"
+                >
                   {j.status}
                 </span>
               </td>
             </tr>
           {:else}
-            <tr><td colspan="5" class="px-4 py-10 text-center text-text-muted">Belum ada jurnal.</td></tr>
+            <tr
+              ><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada jurnal.</td
+              ></tr
+            >
           {/each}
         </tbody>
       </table>

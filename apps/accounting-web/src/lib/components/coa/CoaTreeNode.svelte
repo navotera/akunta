@@ -2,7 +2,10 @@
   import type { Account } from '$lib/api/account.js';
   import Self from './CoaTreeNode.svelte';
 
-  interface TreeNode { account: Account; children: TreeNode[]; }
+  interface TreeNode {
+    account: Account;
+    children: TreeNode[];
+  }
 
   interface Props {
     node: TreeNode;
@@ -24,7 +27,7 @@
 
 <button
   type="button"
-  class="grid w-full grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem] items-center gap-2 border-t border-border-soft py-1.5 text-left text-sm hover:bg-page-bg"
+  class="grid w-full grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem_3.5rem] items-center gap-2 border-t border-border-soft py-1.5 text-left text-sm hover:bg-page-bg"
   style:padding-left={padLeft}
   onclick={() => onSelect?.(node.account)}
 >
@@ -35,7 +38,9 @@
         tabindex="-1"
         class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs text-text-muted hover:bg-page-bg"
         onclick={toggle}
-        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggle(e); }}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') toggle(e);
+        }}
         aria-label={expanded ? 'Tutup' : 'Buka'}
       >
         {expanded ? '▾' : '▸'}
@@ -44,16 +49,23 @@
       <span class="w-5 shrink-0 text-center text-xs text-text-muted/60">·</span>
     {/if}
     <span class="font-mono text-xs text-text-muted">{node.account.code}</span>
-    <span class="truncate {isParent ? 'font-semibold text-text-strong' : ''}">{node.account.name}</span>
+    <span class="truncate {isParent ? 'font-semibold text-text-strong' : ''}"
+      >{node.account.name}</span
+    >
   </span>
   <span class="capitalize text-xs text-text-muted">{node.account.type}</span>
   <span class="capitalize text-xs">
-    <span class="ak-pill {node.account.normal_balance === 'debit' ? 'bg-info-light text-info' : 'bg-warning-light text-warning'}">
+    <span
+      class="ak-pill {node.account.normal_balance === 'debit'
+        ? 'bg-info-light text-info'
+        : 'bg-warning-light text-warning'}"
+    >
       {node.account.normal_balance}
     </span>
   </span>
   <span class="text-center text-xs">{node.account.is_postable ? '✓' : '—'}</span>
   <span class="text-center text-xs">{node.account.is_active ? '✓' : '—'}</span>
+  <span class="text-center text-xs">{node.account.is_fiskal ? '✓' : '-'}</span>
 </button>
 
 {#if expanded && isParent}

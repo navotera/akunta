@@ -21,11 +21,13 @@ class Account extends Model
         'normal_balance',
         'is_postable',
         'is_active',
+        'is_fiskal',
     ];
 
     protected $casts = [
         'is_postable' => 'boolean',
         'is_active' => 'boolean',
+        'is_fiskal' => 'boolean',
     ];
 
     public function entity(): BelongsTo

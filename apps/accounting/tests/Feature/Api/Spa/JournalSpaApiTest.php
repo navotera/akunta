@@ -9,6 +9,7 @@ use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\Account;
 use App\Models\Journal;
+use App\Models\JournalEntry;
 use App\Models\Period;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
@@ -93,6 +94,7 @@ it('lists journals scoped to the tenant', function () {
 
     $res->assertOk()
         ->assertJsonPath('data.0.number', 'JU-2026-05-001')
+        ->assertJsonPath('data.0.journal_mode', 'internal')
         ->assertJsonPath('meta.total', 1);
 });
 
@@ -115,11 +117,34 @@ it('creates a balanced draft journal via SPA endpoint', function () {
 
     $res->assertCreated()
         ->assertJsonPath('data.number', 'JU-2026-05-010')
+        ->assertJsonPath('data.journal_mode', 'internal')
         ->assertJsonPath('data.status', 'draft')
         ->assertJsonCount(1, 'data.entries_debit')
         ->assertJsonCount(1, 'data.entries_credit');
 
     expect(Journal::where('number', 'JU-2026-05-010')->exists())->toBeTrue();
+});
+
+it('generates a fiscal journal number with the fiscal prefix', function () {
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'journal_mode' => Journal::MODE_FISCAL,
+            'date' => '2026-05-05',
+            'memo' => 'Jurnal fiskal',
+            'entries_debit' => [
+                ['account_id' => $this->cash->id, 'amount' => '25000', 'memo' => null],
+            ],
+            'entries_credit' => [
+                ['account_id' => $this->revenue->id, 'amount' => '25000', 'memo' => null],
+            ],
+        ]);
+
+    $res->assertCreated()
+        ->assertJsonPath('data.number', 'JF-202605-0001')
+        ->assertJsonPath('data.journal_mode', 'fiscal');
+    expect(Journal::where('number', 'JF-202605-0001')->value('journal_mode'))
+        ->toBe(Journal::MODE_FISCAL);
 });
 
 it('rejects unbalanced journal create with 422', function () {
@@ -152,11 +177,11 @@ it('reverses a posted journal via SPA endpoint', function () {
         'status' => Journal::STATUS_DRAFT,
     ]);
 
-    \App\Models\JournalEntry::create([
+    JournalEntry::create([
         'journal_id' => $journal->id, 'line_no' => 1,
         'account_id' => $this->cash->id, 'debit' => 50000, 'credit' => 0,
     ]);
-    \App\Models\JournalEntry::create([
+    JournalEntry::create([
         'journal_id' => $journal->id, 'line_no' => 2,
         'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 50000,
     ]);
@@ -190,11 +215,11 @@ it('replicates a journal as a fresh draft via SPA endpoint', function () {
         'posted_at' => now(),
         'posted_by' => $this->user->id,
     ]);
-    \App\Models\JournalEntry::create([
+    JournalEntry::create([
         'journal_id' => $source->id, 'line_no' => 1,
         'account_id' => $this->cash->id, 'debit' => 75000, 'credit' => 0, 'memo' => 'd',
     ]);
-    \App\Models\JournalEntry::create([
+    JournalEntry::create([
         'journal_id' => $source->id, 'line_no' => 2,
         'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 75000, 'memo' => 'c',
     ]);
