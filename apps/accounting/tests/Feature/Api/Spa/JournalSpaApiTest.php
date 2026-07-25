@@ -100,7 +100,7 @@ it('lists journals scoped to the tenant', function () {
 
 it('creates a balanced draft journal via SPA endpoint', function () {
     $payload = [
-        'number' => 'JU-2026-05-010',
+        'reference' => 'INV-2026-05-010',
         'date' => '2026-05-04',
         'memo' => 'Pembelian persediaan',
         'entries_debit' => [
@@ -116,13 +116,16 @@ it('creates a balanced draft journal via SPA endpoint', function () {
         ->postJson('/api/v1/spa/journals', $payload);
 
     $res->assertCreated()
-        ->assertJsonPath('data.number', 'JU-2026-05-010')
+        ->assertJsonPath('data.number', 'JI-202605-0001')
+        ->assertJsonPath('data.reference', 'INV-2026-05-010')
         ->assertJsonPath('data.journal_mode', 'internal')
         ->assertJsonPath('data.status', 'draft')
         ->assertJsonCount(1, 'data.entries_debit')
         ->assertJsonCount(1, 'data.entries_credit');
 
-    expect(Journal::where('number', 'JU-2026-05-010')->exists())->toBeTrue();
+    expect(Journal::where('number', 'JI-202605-0001')
+        ->where('reference', 'INV-2026-05-010')
+        ->exists())->toBeTrue();
 });
 
 it('generates a fiscal journal number with the fiscal prefix', function () {

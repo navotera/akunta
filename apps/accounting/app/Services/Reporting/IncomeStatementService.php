@@ -30,16 +30,17 @@ class IncomeStatementService
      *     net_income: string
      * }
      */
-    public function compute(string $entityId, string $periodStart, string $periodEnd): array
+    public function compute(string $entityId, string $periodStart, string $periodEnd, string $journalMode = Journal::MODE_INTERNAL): array
     {
         $rows = Account::query()
             ->where('accounts.entity_id', $entityId)
             ->where('accounts.is_postable', true)
             ->whereIn('accounts.type', ['revenue', 'cogs', 'expense'])
             ->leftJoin('journal_entries', 'journal_entries.account_id', '=', 'accounts.id')
-            ->leftJoin('journals', function ($join) use ($periodStart, $periodEnd) {
+            ->leftJoin('journals', function ($join) use ($periodStart, $periodEnd, $journalMode) {
                 $join->on('journals.id', '=', 'journal_entries.journal_id')
                     ->where('journals.status', Journal::STATUS_POSTED)
+                    ->where('journals.journal_mode', $journalMode)
                     ->whereBetween('journals.date', [$periodStart, $periodEnd]);
             })
             ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type, accounts.normal_balance')

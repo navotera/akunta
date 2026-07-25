@@ -32,10 +32,11 @@
   }
 
   export interface FormPayload {
-    number: string;
+    number?: string;
     journal_mode: JournalMode;
     date: string;
     memo: string;
+    reference: string | null;
     entries_debit: Row[];
     entries_credit: Row[];
   }
@@ -65,6 +66,7 @@
   let number = $state(initial?.number ?? '');
   let journalMode = $state<JournalMode>(initial?.journal_mode ?? 'internal');
   let memo = $state(initial?.memo ?? '');
+  let reference = $state(initial?.reference ?? '');
 
   let debits = $state<Row[]>(
     (initial?.entries_debit ?? []).map((e) => ({
@@ -90,6 +92,9 @@
   const balanced = $derived(debitTotal > 0 && Math.abs(debitTotal - creditTotal) < 0.005);
   const visibleAccounts = $derived(
     journalMode === 'fiscal' ? accounts.filter((account) => account.is_fiskal) : accounts,
+  );
+  const visibleTemplates = $derived(
+    templates.filter((template) => (template.journal_mode ?? 'internal') === journalMode),
   );
 
   function toggleJournalMode() {
@@ -133,24 +138,28 @@
       journal_mode: journalMode,
       date,
       memo,
+      reference: reference || null,
       entries_debit: clean(debits),
       entries_credit: clean(credits),
     };
   }
 
   let templateLoading = $state(false);
+  let templateError = $state<string | null>(null);
 
   async function handlePickTemplate(t: JournalTemplateSummary) {
     if (templateLoading) return;
     templateLoading = true;
+    templateError = null;
     try {
+      journalMode = t.journal_mode ?? 'internal';
       const detail = await templateApi.show(t.id);
       const dRows: Row[] = [];
       const cRows: Row[] = [];
       for (const ln of detail.lines) {
         const row: Row = {
           account_id: ln.account_id,
-          amount: String(Number(ln.amount) || 0),
+          amount: String(ln.amount ?? '0'),
           memo: ln.memo,
         };
         (ln.side === 'debit' ? dRows : cRows).push(row);
@@ -159,7 +168,7 @@
       debits = dRows.length ? dRows : [blankRow(), blankRow()];
       credits = cRows.length ? cRows : [blankRow()];
     } catch (e) {
-      console.error('template apply failed', e);
+      templateError = e instanceof Error ? e.message : String(e);
     } finally {
       templateLoading = false;
     }
@@ -217,7 +226,7 @@
         {/if}
       </label>
       <label class="md:col-span-3 text-sm">
-        <span class="block font-medium mb-1">No. Bukti <span class="text-danger">*</span></span>
+        <span class="block font-medium mb-1">Kode Jurnal</span>
         <input
           type="text"
           class="w-full rounded-md border bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
@@ -243,7 +252,23 @@
           >
         {/if}
       </label>
-      <label class="md:col-span-7 text-sm">
+      <label class="md:col-span-3 text-sm">
+        <span class="block font-medium mb-1">No. Bukti</span>
+        <input
+          type="text"
+          class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+          bind:value={reference}
+          placeholder="Mis. INV-2026-001"
+          maxlength="120"
+          data-testid="journal-reference"
+        />
+        {#if fieldError('reference')}
+          <span class="block mt-1 text-xs text-danger" data-testid="error-reference"
+            >{fieldError('reference')}</span
+          >
+        {/if}
+      </label>
+      <label class="md:col-span-4 text-sm">
         <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span>
         <input
           type="text"
@@ -326,7 +351,12 @@
 
     <!-- Sidebar -->
     <aside class="xl:col-span-3 flex flex-col gap-4 xl:sticky xl:top-4 xl:self-start">
-      <TemplateSidebar {templates} onPick={handlePickTemplate} />
+      {#if templateError}
+        <p class="rounded-md border border-danger bg-danger-light p-3 text-xs text-danger">
+          Template gagal diterapkan: {templateError}
+        </p>
+      {/if}
+      <TemplateSidebar templates={visibleTemplates} onPick={handlePickTemplate} />
       <RecentJournalCard {recent} />
     </aside>
   </div>

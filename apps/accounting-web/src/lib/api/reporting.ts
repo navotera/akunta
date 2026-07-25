@@ -46,6 +46,7 @@ export interface BalanceSheetData {
   liabilities: BalanceSheetSection;
   equity: BalanceSheetSection;
   balanced: boolean;
+  fiscal?: BalanceSheetData;
 }
 
 export interface IncomeStatementSection {
@@ -112,9 +113,15 @@ export const reportingApi = {
       { tenantSlug },
     ),
 
-  balanceSheet: (asOf: string, periodStart?: string | null, tenantSlug?: string | null) => {
+  balanceSheet: (
+    asOf: string,
+    periodStart?: string | null,
+    showFiscal = false,
+    tenantSlug?: string | null,
+  ) => {
     const params = new URLSearchParams({ as_of: asOf });
     if (periodStart) params.set('period_start', periodStart);
+    if (showFiscal) params.set('show_fiscal', '1');
     return api<Envelope<BalanceSheetData>>(
       `/api/v1/spa/reports/balance-sheet?${params.toString()}`,
       { tenantSlug },

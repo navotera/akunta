@@ -25,12 +25,13 @@ class RecentJournalsController extends Controller
             ->latest('date')
             ->latest('created_at')
             ->limit($limit)
-            ->get(['id', 'number', 'date', 'memo', 'status', 'type']);
+            ->get(['id', 'number', 'reference', 'date', 'memo', 'status', 'type']);
 
         return response()->json([
             'data' => $items->map(fn (Journal $j) => [
                 'id' => $j->id,
                 'number' => $j->number,
+                'reference' => $j->reference,
                 'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
                 'memo' => $j->memo,
                 'status' => $j->status,

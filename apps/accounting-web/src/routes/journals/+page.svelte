@@ -64,7 +64,8 @@
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
-            <th class="px-4 py-3 text-left">No. Jurnal</th>
+            <th class="px-4 py-3 text-left">Kode Jurnal</th>
+            <th class="px-4 py-3 text-left">No. Bukti</th>
             <th class="px-4 py-3 text-left">Mode</th>
             <th class="px-4 py-3 text-left">Tanggal</th>
             <th class="px-4 py-3 text-left">Keterangan</th>
@@ -79,6 +80,7 @@
               onclick={() => goto(`/journals/${j.id}`)}
             >
               <td class="px-4 py-3 font-mono">{j.number}</td>
+              <td class="px-4 py-3">{j.reference ?? '—'}</td>
               <td class="px-4 py-3">
                 <span
                   class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {j.journal_mode ===
@@ -104,7 +106,7 @@
             </tr>
           {:else}
             <tr
-              ><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada jurnal.</td
+              ><td colspan="7" class="px-4 py-10 text-center text-text-muted">Belum ada jurnal.</td
               ></tr
             >
           {/each}

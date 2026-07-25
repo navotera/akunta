@@ -18,6 +18,7 @@ class JournalTemplate extends Model
         'name',
         'description',
         'journal_type',
+        'journal_mode',
         'default_memo',
         'default_reference',
         'is_active',
@@ -29,8 +30,9 @@ class JournalTemplate extends Model
     ];
 
     protected $attributes = [
-        'is_active'    => true,
+        'is_active' => true,
         'journal_type' => 'general',
+        'journal_mode' => Journal::MODE_INTERNAL,
     ];
 
     public function entity(): BelongsTo

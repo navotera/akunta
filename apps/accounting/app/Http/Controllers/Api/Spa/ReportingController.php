@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Controller;
+use App\Models\Journal;
 use App\Services\Reporting\BalanceSheetService;
 use App\Services\Reporting\GeneralLedgerService;
 use App\Services\Reporting\IncomeStatementService;
@@ -49,6 +50,7 @@ class ReportingController extends Controller
         $data = $request->validate([
             'as_of' => 'required|date_format:Y-m-d',
             'period_start' => 'nullable|date_format:Y-m-d|before_or_equal:as_of',
+            'show_fiscal' => 'sometimes|boolean',
         ]);
 
         $report = $this->balanceSheet->compute(
@@ -56,6 +58,14 @@ class ReportingController extends Controller
             $data['as_of'],
             $data['period_start'] ?? null,
         );
+        if ($request->boolean('show_fiscal')) {
+            $report['fiscal'] = $this->balanceSheet->compute(
+                $entity->id,
+                $data['as_of'],
+                $data['period_start'] ?? null,
+                Journal::MODE_FISCAL,
+            );
+        }
 
         return response()->json([
             'data' => $report,
@@ -98,21 +108,21 @@ class ReportingController extends Controller
             'account_id' => 'required|string|size:26',
             'period_start' => 'required|date_format:Y-m-d',
             'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
-            'cost_center_id'  => 'nullable|string|size:26',
-            'project_id'      => 'nullable|string|size:26',
-            'branch_id'       => 'nullable|string|size:26',
-            'source_app'      => 'nullable|string|max:40',
+            'cost_center_id' => 'nullable|string|size:26',
+            'project_id' => 'nullable|string|size:26',
+            'branch_id' => 'nullable|string|size:26',
+            'source_app' => 'nullable|string|max:40',
             'source_ref_type' => 'nullable|string|max:40',
-            'source_ref_id'   => 'nullable|string|max:80',
+            'source_ref_id' => 'nullable|string|max:80',
         ]);
 
         $filters = array_filter([
-            'cost_center_id'  => $data['cost_center_id']  ?? null,
-            'project_id'      => $data['project_id']      ?? null,
-            'branch_id'       => $data['branch_id']       ?? null,
-            'source_app'      => $data['source_app']      ?? null,
+            'cost_center_id' => $data['cost_center_id'] ?? null,
+            'project_id' => $data['project_id'] ?? null,
+            'branch_id' => $data['branch_id'] ?? null,
+            'source_app' => $data['source_app'] ?? null,
             'source_ref_type' => $data['source_ref_type'] ?? null,
-            'source_ref_id'   => $data['source_ref_id']   ?? null,
+            'source_ref_id' => $data['source_ref_id'] ?? null,
         ]);
 
         $report = $this->generalLedger->compute(

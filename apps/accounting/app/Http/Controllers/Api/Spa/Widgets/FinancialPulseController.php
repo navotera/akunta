@@ -35,6 +35,7 @@ class FinancialPulseController extends Controller
             ->count();
         $postedThisMonth = Journal::where('entity_id', $entity->id)
             ->where('status', Journal::STATUS_POSTED)
+            ->where('journal_mode', Journal::MODE_INTERNAL)
             ->whereBetween('date', [$monthStart, $monthEnd])
             ->count();
 

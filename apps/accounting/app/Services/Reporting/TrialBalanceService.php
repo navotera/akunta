@@ -20,15 +20,16 @@ class TrialBalanceService
     /**
      * @return array{rows: Collection<int, object>, total_debit: string, total_credit: string, as_of: string, entity_id: string}
      */
-    public function compute(string $entityId, string $asOfDate): array
+    public function compute(string $entityId, string $asOfDate, string $journalMode = Journal::MODE_INTERNAL): array
     {
         $rows = Account::query()
             ->where('accounts.entity_id', $entityId)
             ->where('accounts.is_postable', true)
             ->leftJoin('journal_entries', 'journal_entries.account_id', '=', 'accounts.id')
-            ->leftJoin('journals', function ($join) use ($asOfDate) {
+            ->leftJoin('journals', function ($join) use ($asOfDate, $journalMode) {
                 $join->on('journals.id', '=', 'journal_entries.journal_id')
                     ->where('journals.status', Journal::STATUS_POSTED)
+                    ->where('journals.journal_mode', $journalMode)
                     ->where('journals.date', '<=', $asOfDate);
             })
             ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type, accounts.normal_balance')

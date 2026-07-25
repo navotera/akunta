@@ -56,10 +56,10 @@
     serverMessage = null;
     try {
       const updated = await journalApi.update(detail.id, {
-        number: payload.number,
         journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
+        reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
@@ -78,10 +78,10 @@
     serverMessage = null;
     try {
       const updated = await journalApi.update(detail.id, {
-        number: payload.number,
         journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
+        reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });

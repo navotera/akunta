@@ -103,7 +103,7 @@ class InstantiateJournalTemplateAction
                 'entity_id' => $template->entity_id,
                 'period_id' => $period->id,
                 'type' => $template->journal_type,
-                'journal_mode' => Journal::MODE_INTERNAL,
+                'journal_mode' => $template->journal_mode,
                 'number' => 'TJ-'.strtoupper(substr((string) Str::ulid(), -10)),
                 'date' => $date,
                 'reference' => $reference ?? $template->default_reference,

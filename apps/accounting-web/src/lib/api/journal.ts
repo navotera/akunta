@@ -5,6 +5,7 @@ export type JournalMode = 'internal' | 'fiscal';
 export interface JournalSummary {
   id: string;
   number: string;
+  reference: string | null;
   journal_mode: JournalMode;
   date: string;
   type: string;
@@ -44,7 +45,7 @@ export interface JournalListResponse {
 }
 
 export interface JournalPayload {
-  number: string;
+  number?: string;
   journal_mode: JournalMode;
   date: string;
   memo: string;

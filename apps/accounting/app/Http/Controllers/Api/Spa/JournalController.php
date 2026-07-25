@@ -46,6 +46,7 @@ class JournalController extends Controller
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('reference', 'like', "%{$search}%")
                     ->orWhere('memo', 'like', "%{$search}%");
             });
         }
@@ -351,6 +352,7 @@ class JournalController extends Controller
         return [
             'id' => $j->id,
             'number' => $j->number,
+            'reference' => $j->reference,
             'journal_mode' => $j->journal_mode,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
