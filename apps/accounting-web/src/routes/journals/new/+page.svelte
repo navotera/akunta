@@ -34,11 +34,15 @@
         return;
       }
     }
-    [accounts, templates, recent] = await Promise.all([
+    const [loadedAccounts, internalTemplates, fiscalTemplates, loadedRecent] = await Promise.all([
       accountApi.list(),
-      templateApi.list(4),
+      templateApi.list(4, undefined, 'internal'),
+      templateApi.list(4, undefined, 'fiscal'),
       journalApi.list({ per_page: 1 }).then((r) => r.data[0] ?? null),
     ]);
+    accounts = loadedAccounts;
+    templates = [...internalTemplates, ...fiscalTemplates];
+    recent = loadedRecent;
   });
 
   async function saveDraft(payload: FormPayload) {

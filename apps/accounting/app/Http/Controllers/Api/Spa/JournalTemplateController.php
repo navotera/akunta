@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Spa;
 
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
+use App\Models\Journal;
 use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,7 @@ class JournalTemplateController extends Controller
         $entity = $this->resolveEntity($request);
         $limit = min(50, max(1, (int) $request->query('limit', 8)));
         $activeOnly = $request->boolean('active_only', true);
+        $journalMode = $request->query('journal_mode');
 
         $query = JournalTemplate::query()
             ->where(function ($q) use ($entity) {
@@ -35,7 +37,14 @@ class JournalTemplateController extends Controller
             $query->where('is_active', true);
         }
 
-        $templates = $query->get(['id', 'name', 'code', 'description', 'journal_type', 'is_active', 'entity_id']);
+        if ($journalMode !== null) {
+            $request->validate([
+                'journal_mode' => 'in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+            ]);
+            $query->where('journal_mode', $journalMode);
+        }
+
+        $templates = $query->get(['id', 'name', 'code', 'description', 'journal_type', 'journal_mode', 'is_active', 'entity_id']);
 
         return response()->json([
             'data' => $templates->map(fn (JournalTemplate $t) => $this->summary($t))->all(),
@@ -69,6 +78,7 @@ class JournalTemplateController extends Controller
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
                 'journal_type' => $data['journal_type'] ?? 'general',
+                'journal_mode' => $data['journal_mode'] ?? Journal::MODE_INTERNAL,
                 'default_memo' => $data['default_memo'] ?? null,
                 'default_reference' => $data['default_reference'] ?? null,
                 'is_active' => $data['is_active'] ?? true,
@@ -96,6 +106,7 @@ class JournalTemplateController extends Controller
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
                 'journal_type' => $data['journal_type'] ?? $template->journal_type ?? 'general',
+                'journal_mode' => $data['journal_mode'] ?? $template->journal_mode ?? Journal::MODE_INTERNAL,
                 'default_memo' => $data['default_memo'] ?? null,
                 'default_reference' => $data['default_reference'] ?? null,
                 'is_active' => $data['is_active'] ?? $template->is_active,
@@ -129,6 +140,7 @@ class JournalTemplateController extends Controller
             'name' => 'required|string|max:160',
             'description' => 'nullable|string|max:500',
             'journal_type' => 'nullable|in:general,adjustment,closing,reversing,opening',
+            'journal_mode' => 'nullable|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
             'default_memo' => 'nullable|string|max:400',
             'default_reference' => 'nullable|string|max:120',
             'is_active' => 'sometimes|boolean',
@@ -162,6 +174,7 @@ class JournalTemplateController extends Controller
             'name' => $t->name,
             'description' => $t->description,
             'journal_type' => $t->journal_type,
+            'journal_mode' => $t->journal_mode,
             'is_active' => (bool) $t->is_active,
             'is_global' => $t->entity_id === null,
             'lines_count' => $t->lines_count,
@@ -176,6 +189,7 @@ class JournalTemplateController extends Controller
             'name' => $t->name,
             'description' => $t->description,
             'journal_type' => $t->journal_type,
+            'journal_mode' => $t->journal_mode,
             'default_memo' => $t->default_memo,
             'default_reference' => $t->default_reference,
             'is_active' => (bool) $t->is_active,
