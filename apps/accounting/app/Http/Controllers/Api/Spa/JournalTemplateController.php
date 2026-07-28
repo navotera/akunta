@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Spa;
 
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
+use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
@@ -13,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class JournalTemplateController extends Controller
 {
@@ -154,7 +156,20 @@ class JournalTemplateController extends Controller
 
     private function writeLines(JournalTemplate $template, array $lines): void
     {
+        $accountIds = collect($lines)->pluck('account_id')->filter()->unique();
+        $accounts = Account::query()
+            ->where('entity_id', $template->entity_id)
+            ->whereIn('id', $accountIds)
+            ->get()
+            ->keyBy('id');
+
         foreach (array_values($lines) as $i => $line) {
+            $account = $accounts->get($line['account_id']);
+            if (! $account || ! $account->isAvailableFor($template->journal_mode)) {
+                throw ValidationException::withMessages([
+                    'lines' => "Account [{$line['account_id']}] is not available for {$template->journal_mode} journals.",
+                ]);
+            }
             JournalTemplateLine::create([
                 'template_id' => $template->id,
                 'line_no' => $i + 1,

@@ -32,6 +32,12 @@
     contra_revenue: 'Kontra Pendapatan',
   };
 
+  const AVAILABILITY_LABEL: Record<string, string> = {
+    intern: 'Intern',
+    fiskal: 'Fiskal',
+    both: 'Intern & Fiskal',
+  };
+
   const filtered = $derived.by(() => {
     if (!treeSearch.trim()) return items;
     const q = treeSearch.trim().toLowerCase();
@@ -85,7 +91,7 @@
     parent_account_id: null,
     is_postable: true,
     is_active: true,
-    is_fiskal: false,
+    availability: 'intern',
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
@@ -124,7 +130,7 @@
       parent_account_id: null,
       is_postable: true,
       is_active: true,
-      is_fiskal: false,
+      availability: 'intern',
     };
     formErrors = null;
   }
@@ -140,7 +146,7 @@
       parent_account_id: a.parent_account_id,
       is_postable: a.is_postable,
       is_active: a.is_active,
-      is_fiskal: a.is_fiskal,
+      availability: a.availability,
     };
     formErrors = null;
   }
@@ -254,7 +260,7 @@
             <th>Normal</th>
             <th class="text-center">Postable</th>
             <th class="text-center">Aktif</th>
-            <th class="text-center">Fiskal</th>
+            <th class="text-center">Ketersediaan</th>
           </tr>
         </thead>
         <tbody>
@@ -274,7 +280,11 @@
               </td>
               <td class="text-center">{a.is_postable ? '✓' : '—'}</td>
               <td class="text-center">{a.is_active ? '✓' : '—'}</td>
-              <td class="text-center">{a.is_fiskal ? '✓' : '-'}</td>
+              <td class="text-center">
+                <span class="ak-pill bg-page-bg text-text-default">
+                  {AVAILABILITY_LABEL[a.availability] ?? a.availability}
+                </span>
+              </td>
             </tr>
           {:else}
             <tr
@@ -295,7 +305,7 @@
         <span>Normal</span>
         <span class="text-center">Post</span>
         <span class="text-center">Aktif</span>
-        <span class="text-center">Fiskal</span>
+        <span class="text-center">Tersedia</span>
       </div>
       {#each treeData as node (node.account.id)}
         <CoaTreeNode {node} onSelect={openEdit} />
@@ -322,7 +332,7 @@
           <span>Normal</span>
           <span class="text-center">Post</span>
           <span class="text-center">Aktif</span>
-          <span class="text-center">Fiskal</span>
+          <span class="text-center">Tersedia</span>
         </div>
         {#each debitTree as node (node.account.id)}
           <CoaTreeNode {node} onSelect={openEdit} />
@@ -364,13 +374,21 @@
   <div
     class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
     onclick={closeForm}
+    onkeydown={(event) => event.key === 'Escape' && closeForm()}
+    role="presentation"
   >
     <div
       class="w-full max-w-lg rounded-lg bg-card-bg p-6 shadow-lg"
       onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
       role="dialog"
+      aria-modal="true"
+      aria-labelledby="account-form-title"
+      tabindex="-1"
     >
-      <h2 class="mb-4 text-lg font-bold">{editing ? `Edit Akun ${editing.code}` : 'Akun Baru'}</h2>
+      <h2 id="account-form-title" class="mb-4 text-lg font-bold">
+        {editing ? `Edit Akun ${editing.code}` : 'Akun Baru'}
+      </h2>
       <div class="grid grid-cols-2 gap-3 text-sm">
         <label class="col-span-1">
           <span class="block font-medium mb-1">Kode <span class="text-danger">*</span></span>
@@ -412,17 +430,40 @@
             <option value="credit">Credit</option>
           </select>
         </label>
-        <label class="col-span-1 flex items-center gap-2 mt-2">
+        <label class="col-span-1 flex items-center gap-2 rounded-md border border-border-soft p-3">
           <input type="checkbox" bind:checked={form.is_postable} />
-          <span>Postable</span>
+          <span>
+            <span class="block font-medium">Postable</span>
+            <span class="block text-xs text-text-muted">Bisa dipakai pada baris jurnal</span>
+          </span>
         </label>
-        <label class="col-span-1 flex items-center gap-2 mt-2">
+        <label class="col-span-1 flex items-center gap-2 rounded-md border border-border-soft p-3">
           <input type="checkbox" bind:checked={form.is_active} />
-          <span>Aktif</span>
+          <span>
+            <span class="block font-medium">Aktif</span>
+            <span class="block text-xs text-text-muted">Tersedia untuk transaksi baru</span>
+          </span>
         </label>
-        <label class="col-span-1 flex items-center gap-2 mt-2">
-          <input type="checkbox" bind:checked={form.is_fiskal} />
-          <span>Fiskal</span>
+        <label class="col-span-2 rounded-md border border-border-soft bg-page-bg/40 p-3">
+          <span class="block font-medium">Ketersediaan akun</span>
+          <span class="mt-0.5 block text-xs text-text-muted">
+            Tentukan mode jurnal yang boleh memakai akun ini.
+          </span>
+          <select
+            class="mt-2 w-full rounded-md border border-border-default bg-card-bg px-2 py-1.5"
+            bind:value={form.availability}
+          >
+            <option value="intern">Intern saja</option>
+            <option value="fiskal">Fiskal saja</option>
+            <option value="both">Intern &amp; Fiskal</option>
+          </select>
+          {#if form.availability === 'intern'}
+            <span class="mt-1 block text-xs text-text-muted">Hanya muncul pada jurnal intern.</span>
+          {:else if form.availability === 'fiskal'}
+            <span class="mt-1 block text-xs text-text-muted">Hanya muncul pada jurnal fiskal.</span>
+          {:else}
+            <span class="mt-1 block text-xs text-text-muted">Muncul pada kedua jenis jurnal.</span>
+          {/if}
         </label>
       </div>
 

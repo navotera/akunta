@@ -38,6 +38,7 @@ beforeEach(function () {
         'type' => 'asset',
         'normal_balance' => 'debit',
         'is_postable' => true,
+        'availability' => 'both',
     ]);
     $this->revenue = Account::create([
         'entity_id' => $this->entity->id,
@@ -46,6 +47,7 @@ beforeEach(function () {
         'type' => 'revenue',
         'normal_balance' => 'credit',
         'is_postable' => true,
+        'availability' => 'both',
     ]);
 
     $this->user = User::create([
@@ -96,6 +98,25 @@ it('lists journals scoped to the tenant', function () {
         ->assertJsonPath('data.0.number', 'JU-2026-05-001')
         ->assertJsonPath('data.0.journal_mode', 'internal')
         ->assertJsonPath('meta.total', 1);
+});
+
+it('previews the next journal number for the selected date and mode', function () {
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JI-202605-0004',
+        'date' => '2026-05-04',
+        'memo' => 'Existing journal',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.number', 'JI-202605-0005');
 });
 
 it('creates a balanced draft journal via SPA endpoint', function () {
@@ -166,6 +187,21 @@ it('rejects unbalanced journal create with 422', function () {
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/journals', $payload)
+        ->assertStatus(422);
+});
+
+it('rejects an account unavailable for the selected journal mode', function () {
+    $this->cash->update(['availability' => 'intern']);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'journal_mode' => Journal::MODE_FISCAL,
+            'date' => '2026-05-04',
+            'memo' => 'Fiscal journal',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ])
         ->assertStatus(422);
 });
 

@@ -65,7 +65,13 @@
   </span>
   <span class="text-center text-xs">{node.account.is_postable ? '✓' : '—'}</span>
   <span class="text-center text-xs">{node.account.is_active ? '✓' : '—'}</span>
-  <span class="text-center text-xs">{node.account.is_fiskal ? '✓' : '-'}</span>
+  <span class="text-center text-xs">
+    {node.account.availability === 'both'
+      ? 'Intern & Fiskal'
+      : node.account.availability === 'intern'
+        ? 'Intern'
+        : 'Fiskal'}
+  </span>
 </button>
 
 {#if expanded && isParent}

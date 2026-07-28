@@ -39,10 +39,10 @@ beforeEach(function () {
 it('marks postable expense accounts and creates posted fiscal journals for every entity', function () {
     app(FiscalJournalSeeder::class)->run(app(JournalNumberGenerator::class));
 
-    expect(Account::where('entity_id', $this->entity->id)->where('type', 'expense')->where('is_postable', true)->where('is_fiskal', true)->count())
+    expect(Account::where('entity_id', $this->entity->id)->where('type', 'expense')->where('is_postable', true)->where('availability', 'both')->count())
         ->toBe(3)
-        ->and(Account::where('entity_id', $this->entity->id)->where('code', '7001')->value('is_fiskal'))
-        ->toBeFalse();
+        ->and(Account::where('entity_id', $this->entity->id)->where('code', '7001')->value('availability'))
+        ->toBe('intern');
 
     $journals = Journal::where('entity_id', $this->entity->id)->get();
     expect($journals)->toHaveCount(6);

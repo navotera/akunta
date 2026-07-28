@@ -37,11 +37,11 @@ beforeEach(function () {
 
     $this->cash = Account::create([
         'entity_id' => $this->entity->id, 'code' => '1101', 'name' => 'Kas',
-        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
     $this->rent = Account::create([
         'entity_id' => $this->entity->id, 'code' => '6201', 'name' => 'Beban Sewa',
-        'type' => 'expense', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'expense', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
 });
 

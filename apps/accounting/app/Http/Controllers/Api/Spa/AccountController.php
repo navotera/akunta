@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\Spa;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\Journal;
 use App\Models\JournalEntry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,11 @@ class AccountController extends Controller
         $entity = $this->resolveEntity($request);
         $postableOnly = $request->boolean('postable_only', true);
         $search = (string) $request->query('search', '');
+        $journalMode = $request->query('journal_mode');
+
+        if ($journalMode !== null && ! in_array($journalMode, [Journal::MODE_INTERNAL, Journal::MODE_FISCAL], true)) {
+            throw ValidationException::withMessages(['journal_mode' => 'Invalid journal mode.']);
+        }
 
         $query = Account::query()
             ->where('entity_id', $entity->id)
@@ -29,6 +35,14 @@ class AccountController extends Controller
 
         if ($postableOnly) {
             $query->where('is_postable', true);
+        }
+        if ($journalMode !== null) {
+            $query->where(function ($q) use ($journalMode) {
+                $q->where('availability', Account::AVAILABILITY_BOTH)
+                    ->orWhere('availability', $journalMode === Journal::MODE_INTERNAL
+                        ? Account::AVAILABILITY_INTERN
+                        : Account::AVAILABILITY_FISKAL);
+            });
         }
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -40,7 +54,7 @@ class AccountController extends Controller
         return response()->json([
             'data' => $query->limit(500)->get([
                 'id', 'code', 'name', 'type', 'normal_balance',
-                'parent_account_id', 'is_postable', 'is_active', 'is_fiskal',
+                'parent_account_id', 'is_postable', 'is_active', 'availability',
             ]),
         ]);
     }
@@ -108,7 +122,7 @@ class AccountController extends Controller
             'parent_account_id' => 'nullable|string|size:26|different:id',
             'is_postable' => 'sometimes|boolean',
             'is_active' => 'sometimes|boolean',
-            'is_fiskal' => 'sometimes|boolean',
+            'availability' => 'sometimes|in:'.Account::AVAILABILITY_INTERN.','.Account::AVAILABILITY_FISKAL.','.Account::AVAILABILITY_BOTH,
         ]);
     }
 
@@ -123,7 +137,7 @@ class AccountController extends Controller
             'parent_account_id' => $a->parent_account_id,
             'is_postable' => (bool) $a->is_postable,
             'is_active' => (bool) $a->is_active,
-            'is_fiskal' => (bool) $a->is_fiskal,
+            'availability' => $a->availability,
         ];
     }
 }

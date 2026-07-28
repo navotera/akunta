@@ -76,6 +76,9 @@ class PostJournalAction extends BaseAction
             if (! $account->is_postable) {
                 throw JournalException::accountNotPostable($account->code);
             }
+            if (! $account->isAvailableFor($journal->journal_mode)) {
+                throw JournalException::accountUnavailable($account->code, $journal->journal_mode);
+            }
         }
 
         if (! $journal->isBalanced()) {

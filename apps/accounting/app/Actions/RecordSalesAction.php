@@ -47,6 +47,7 @@ class RecordSalesAction
         $entityId = $input['entity_id'];
         $date = $input['date'];
         $subtotal = (string) $input['subtotal'];
+        $journalMode = $input['journal_mode'] ?? Journal::MODE_INTERNAL;
 
         if (bccomp($subtotal, '0', 2) <= 0) {
             throw new RuntimeException('Subtotal harus lebih besar dari 0.');
@@ -55,11 +56,22 @@ class RecordSalesAction
         $target = Account::query()->where('entity_id', $entityId)->where('id', $input['target_account_id'])->firstOrFail();
         $revenue = Account::query()->where('entity_id', $entityId)->where('id', $input['revenue_account_id'])->firstOrFail();
 
+        if (! $target->isAvailableFor($journalMode) || ! $revenue->isAvailableFor($journalMode)) {
+            throw new RuntimeException("Akun penjualan tidak tersedia untuk jurnal {$journalMode}.");
+        }
+
         $taxCode = ! empty($input['tax_code_id'])
             ? TaxCode::query()->where('entity_id', $entityId)->where('id', $input['tax_code_id'])->where('is_active', true)->first()
             : null;
         $taxAmount = $taxCode ? $taxCode->computeOn($subtotal) : '0.00';
         $total = bcadd($subtotal, $taxAmount, 2);
+
+        if ($taxCode?->tax_account_id) {
+            $taxAccount = Account::query()->where('entity_id', $entityId)->find($taxCode->tax_account_id);
+            if (! $taxAccount || ! $taxAccount->isAvailableFor($journalMode)) {
+                throw new RuntimeException("Akun pajak tidak tersedia untuk jurnal {$journalMode}.");
+            }
+        }
 
         $period = Period::query()
             ->where('entity_id', $entityId)
@@ -78,7 +90,7 @@ class RecordSalesAction
                 'entity_id' => $entityId,
                 'period_id' => $period->id,
                 'type' => Journal::TYPE_GENERAL,
-                'journal_mode' => $input['journal_mode'] ?? Journal::MODE_INTERNAL,
+                'journal_mode' => $journalMode,
                 'number' => $this->nextNumber($entityId, $date),
                 'date' => $date,
                 'reference' => $input['reference'] ?? null,

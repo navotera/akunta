@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Exceptions\JournalException;
+use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
@@ -67,6 +68,13 @@ class InstantiateJournalTemplateAction
         $totalCredit = '0.00';
 
         foreach ($template->lines as $tl) {
+            $account = Account::query()
+                ->where('entity_id', $template->entity_id)
+                ->whereKey($tl->account_id)
+                ->first();
+            if (! $account || ! $account->isAvailableFor($template->journal_mode)) {
+                throw JournalException::accountUnavailable($account?->code ?? 'unknown', $template->journal_mode);
+            }
             $amount = (string) $tl->amount;
             if (isset($overrides[$tl->line_no]['amount'])) {
                 $amount = (string) $overrides[$tl->line_no]['amount'];

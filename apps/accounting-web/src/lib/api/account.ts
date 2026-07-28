@@ -9,10 +9,11 @@ export interface Account {
   parent_account_id: string | null;
   is_postable: boolean;
   is_active: boolean;
-  is_fiskal: boolean;
+  availability: 'intern' | 'fiskal' | 'both';
 }
 
 export type AccountOption = Account;
+export type AccountJournalMode = 'internal' | 'fiscal';
 
 export interface AccountInput {
   code: string;
@@ -22,14 +23,20 @@ export interface AccountInput {
   parent_account_id?: string | null;
   is_postable?: boolean;
   is_active?: boolean;
-  is_fiskal?: boolean;
+  availability?: 'intern' | 'fiskal' | 'both';
 }
 
 export const accountApi = {
-  list: (search = '', tenantSlug?: string | null, postableOnly = true) => {
+  list: (
+    search = '',
+    tenantSlug?: string | null,
+    postableOnly = true,
+    journalMode?: AccountJournalMode,
+  ) => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (!postableOnly) params.set('postable_only', '0');
+    if (journalMode) params.set('journal_mode', journalMode);
     return api<{ data: Account[] }>(
       `/api/v1/spa/accounts${params.size ? `?${params.toString()}` : ''}`,
       { tenantSlug },

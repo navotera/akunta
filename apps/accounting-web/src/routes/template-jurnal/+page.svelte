@@ -42,19 +42,31 @@
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
   const visibleAccounts = $derived(
-    form.journal_mode === 'fiscal' ? accounts.filter((account) => account.is_fiskal) : accounts,
+    accounts.filter(
+      (account) =>
+        account.availability === 'both' ||
+        (form.journal_mode === 'internal'
+          ? account.availability === 'intern'
+          : account.availability === 'fiskal'),
+    ),
   );
 
   function changeMode(mode: 'internal' | 'fiscal') {
     form.journal_mode = mode;
-    if (mode === 'fiscal') {
-      const fiscalAccountIds = new Set(
-        accounts.filter((account) => account.is_fiskal).map((account) => account.id),
-      );
-      form.lines = form.lines.map((line) =>
-        fiscalAccountIds.has(line.account_id) ? line : { ...line, account_id: '' },
-      );
-    }
+    const availableAccountIds = new Set(
+      accounts
+        .filter(
+          (account) =>
+            account.availability === 'both' ||
+            (mode === 'internal'
+              ? account.availability === 'intern'
+              : account.availability === 'fiskal'),
+        )
+        .map((account) => account.id),
+    );
+    form.lines = form.lines.map((line) =>
+      availableAccountIds.has(line.account_id) ? line : { ...line, account_id: '' },
+    );
   }
 
   const blankLine = (): LineDraft => ({ account_id: '', side: 'debit', amount: '0', memo: '' });

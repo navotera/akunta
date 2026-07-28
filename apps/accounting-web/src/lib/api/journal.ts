@@ -63,6 +63,12 @@ export const journalApi = {
     return api<JournalListResponse>(`/api/v1/spa/journals${suffix}`, { tenantSlug });
   },
 
+  nextNumber: (date: string, journalMode: JournalMode, tenantSlug?: string | null) =>
+    api<{ data: { number: string } }>(
+      `/api/v1/spa/journals/next-number?date=${encodeURIComponent(date)}&journal_mode=${journalMode}`,
+      { tenantSlug },
+    ).then((r) => r.data),
+
   show: (id: string, tenantSlug?: string | null) =>
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}`, { tenantSlug }).then((r) => r.data),
 

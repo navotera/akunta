@@ -74,6 +74,22 @@ class JournalController extends Controller
         return response()->json(['data' => $this->detail($journal)]);
     }
 
+    public function nextNumber(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'date' => 'required|date_format:Y-m-d',
+            'journal_mode' => 'nullable|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+        ]);
+        $entity = $this->resolveEntity($request);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+
+        return response()->json([
+            'data' => [
+                'number' => $this->numberGenerator->next($entity->id, $data['date'], $mode),
+            ],
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
@@ -309,11 +325,19 @@ class JournalController extends Controller
             ->values()
             ->all();
 
+        $availability = $journal->journal_mode === Journal::MODE_INTERNAL
+            ? Account::AVAILABILITY_INTERN
+            : Account::AVAILABILITY_FISKAL;
+
         $accounts = Account::query()
             ->whereIn('id', $accountIds)
             ->where('entity_id', $entity->id)
             ->where('is_active', true)
             ->where('is_postable', true)
+            ->where(function ($query) use ($availability) {
+                $query->where('availability', Account::AVAILABILITY_BOTH)
+                    ->orWhere('availability', $availability);
+            })
             ->get()
             ->keyBy('id');
 

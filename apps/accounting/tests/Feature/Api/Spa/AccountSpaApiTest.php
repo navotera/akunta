@@ -37,15 +37,15 @@ it('creates an account via SPA', function () {
         ->postJson('/api/v1/spa/accounts', [
             'code' => '1101', 'name' => 'Kas', 'type' => 'asset',
             'normal_balance' => 'debit', 'is_postable' => true,
-            'is_fiskal' => true,
+            'availability' => 'both',
         ]);
 
     $res->assertCreated()
         ->assertJsonPath('data.code', '1101')
         ->assertJsonPath('data.name', 'Kas');
     $created = Account::where('code', '1101')->firstOrFail();
-    expect($created->is_fiskal)->toBeTrue();
-    $res->assertJsonPath('data.is_fiskal', true);
+    expect($created->availability)->toBe('both');
+    $res->assertJsonPath('data.availability', 'both');
 });
 
 it('updates an existing account', function () {
@@ -54,19 +54,19 @@ it('updates an existing account', function () {
         'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
     ]);
 
-    expect($account->refresh()->is_fiskal)->toBeFalse();
+    expect($account->refresh()->availability)->toBe('intern');
 
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->patchJson("/api/v1/spa/accounts/{$account->id}", [
             'code' => '1102', 'name' => 'Bank Mandiri',
             'type' => 'asset', 'normal_balance' => 'debit',
-            'is_fiskal' => true,
+            'availability' => 'fiskal',
         ])
         ->assertOk()
         ->assertJsonPath('data.name', 'Bank Mandiri')
-        ->assertJsonPath('data.is_fiskal', true);
-    expect($account->refresh()->is_fiskal)->toBeTrue();
+        ->assertJsonPath('data.availability', 'fiskal');
+    expect($account->refresh()->availability)->toBe('fiskal');
 });
 
 it('blocks delete when account has journal entries', function () {

@@ -4,9 +4,8 @@
   import AddLineButton from './AddLineButton.svelte';
   import BalancePill from './BalancePill.svelte';
   import TemplateSidebar from './TemplateSidebar.svelte';
-  import RecentJournalCard from './RecentJournalCard.svelte';
   import type { AccountOption } from '$lib/api/account.js';
-  import type { JournalMode, JournalSummary, JournalDetail } from '$lib/api/journal.js';
+  import { journalApi, type JournalMode, type JournalDetail } from '$lib/api/journal.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
@@ -20,7 +19,6 @@
     initial?: Partial<JournalDetail>;
     accounts: AccountOption[];
     templates: JournalTemplateSummary[];
-    recent: JournalSummary | null;
     title?: string;
     breadcrumb?: string;
     saving?: boolean;
@@ -45,7 +43,6 @@
     initial,
     accounts,
     templates,
-    recent,
     title = 'Jurnal Umum Baru',
     breadcrumb = 'Transaksi / Jurnal Umum / Baru',
     saving = false,
@@ -64,6 +61,7 @@
 
   let date = $state(initial?.date ?? new Date().toISOString().slice(0, 10));
   let number = $state(initial?.number ?? '');
+  let previewNumber = $state<string | null>(null);
   let journalMode = $state<JournalMode>(initial?.journal_mode ?? 'internal');
   let memo = $state(initial?.memo ?? '');
   let reference = $state(initial?.reference ?? '');
@@ -91,25 +89,46 @@
   const creditTotal = $derived(credits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const balanced = $derived(debitTotal > 0 && Math.abs(debitTotal - creditTotal) < 0.005);
   const visibleAccounts = $derived(
-    journalMode === 'fiscal' ? accounts.filter((account) => account.is_fiskal) : accounts,
+    accounts.filter(
+      (account) =>
+        account.availability === 'both' ||
+        (journalMode === 'internal'
+          ? account.availability === 'intern'
+          : account.availability === 'fiskal'),
+    ),
   );
   const visibleTemplates = $derived(
     templates.filter((template) => (template.journal_mode ?? 'internal') === journalMode),
   );
+  const displayedNumber = $derived(number || previewNumber || 'Memuat nomor jurnal…');
+
+  let previewRequest = 0;
+  $effect(() => {
+    if (number) return;
+
+    const request = ++previewRequest;
+    previewNumber = null;
+    void journalApi
+      .nextNumber(date, journalMode)
+      .then(({ number: nextNumber }) => {
+        if (request === previewRequest) previewNumber = nextNumber;
+      })
+      .catch(() => {
+        if (request === previewRequest) previewNumber = null;
+      });
+  });
 
   function toggleJournalMode() {
     if (initial || saving) return;
 
     journalMode = journalMode === 'fiscal' ? 'internal' : 'fiscal';
-    if (journalMode === 'fiscal') {
-      const fiscalAccountIds = new Set(visibleAccounts.map((account) => account.id));
-      debits = debits.map((row) =>
-        fiscalAccountIds.has(row.account_id) ? row : { ...row, account_id: '' },
-      );
-      credits = credits.map((row) =>
-        fiscalAccountIds.has(row.account_id) ? row : { ...row, account_id: '' },
-      );
-    }
+    const availableIds = new Set(visibleAccounts.map((account) => account.id));
+    debits = debits.map((row) =>
+      availableIds.has(row.account_id) ? row : { ...row, account_id: '' },
+    );
+    credits = credits.map((row) =>
+      availableIds.has(row.account_id) ? row : { ...row, account_id: '' },
+    );
   }
 
   function addDebit() {
@@ -179,8 +198,14 @@
   <header class="px-6 pt-4 pb-2">
     <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
     <div class="flex flex-wrap items-center justify-between gap-3 mt-1">
-      <div class="flex items-baseline gap-3">
-        <h1 class="text-2xl font-bold leading-tight text-text-default">{title}</h1>
+      <div>
+        <p class="text-sm font-medium text-text-muted">{title}</p>
+        <h1
+          class="font-mono text-2xl font-bold leading-tight text-text-default"
+          data-testid="journal-number"
+        >
+          {displayedNumber}
+        </h1>
         <span class="text-sm font-medium text-text-muted">Tampilan T-account</span>
       </div>
       <button
@@ -207,96 +232,14 @@
   </header>
 
   <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 px-6 pb-32">
-    <!-- Header field strip (flat, no card) -->
-    <section
-      class="xl:col-span-12 grid grid-cols-1 md:grid-cols-12 gap-3 rounded-lg border border-border-default bg-card-bg p-4"
-    >
-      <label class="md:col-span-2 text-sm">
-        <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
-        <DateInput
-          value={date}
-          onChange={(iso) => (date = iso)}
-          testId="journal-date"
-          class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
-        />
-        {#if fieldError('date')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-date"
-            >{fieldError('date')}</span
-          >
-        {/if}
-      </label>
-      <label class="md:col-span-3 text-sm">
-        <span class="block font-medium mb-1">Kode Jurnal</span>
-        <input
-          type="text"
-          class="w-full rounded-md border bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
-            'number',
-          )
-            ? 'border-danger'
-            : 'border-border-default'}"
-          bind:value={number}
-          placeholder="Dibuat otomatis saat disimpan"
-          readonly
-          data-testid="journal-number"
-        />
-        {#if !number && !initial}
-          <span class="block mt-1 text-xs text-text-muted"
-            >Kode: {journalMode === 'fiscal' ? 'JF' : 'JI'}-{date
-              .slice(0, 7)
-              .replace('-', '')}-XXXX</span
-          >
-        {/if}
-        {#if fieldError('number')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-number"
-            >{fieldError('number')}</span
-          >
-        {/if}
-      </label>
-      <label class="md:col-span-3 text-sm">
-        <span class="block font-medium mb-1">No. Bukti</span>
-        <input
-          type="text"
-          class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
-          bind:value={reference}
-          placeholder="Mis. INV-2026-001"
-          maxlength="120"
-          data-testid="journal-reference"
-        />
-        {#if fieldError('reference')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-reference"
-            >{fieldError('reference')}</span
-          >
-        {/if}
-      </label>
-      <label class="md:col-span-4 text-sm">
-        <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span>
-        <input
-          type="text"
-          class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
-            'memo',
-          )
-            ? 'border-danger'
-            : 'border-border-default'}"
-          placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
-          bind:value={memo}
-          required
-          data-testid="journal-memo"
-        />
-        {#if fieldError('memo')}
-          <span class="block mt-1 text-xs text-danger" data-testid="error-memo"
-            >{fieldError('memo')}</span
-          >
-        {/if}
-      </label>
-      {#if serverMessage || fieldError('entries') || fieldError('tenant')}
-        <div
-          class="md:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
-          data-testid="form-banner"
-        >
-          {fieldError('entries') ?? fieldError('tenant') ?? serverMessage}
-        </div>
-      {/if}
-    </section>
+    {#if serverMessage || fieldError('number') || fieldError('entries') || fieldError('tenant')}
+      <div
+        class="xl:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
+        data-testid="form-banner"
+      >
+        {fieldError('number') ?? fieldError('entries') ?? fieldError('tenant') ?? serverMessage}
+      </div>
+    {/if}
 
     <!-- Main: debit + credit panels + lampiran -->
     <div class="xl:col-span-9 flex flex-col gap-4">
@@ -351,13 +294,66 @@
 
     <!-- Sidebar -->
     <aside class="xl:col-span-3 flex flex-col gap-4 xl:sticky xl:top-4 xl:self-start">
+      <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
+        <div class="flex flex-col gap-3">
+          <label class="text-sm">
+            <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
+            <DateInput
+              value={date}
+              onChange={(iso) => (date = iso)}
+              testId="journal-date"
+              class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
+            />
+            {#if fieldError('date')}
+              <span class="block mt-1 text-xs text-danger" data-testid="error-date"
+                >{fieldError('date')}</span
+              >
+            {/if}
+          </label>
+          <label class="text-sm">
+            <span class="block font-medium mb-1">No. Bukti</span>
+            <input
+              type="text"
+              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+              bind:value={reference}
+              placeholder="Mis. INV-2026-001"
+              maxlength="120"
+              data-testid="journal-reference"
+            />
+            {#if fieldError('reference')}
+              <span class="block mt-1 text-xs text-danger" data-testid="error-reference"
+                >{fieldError('reference')}</span
+              >
+            {/if}
+          </label>
+          <label class="text-sm">
+            <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span>
+            <textarea
+              class="w-full resize-y rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
+                'memo',
+              )
+                ? 'border-danger'
+                : 'border-border-default'}"
+              placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
+              bind:value={memo}
+              rows="3"
+              required
+              data-testid="journal-memo"
+            ></textarea>
+            {#if fieldError('memo')}
+              <span class="block mt-1 text-xs text-danger" data-testid="error-memo"
+                >{fieldError('memo')}</span
+              >
+            {/if}
+          </label>
+        </div>
+      </section>
       {#if templateError}
         <p class="rounded-md border border-danger bg-danger-light p-3 text-xs text-danger">
           Template gagal diterapkan: {templateError}
         </p>
       {/if}
       <TemplateSidebar templates={visibleTemplates} onPick={handlePickTemplate} />
-      <RecentJournalCard {recent} />
     </aside>
   </div>
 

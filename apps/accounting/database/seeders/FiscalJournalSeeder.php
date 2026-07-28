@@ -66,7 +66,7 @@ class FiscalJournalSeeder extends Seeder
             return ['created' => 0, 'skipped' => 0];
         }
 
-        $fiscalExpenses->each->update(['is_fiskal' => true]);
+        $fiscalExpenses->each->update(['availability' => 'both']);
 
         $date = Carbon::today()->toDateString();
         $period = Period::query()

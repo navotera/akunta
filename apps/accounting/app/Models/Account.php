@@ -10,6 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Account extends Model
 {
+    public const AVAILABILITY_INTERN = 'intern';
+
+    public const AVAILABILITY_FISKAL = 'fiskal';
+
+    public const AVAILABILITY_BOTH = 'both';
+
     use HasUlids;
 
     protected $fillable = [
@@ -21,14 +27,22 @@ class Account extends Model
         'normal_balance',
         'is_postable',
         'is_active',
-        'is_fiskal',
+        'availability',
     ];
 
     protected $casts = [
         'is_postable' => 'boolean',
         'is_active' => 'boolean',
-        'is_fiskal' => 'boolean',
     ];
+
+    public function isAvailableFor(string $journalMode): bool
+    {
+        return $this->availability === self::AVAILABILITY_BOTH
+            || ($journalMode === Journal::MODE_INTERNAL
+                && $this->availability === self::AVAILABILITY_INTERN)
+            || ($journalMode === Journal::MODE_FISCAL
+                && $this->availability === self::AVAILABILITY_FISKAL);
+    }
 
     public function entity(): BelongsTo
     {

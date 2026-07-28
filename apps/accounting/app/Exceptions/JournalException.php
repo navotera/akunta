@@ -21,6 +21,11 @@ class JournalException extends RuntimeException
         return new self("Account [{$code}] is not postable (is_postable=false).");
     }
 
+    public static function accountUnavailable(string $code, string $mode): self
+    {
+        return new self("Account [{$code}] is not available for {$mode} journals.");
+    }
+
     public static function notDraft(string $status): self
     {
         return new self("Journal must be in draft status to post; current status [{$status}].");

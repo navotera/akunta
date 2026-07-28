@@ -27,11 +27,11 @@ beforeEach(function () {
 
     $this->cash = Account::create([
         'entity_id' => $this->entity->id, 'code' => '1101', 'name' => 'Kas',
-        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
     $this->revenue = Account::create([
         'entity_id' => $this->entity->id, 'code' => '4101', 'name' => 'Penjualan',
-        'type' => 'revenue', 'normal_balance' => 'credit', 'is_postable' => true,
+        'type' => 'revenue', 'normal_balance' => 'credit', 'is_postable' => true, 'availability' => 'both',
     ]);
 });
 
@@ -82,6 +82,22 @@ it('filters templates by journal mode', function () {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.code', 'TPL-FIS')
         ->assertJsonPath('data.0.journal_mode', Journal::MODE_FISCAL);
+});
+
+it('rejects template lines unavailable for the template mode', function () {
+    $this->cash->update(['availability' => 'intern']);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            'code' => 'TPL-BAD',
+            'name' => 'Invalid Fiscal Template',
+            'journal_mode' => Journal::MODE_FISCAL,
+            'lines' => [
+                ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
+            ],
+        ])
+        ->assertStatus(422);
 });
 
 it('updates a template by replacing lines', function () {

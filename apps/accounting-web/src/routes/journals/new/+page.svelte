@@ -3,14 +3,13 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
-  import { journalApi, type JournalSummary } from '$lib/api/journal.js';
+  import { journalApi } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
 
   let accounts = $state<AccountOption[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
-  let recent = $state<JournalSummary | null>(null);
   let saving = $state(false);
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
@@ -34,15 +33,13 @@
         return;
       }
     }
-    const [loadedAccounts, internalTemplates, fiscalTemplates, loadedRecent] = await Promise.all([
+    const [loadedAccounts, internalTemplates, fiscalTemplates] = await Promise.all([
       accountApi.list(),
       templateApi.list(4, undefined, 'internal'),
       templateApi.list(4, undefined, 'fiscal'),
-      journalApi.list({ per_page: 1 }).then((r) => r.data[0] ?? null),
     ]);
     accounts = loadedAccounts;
     templates = [...internalTemplates, ...fiscalTemplates];
-    recent = loadedRecent;
   });
 
   async function saveDraft(payload: FormPayload) {
@@ -101,7 +98,6 @@
   <JournalForm
     {accounts}
     {templates}
-    {recent}
     {saving}
     {serverErrors}
     {serverMessage}
