@@ -13,7 +13,6 @@ class DatabaseSeeder extends Seeder
             SuperAdminSeeder::class,
             SettingsPermissionsSeeder::class,
             EcosystemBootstrapSeeder::class,
-            FiscalJournalSeeder::class,
         ]);
     }
 }
