@@ -59,40 +59,6 @@
     class="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft bg-page-bg px-3 py-2 text-xs font-bold uppercase tracking-wider text-text-muted"
   >
     <span>Neraca</span>
-    <div class="flex flex-wrap items-center justify-end gap-2 normal-case tracking-normal">
-      {#if report.balanced}
-        <span
-          class="rounded-full bg-paid-light px-2.5 py-1 text-[11px] font-semibold text-paid"
-          data-testid="bs-balanced"
-        >
-          Intern balance
-        </span>
-      {:else}
-        <span
-          class="rounded-full bg-danger-light px-2.5 py-1 text-[11px] font-semibold text-danger"
-          data-testid="bs-unbalanced"
-        >
-          Intern tidak balance
-        </span>
-      {/if}
-      {#if fiscal}
-        {#if fiscal.balanced}
-          <span
-            class="rounded-full bg-paid-light px-2.5 py-1 text-[11px] font-semibold text-paid"
-            data-testid="bs-fiscal-balanced"
-          >
-            Fiskal balance
-          </span>
-        {:else}
-          <span
-            class="rounded-full bg-danger-light px-2.5 py-1 text-[11px] font-semibold text-danger"
-            data-testid="bs-fiscal-unbalanced"
-          >
-            Fiskal tidak balance
-          </span>
-        {/if}
-      {/if}
-    </div>
   </header>
   <div class="grid grid-cols-1 gap-5 p-5 xl:grid-cols-2">
     <section class="min-w-0 overflow-hidden rounded-md border border-border-soft">

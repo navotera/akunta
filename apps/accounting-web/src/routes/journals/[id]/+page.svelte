@@ -8,6 +8,9 @@
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
+  import { attachmentApi } from '$lib/api/attachment.js';
+
+  const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
   let detail = $state<JournalDetail | null>(null);
   let accounts = $state<AccountOption[]>([]);
@@ -61,6 +64,11 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
       detail = updated;
     } catch (e) {
       captureError(e);
@@ -83,6 +91,11 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
       await journalApi.post(updated.id);
       goto('/journals');
     } catch (e) {

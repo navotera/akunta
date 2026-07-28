@@ -35,6 +35,7 @@
     date: string;
     memo: string;
     reference: string | null;
+    attachments: File[];
     entries_debit: Row[];
     entries_credit: Row[];
   }
@@ -65,6 +66,10 @@
   let journalMode = $state<JournalMode>(initial?.journal_mode ?? 'internal');
   let memo = $state(initial?.memo ?? '');
   let reference = $state(initial?.reference ?? '');
+  let attachments = $state<File[]>([]);
+  let attachmentInput = $state<HTMLInputElement>();
+  let attachmentToRemove = $state<number | null>(null);
+  let pendingJournalMode = $state<JournalMode | null>(null);
 
   let debits = $state<Row[]>(
     (initial?.entries_debit ?? []).map((e) => ({
@@ -121,8 +126,28 @@
   function toggleJournalMode() {
     if (initial || saving) return;
 
-    journalMode = journalMode === 'fiscal' ? 'internal' : 'fiscal';
-    const availableIds = new Set(visibleAccounts.map((account) => account.id));
+    const nextMode = journalMode === 'fiscal' ? 'internal' : 'fiscal';
+    if (attachments.length > 0) {
+      pendingJournalMode = nextMode;
+      return;
+    }
+
+    changeJournalMode(nextMode);
+  }
+
+  function changeJournalMode(nextMode: JournalMode) {
+    journalMode = nextMode;
+    const availableIds = new Set(
+      accounts
+        .filter(
+          (account) =>
+            account.availability === 'both' ||
+            (nextMode === 'internal'
+              ? account.availability === 'intern'
+              : account.availability === 'fiskal'),
+        )
+        .map((account) => account.id),
+    );
     debits = debits.map((row) =>
       availableIds.has(row.account_id) ? row : { ...row, account_id: '' },
     );
@@ -158,9 +183,35 @@
       date,
       memo,
       reference: reference || null,
+      attachments,
       entries_debit: clean(debits),
       entries_credit: clean(credits),
     };
+  }
+
+  function selectAttachments(files: FileList | null) {
+    if (!files) return;
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    const validFiles = Array.from(files).filter(
+      (file) => file.size <= 5 * 1024 * 1024 && allowedTypes.includes(file.type),
+    );
+    attachments = [...attachments, ...validFiles];
+  }
+
+  function confirmRemoveAttachment() {
+    if (attachmentToRemove === null) return;
+
+    attachments = attachments.filter((_, i) => i !== attachmentToRemove);
+    attachmentToRemove = null;
+  }
+
+  function confirmModeChange(includeAttachments: boolean) {
+    if (!pendingJournalMode) return;
+
+    if (!includeAttachments) attachments = [];
+    changeJournalMode(pendingJournalMode);
+    pendingJournalMode = null;
   }
 
   let templateLoading = $state(false);
@@ -206,7 +257,20 @@
         >
           {displayedNumber}
         </h1>
-        <span class="text-sm font-medium text-text-muted">Tampilan T-account</span>
+        <div
+          class="mt-2 inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-sm {journalMode ===
+          'fiscal'
+            ? 'bg-warning-light text-warning'
+            : 'bg-primary-light text-primary'}"
+          data-testid="journal-mode-status"
+        >
+          <span class="font-bold">Mode Jurnal: {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'}</span>
+          <span class="text-text-muted">
+            {journalMode === 'fiscal'
+              ? 'Akun dan template untuk pelaporan pajak.'
+              : 'Akun dan template untuk pembukuan internal.'}
+          </span>
+        </div>
       </div>
       <button
         type="button"
@@ -283,12 +347,38 @@
 
       <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
         <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">Lampiran</h2>
-        <div
-          class="rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted"
+        <input
+          bind:this={attachmentInput}
+          class="sr-only"
+          type="file"
+          accept="application/pdf,image/jpeg,image/png"
+          multiple
+          onchange={(event) => selectAttachments(event.currentTarget.files)}
+          data-testid="journal-attachments-input"
+        />
+        <button
+          type="button"
+          class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
+          onclick={() => attachmentInput?.click()}
+          data-testid="journal-attachments-picker"
         >
-          Klik atau seret file ke sini
-          <p class="text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</p>
-        </div>
+          Klik untuk pilih file
+          <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span>
+        </button>
+        {#if attachments.length > 0}
+          <ul class="mt-3 space-y-2">
+            {#each attachments as file, index (file.name + file.lastModified)}
+              <li class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm">
+                <span class="min-w-0 truncate">{file.name}</span>
+                <button
+                  type="button"
+                  class="shrink-0 text-xs font-medium text-danger hover:underline"
+                  onclick={() => (attachmentToRemove = index)}
+                >Hapus</button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
       </section>
     </div>
 
@@ -393,4 +483,71 @@
       </button>
     </div>
   </div>
+
+  {#if attachmentToRemove !== null && attachments[attachmentToRemove]}
+    <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
+      <div
+        class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-5 shadow-lg"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-attachment-title"
+        tabindex="-1"
+      >
+        <h2 id="remove-attachment-title" class="text-base font-bold text-text-default">Hapus lampiran?</h2>
+        <p class="mt-2 text-sm text-text-muted">
+          Lampiran <span class="font-medium text-text-default">{attachments[attachmentToRemove].name}</span> akan dihapus dari formulir.
+        </p>
+        <div class="mt-5 flex justify-end gap-3">
+          <button
+            type="button"
+            class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold hover:bg-page-bg"
+            onclick={() => (attachmentToRemove = null)}
+          >Batal</button>
+          <button
+            type="button"
+            class="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
+            onclick={confirmRemoveAttachment}
+          >Hapus Lampiran</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if pendingJournalMode}
+    <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
+      <div
+        class="w-full max-w-md rounded-lg border border-border-default bg-card-bg p-5 shadow-lg"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mode-attachment-warning-title"
+        tabindex="-1"
+        data-testid="journal-mode-attachment-warning"
+      >
+        <h2 id="mode-attachment-warning-title" class="text-base font-bold text-text-default">
+          Sertakan lampiran ke mode {pendingJournalMode === 'fiscal' ? 'Fiskal' : 'Intern'}?
+        </h2>
+        <p class="mt-2 text-sm text-text-muted">
+          {attachments.length} lampiran yang dipilih pada mode {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'} masih ada di formulir.
+          Apakah lampiran ini ingin disertakan ke mode {pendingJournalMode === 'fiscal' ? 'Fiskal' : 'Intern'}?
+        </p>
+        <div class="mt-5 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold hover:bg-page-bg"
+            onclick={() => (pendingJournalMode = null)}
+          >Batal</button>
+          <button
+            type="button"
+            class="rounded-md border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger-light"
+            onclick={() => confirmModeChange(false)}
+          >Jangan Sertakan</button>
+          <button
+            type="button"
+            class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+            onclick={() => confirmModeChange(true)}
+          >Sertakan Lampiran</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>

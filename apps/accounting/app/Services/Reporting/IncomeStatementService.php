@@ -41,7 +41,8 @@ class IncomeStatementService
                 $join->on('journals.id', '=', 'journal_entries.journal_id')
                     ->where('journals.status', Journal::STATUS_POSTED)
                     ->where('journals.journal_mode', $journalMode)
-                    ->whereBetween('journals.date', [$periodStart, $periodEnd]);
+                    ->whereDate('journals.date', '>=', $periodStart)
+                    ->whereDate('journals.date', '<=', $periodEnd);
             })
             ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type, accounts.normal_balance')
             ->selectRaw('COALESCE(SUM(CASE WHEN journals.id IS NOT NULL THEN journal_entries.debit ELSE 0 END), 0) as total_debit')

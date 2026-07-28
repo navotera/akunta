@@ -30,7 +30,7 @@ class TrialBalanceService
                 $join->on('journals.id', '=', 'journal_entries.journal_id')
                     ->where('journals.status', Journal::STATUS_POSTED)
                     ->where('journals.journal_mode', $journalMode)
-                    ->where('journals.date', '<=', $asOfDate);
+                    ->whereDate('journals.date', '<=', $asOfDate);
             })
             ->selectRaw('accounts.id, accounts.code, accounts.name, accounts.type, accounts.normal_balance')
             ->selectRaw('COALESCE(SUM(CASE WHEN journals.id IS NOT NULL THEN journal_entries.debit ELSE 0 END), 0) as total_debit')
