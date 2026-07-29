@@ -14,14 +14,15 @@ use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 
 beforeEach(function () {
     // Skeleton smoke tests — override Gate (permissions tested separately at rbac layer).
     // Closure must accept nullable Authenticatable to allow guest/null-user calls.
-    Gate::define('journal.post', fn (?\Illuminate\Contracts\Auth\Authenticatable $user = null) => true);
-    Gate::define('journal.reverse', fn (?\Illuminate\Contracts\Auth\Authenticatable $user = null) => true);
+    Gate::define('journal.post', fn (?Authenticatable $user = null) => true);
+    Gate::define('journal.reverse', fn (?Authenticatable $user = null) => true);
 
     $tenant = Tenant::create(['name' => 'Test Tenant', 'slug' => 'test-'.uniqid()]);
     $entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Test Co']);
@@ -155,6 +156,17 @@ it('rejects non-postable (parent aggregator) accounts', function () {
 
     expect(fn () => app(PostJournalAction::class)->execute($j, $this->user))
         ->toThrow(JournalException::class, '1000');
+});
+
+it('rejects accounts unavailable for the journal mode', function () {
+    $this->cash->update(['availability' => 'intern']);
+    $j = makeDraftJournal($this->entity, $this->period);
+    $j->update(['journal_mode' => Journal::MODE_FISCAL]);
+    JournalEntry::create(['journal_id' => $j->id, 'line_no' => 1, 'account_id' => $this->cash->id, 'debit' => '10.00', 'credit' => 0]);
+    JournalEntry::create(['journal_id' => $j->id, 'line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => '10.00']);
+
+    expect(fn () => app(PostJournalAction::class)->execute($j, $this->user))
+        ->toThrow(JournalException::class, 'not available for fiscal');
 });
 
 it('rejects re-posting an already posted journal', function () {

@@ -8,6 +8,7 @@ use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\Account;
+use App\Models\Journal;
 use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
 
@@ -26,11 +27,11 @@ beforeEach(function () {
 
     $this->cash = Account::create([
         'entity_id' => $this->entity->id, 'code' => '1101', 'name' => 'Kas',
-        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
     $this->revenue = Account::create([
         'entity_id' => $this->entity->id, 'code' => '4101', 'name' => 'Penjualan',
-        'type' => 'revenue', 'normal_balance' => 'credit', 'is_postable' => true,
+        'type' => 'revenue', 'normal_balance' => 'credit', 'is_postable' => true, 'availability' => 'both',
     ]);
 });
 
@@ -41,6 +42,7 @@ it('rejects unauthenticated journal templates', function () {
 it('creates a template with lines', function () {
     $payload = [
         'code' => 'TPL-SAL', 'name' => 'Penjualan Tunai',
+        'journal_mode' => Journal::MODE_FISCAL,
         'lines' => [
             ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0', 'memo' => null],
             ['account_id' => $this->revenue->id, 'side' => 'credit', 'amount' => '0', 'memo' => null],
@@ -53,9 +55,49 @@ it('creates a template with lines', function () {
 
     $res->assertCreated()
         ->assertJsonPath('data.code', 'TPL-SAL')
+        ->assertJsonPath('data.journal_mode', Journal::MODE_FISCAL)
         ->assertJsonCount(2, 'data.lines');
 
     expect(JournalTemplate::where('code', 'TPL-SAL')->exists())->toBeTrue();
+});
+
+it('filters templates by journal mode', function () {
+    JournalTemplate::create([
+        'entity_id' => $this->entity->id,
+        'code' => 'TPL-INT',
+        'name' => 'Template Internal',
+        'journal_mode' => Journal::MODE_INTERNAL,
+    ]);
+    JournalTemplate::create([
+        'entity_id' => $this->entity->id,
+        'code' => 'TPL-FIS',
+        'name' => 'Template Fiskal',
+        'journal_mode' => Journal::MODE_FISCAL,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journal-templates?journal_mode=fiscal')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.code', 'TPL-FIS')
+        ->assertJsonPath('data.0.journal_mode', Journal::MODE_FISCAL);
+});
+
+it('rejects template lines unavailable for the template mode', function () {
+    $this->cash->update(['availability' => 'intern']);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            'code' => 'TPL-BAD',
+            'name' => 'Invalid Fiscal Template',
+            'journal_mode' => Journal::MODE_FISCAL,
+            'lines' => [
+                ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
+            ],
+        ])
+        ->assertStatus(422);
 });
 
 it('updates a template by replacing lines', function () {

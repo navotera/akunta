@@ -4,15 +4,17 @@
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
-  import { journalApi, type JournalDetail, type JournalSummary } from '$lib/api/journal.js';
+  import { journalApi, type JournalDetail } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
+  import { attachmentApi } from '$lib/api/attachment.js';
+
+  const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
   let detail = $state<JournalDetail | null>(null);
   let accounts = $state<AccountOption[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
-  let recent = $state<JournalSummary | null>(null);
   let saving = $state(false);
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
@@ -41,11 +43,10 @@
       goto('/journals', { replaceState: true });
       return;
     }
-    [detail, accounts, templates, recent] = await Promise.all([
+    [detail, accounts, templates] = await Promise.all([
       journalApi.show(id),
       accountApi.list(),
       templateApi.list(4),
-      journalApi.list({ per_page: 1 }).then((r) => r.data[0] ?? null),
     ]);
   });
 
@@ -56,12 +57,18 @@
     serverMessage = null;
     try {
       const updated = await journalApi.update(detail.id, {
-        number: payload.number,
+        journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
+        reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
       detail = updated;
     } catch (e) {
       captureError(e);
@@ -77,12 +84,18 @@
     serverMessage = null;
     try {
       const updated = await journalApi.update(detail.id, {
-        number: payload.number,
+        journal_mode: payload.journal_mode,
         date: payload.date,
         memo: payload.memo,
+        reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
       await journalApi.post(updated.id);
       goto('/journals');
     } catch (e) {
@@ -104,7 +117,6 @@
     initial={detail}
     {accounts}
     {templates}
-    {recent}
     {saving}
     {serverErrors}
     {serverMessage}

@@ -8,6 +8,7 @@
   import { palette } from '$lib/stores/palette.svelte.js';
   import { ecosystem } from '$lib/stores/ecosystem.svelte.js';
   import type { EcosystemApp, EcosystemStatus } from '$lib/api/ecosystem.js';
+  import WorkspaceTabs from './WorkspaceTabs.svelte';
 
   interface NavItem {
     href?: string;
@@ -16,7 +17,10 @@
     match?: string[];
     children?: NavItem[];
   }
-  interface NavGroup { title: string; items: NavItem[]; }
+  interface NavGroup {
+    title: string;
+    items: NavItem[];
+  }
 
   const groups: NavGroup[] = [
     {
@@ -132,12 +136,66 @@
   // a static preview list so the section is visible. Cleared as soon as real
   // data arrives. Toggle off via `?eco=hide` query param.
   const ECO_PREVIEW: EcosystemApp[] = [
-    { slug: '_p_sales', label: 'App Penjualan', url: null, logo_url: null, app_role: null, icon_key: 'sales', status: 'ok', count: 142 },
-    { slug: '_p_buy', label: 'App Pembelian', url: null, logo_url: null, app_role: null, icon_key: 'buy', status: 'ok', count: 38 },
-    { slug: '_p_inv', label: 'App Inventory', url: null, logo_url: null, app_role: null, icon_key: 'inventory', status: 'ok', count: 11 },
-    { slug: '_p_pay', label: 'App Payroll', url: null, logo_url: null, app_role: null, icon_key: 'payroll', status: 'warn', count: 1 },
-    { slug: '_p_inv2', label: 'App Invoice', url: null, logo_url: null, app_role: null, icon_key: 'invoice', status: 'ok', count: 27 },
-    { slug: '_p_tax', label: 'App e-Faktur', url: null, logo_url: null, app_role: null, icon_key: 'tax', status: 'syncing', count: null },
+    {
+      slug: '_p_sales',
+      label: 'App Penjualan',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'sales',
+      status: 'ok',
+      count: 142,
+    },
+    {
+      slug: '_p_buy',
+      label: 'App Pembelian',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'buy',
+      status: 'ok',
+      count: 38,
+    },
+    {
+      slug: '_p_inv',
+      label: 'App Inventory',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'inventory',
+      status: 'ok',
+      count: 11,
+    },
+    {
+      slug: '_p_pay',
+      label: 'App Payroll',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'payroll',
+      status: 'warn',
+      count: 1,
+    },
+    {
+      slug: '_p_inv2',
+      label: 'App Invoice',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'invoice',
+      status: 'ok',
+      count: 27,
+    },
+    {
+      slug: '_p_tax',
+      label: 'App e-Faktur',
+      url: null,
+      logo_url: null,
+      app_role: null,
+      icon_key: 'tax',
+      status: 'syncing',
+      count: null,
+    },
   ];
 
   let showingPreview = $derived(
@@ -163,7 +221,11 @@
       if (!node.contains(e.target as Node)) cb();
     }
     document.addEventListener('mousedown', onDoc);
-    return { destroy() { document.removeEventListener('mousedown', onDoc); } };
+    return {
+      destroy() {
+        document.removeEventListener('mousedown', onDoc);
+      },
+    };
   }
 </script>
 
@@ -175,12 +237,16 @@
       class="flex items-center gap-2.5 px-5 py-4 border-b border-border-soft hover:bg-page-bg transition-colors"
       title="Ke Dashboard"
     >
-      <span class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm">
+      <span
+        class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm"
+      >
         A
       </span>
       <div class="flex flex-col leading-tight">
         <strong class="text-[0.95rem] font-bold tracking-tight text-text-strong">Akunta</strong>
-        <span class="text-[0.65rem] font-medium uppercase tracking-wider text-text-muted">Accounting</span>
+        <span class="text-[0.65rem] font-medium uppercase tracking-wider text-text-muted"
+          >Accounting</span
+        >
       </div>
     </a>
 
@@ -236,11 +302,15 @@
                           <a
                             href={child.href}
                             class="ak-nav-item text-[0.8125rem]"
-                            style="background: transparent; color: var(--m-text); font-weight: {childActive ? '600' : '500'};"
+                            style="background: transparent; color: var(--m-text); font-weight: {childActive
+                              ? '600'
+                              : '500'};"
                           >
                             <span
                               class="ak-nav-icon"
-                              style="font-size: 0.5rem; color: {childActive ? '#17C653' : 'var(--m-text-muted)'};"
+                              style="font-size: 0.5rem; color: {childActive
+                                ? '#17C653'
+                                : 'var(--m-text-muted)'};"
                             >
                               {childActive ? '●' : '·'}
                             </span>
@@ -289,21 +359,28 @@
                 <button
                   type="button"
                   class="ak-nav-item ak-eco-item"
-                  style="background: transparent; width: 100%; text-align: left; cursor: {app.url ? 'pointer' : 'default'};"
+                  style="background: transparent; width: 100%; text-align: left; cursor: {app.url
+                    ? 'pointer'
+                    : 'default'};"
                   onclick={() => openApp(app)}
                   title={app.url ?? app.label}
                 >
-                  <span class="ak-nav-icon" aria-hidden="true">{ECO_ICON[app.icon_key] ?? ECO_ICON.app}</span>
+                  <span class="ak-nav-icon" aria-hidden="true"
+                    >{ECO_ICON[app.icon_key] ?? ECO_ICON.app}</span
+                  >
                   <span class="flex-1 truncate">{app.label}</span>
                   {#if app.count !== null}
                     <span class="ak-eco-count">{app.count}</span>
                   {/if}
-                  <span class="ak-eco-dot {ECO_STATUS_CLASS[app.status]}" aria-label={app.status}></span>
+                  <span class="ak-eco-dot {ECO_STATUS_CLASS[app.status]}" aria-label={app.status}
+                  ></span>
                 </button>
               </li>
             {/each}
             {#if showingPreview}
-              <li class="px-5 pt-1 text-[0.65rem] uppercase tracking-wider text-text-muted">Preview · belum tersinkron</li>
+              <li class="px-5 pt-1 text-[0.65rem] uppercase tracking-wider text-text-muted">
+                Preview · belum tersinkron
+              </li>
             {/if}
           {/if}
         </ul>
@@ -313,11 +390,15 @@
     <footer class="border-t border-border-soft px-3 py-3">
       {#if auth.user}
         <div class="flex items-center gap-3 px-2 py-1.5">
-          <span class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-light text-primary font-bold">
+          <span
+            class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-light text-primary font-bold"
+          >
             {auth.user.name.charAt(0).toUpperCase()}
           </span>
           <div class="min-w-0 flex-1">
-            <strong class="block truncate text-sm font-semibold text-text-default">{auth.user.name}</strong>
+            <strong class="block truncate text-sm font-semibold text-text-default"
+              >{auth.user.name}</strong
+            >
             <span class="block truncate text-xs text-text-muted">{auth.user.email}</span>
           </div>
           <button
@@ -337,7 +418,9 @@
 
   <!-- Main column with topbar -->
   <div class="flex min-w-0 flex-1 flex-col">
-    <header class="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b border-border-default bg-topbar-bg px-6">
+    <header
+      class="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b border-border-default bg-topbar-bg px-6"
+    >
       <div class="flex items-center gap-3">
         <button
           type="button"
@@ -355,7 +438,10 @@
         >
           <span aria-hidden="true">⌕</span>
           <span class="hidden sm:inline">Cari…</span>
-          <kbd class="hidden sm:inline rounded border border-border-soft bg-page-bg px-1.5 py-0.5 text-[0.65rem] font-medium">⌘K</kbd>
+          <kbd
+            class="hidden sm:inline rounded border border-border-soft bg-page-bg px-1.5 py-0.5 text-[0.65rem] font-medium"
+            >⌘K</kbd
+          >
         </button>
       </div>
       <div class="flex items-center gap-2">
@@ -369,7 +455,9 @@
               aria-haspopup="listbox"
               aria-expanded={entityMenuOpen}
             >
-              <span class="flex h-5 w-5 items-center justify-center rounded bg-primary-light text-[0.625rem] font-bold text-primary">
+              <span
+                class="flex h-5 w-5 items-center justify-center rounded bg-primary-light text-[0.625rem] font-bold text-primary"
+              >
                 {(tenant.name ?? '?').charAt(0).toUpperCase()}
               </span>
               <span class="max-w-[10rem] truncate">{tenant.name ?? 'Pilih entitas'}</span>
@@ -381,24 +469,33 @@
                 class="absolute right-0 mt-1 w-64 overflow-hidden rounded-md border border-border-default bg-card-bg shadow-lg z-20"
                 role="listbox"
               >
-                <li class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted">
+                <li
+                  class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
+                >
                   Pilih Entitas ({tenant.available.length})
                 </li>
                 {#each tenant.available as t (t.id)}
                   <li>
                     <button
                       type="button"
-                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {tenant.id === t.id ? 'bg-primary-light text-primary-active font-semibold' : 'text-text-default'}"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {tenant.id ===
+                      t.id
+                        ? 'bg-primary-light text-primary-active font-semibold'
+                        : 'text-text-default'}"
                       onclick={() => pickEntity(t.id)}
                       role="option"
                       aria-selected={tenant.id === t.id}
                     >
-                      <span class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary">
+                      <span
+                        class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary"
+                      >
                         {t.name.charAt(0).toUpperCase()}
                       </span>
                       <span class="min-w-0 flex-1">
                         <span class="block truncate">{t.name}</span>
-                        {#if t.slug}<span class="block truncate text-xs text-text-muted">{t.slug}</span>{/if}
+                        {#if t.slug}<span class="block truncate text-xs text-text-muted"
+                            >{t.slug}</span
+                          >{/if}
                       </span>
                       {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}
                     </button>
@@ -425,30 +522,47 @@
             </button>
 
             {#if periodMenuOpen}
-              <div class="absolute right-0 mt-1 w-72 overflow-hidden rounded-md border border-border-default bg-card-bg shadow-lg z-20 max-h-96 overflow-y-auto">
-                <div class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted">
+              <div
+                class="absolute right-0 mt-1 w-72 overflow-hidden rounded-md border border-border-default bg-card-bg shadow-lg z-20 max-h-96 overflow-y-auto"
+              >
+                <div
+                  class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
+                >
                   Pilih Periode ({period.available.length})
                 </div>
                 {#each period.byYear as group (group.year)}
-                  <div class="bg-page-bg px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted">
+                  <div
+                    class="bg-page-bg px-3 py-1 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
+                  >
                     {group.year}
                   </div>
                   {#each group.periods as p (p.id)}
                     {@const isActive = period.activeId === p.id}
                     <button
                       type="button"
-                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {isActive ? 'bg-primary-light/40 text-primary-active font-semibold' : 'text-text-default'}"
+                      class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {isActive
+                        ? 'bg-primary-light/40 text-primary-active font-semibold'
+                        : 'text-text-default'}"
                       onclick={() => pickPeriod(p.id)}
                       role="option"
                       aria-selected={isActive}
                     >
-                      <span class="ak-period-dot {isActive ? 'ak-period-dot--active' : 'ak-period-dot--idle'}" aria-hidden="true"></span>
+                      <span
+                        class="ak-period-dot {isActive
+                          ? 'ak-period-dot--active'
+                          : 'ak-period-dot--idle'}"
+                        aria-hidden="true"
+                      ></span>
                       <span class="min-w-0 flex-1">
                         <span class="block truncate">{p.name}</span>
-                        <span class="block truncate text-xs text-text-muted">{p.start_date} → {p.end_date}</span>
+                        <span class="block truncate text-xs text-text-muted"
+                          >{p.start_date} → {p.end_date}</span
+                        >
                       </span>
                       {#if p.status !== 'open'}
-                        <span class="text-[0.6rem] uppercase tracking-wider text-text-muted">{p.status}</span>
+                        <span class="text-[0.6rem] uppercase tracking-wider text-text-muted"
+                          >{p.status}</span
+                        >
                       {/if}
                     </button>
                   {/each}
@@ -458,12 +572,19 @@
           </div>
         {/if}
 
-        <button class="flex h-9 w-9 items-center justify-center rounded-md border border-border-default text-text-muted hover:bg-page-bg" aria-label="Notifikasi">
+        <button
+          class="flex h-9 w-9 items-center justify-center rounded-md border border-border-default text-text-muted hover:bg-page-bg"
+          aria-label="Notifikasi"
+        >
           🔔
         </button>
         {#if auth.user}
-          <span class="hidden lg:flex items-center gap-2 rounded-md border border-border-default px-2 py-1.5">
-            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-light text-primary text-xs font-bold">
+          <span
+            class="hidden lg:flex items-center gap-2 rounded-md border border-border-default px-2 py-1.5"
+          >
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-light text-primary text-xs font-bold"
+            >
               {auth.user.name.charAt(0).toUpperCase()}
             </span>
             <span class="text-sm font-medium text-text-default">{auth.user.name}</span>
@@ -471,6 +592,8 @@
         {/if}
       </div>
     </header>
+
+    <WorkspaceTabs />
 
     <main class="min-w-0 flex-1">
       {@render children?.()}

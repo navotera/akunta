@@ -33,8 +33,12 @@ use Illuminate\Support\Facades\DB;
 class CashFlowService
 {
     /** @return array<string, mixed> */
-    public function compute(string $entityId, string $periodStart, string $periodEnd): array
-    {
+    public function compute(
+        string $entityId,
+        string $periodStart,
+        string $periodEnd,
+        string $journalMode = Journal::MODE_INTERNAL,
+    ): array {
         $cashIds = Account::query()
             ->where('entity_id', $entityId)
             ->where('type', 'asset')
@@ -51,8 +55,8 @@ class CashFlowService
         }
 
         // Opening + ending cash balance (debit-side normal)
-        $opening = $this->cashBalance($cashIds, $entityId, $periodStart, '<');
-        $ending  = $this->cashBalance($cashIds, $entityId, $periodEnd, '<=');
+        $opening = $this->cashBalance($cashIds, $entityId, $periodStart, '<', $journalMode);
+        $ending = $this->cashBalance($cashIds, $entityId, $periodEnd, '<=', $journalMode);
 
         // Pull journals touching cash within range, group by journal
         $cashLines = DB::table('journal_entries as je')
@@ -60,9 +64,10 @@ class CashFlowService
             ->whereIn('je.account_id', $cashIds)
             ->where('j.entity_id', $entityId)
             ->where('j.status', Journal::STATUS_POSTED)
+            ->where('j.journal_mode', $journalMode)
             ->whereBetween('j.date', [$periodStart, $periodEnd])
             ->select('j.id as journal_id', 'j.number', 'j.date', 'j.memo',
-                     DB::raw('SUM(je.debit - je.credit) as cash_delta'))
+                DB::raw('SUM(je.debit - je.credit) as cash_delta'))
             ->groupBy('j.id', 'j.number', 'j.date', 'j.memo')
             ->get()
             ->keyBy('journal_id');
@@ -87,8 +92,8 @@ class CashFlowService
         ];
 
         foreach ($cashLines as $jid => $cl) {
-            $delta   = (string) $cl->cash_delta;
-            $bucket  = 'operating';
+            $delta = (string) $cl->cash_delta;
+            $bucket = 'operating';
             $counter = $counters->get($jid, collect());
             // Pick the counter line with largest absolute amount as classifier
             $primary = $counter->sortByDesc(fn ($r) => abs((float) $r->debit - (float) $r->credit))->first();
@@ -97,11 +102,11 @@ class CashFlowService
             }
             $buckets[$bucket]['lines']->push((object) [
                 'journal_id' => $jid,
-                'number'     => $cl->number,
-                'date'       => $cl->date,
-                'memo'       => $cl->memo,
-                'amount'     => $delta,
-                'counter'    => $primary,
+                'number' => $cl->number,
+                'date' => $cl->date,
+                'memo' => $cl->memo,
+                'amount' => $delta,
+                'counter' => $primary,
             ]);
             $buckets[$bucket]['total'] = bcadd($buckets[$bucket]['total'], $delta, 2);
         }
@@ -109,15 +114,15 @@ class CashFlowService
         $netChange = bcadd(bcadd($buckets['operating']['total'], $buckets['investing']['total'], 2), $buckets['financing']['total'], 2);
 
         return [
-            'entity_id'    => $entityId,
+            'entity_id' => $entityId,
             'period_start' => $periodStart,
-            'period_end'   => $periodEnd,
+            'period_end' => $periodEnd,
             'opening_cash' => $opening,
-            'ending_cash'  => $ending,
-            'net_change'   => $netChange,
-            'operating'    => $buckets['operating'],
-            'investing'    => $buckets['investing'],
-            'financing'    => $buckets['financing'],
+            'ending_cash' => $ending,
+            'net_change' => $netChange,
+            'operating' => $buckets['operating'],
+            'investing' => $buckets['investing'],
+            'financing' => $buckets['financing'],
         ];
     }
 
@@ -141,13 +146,14 @@ class CashFlowService
         return 'operating';
     }
 
-    private function cashBalance(Collection $cashIds, string $entityId, string $cutoff, string $op): string
+    private function cashBalance(Collection $cashIds, string $entityId, string $cutoff, string $op, string $journalMode): string
     {
         $row = DB::table('journal_entries as je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->whereIn('je.account_id', $cashIds)
             ->where('j.entity_id', $entityId)
             ->where('j.status', Journal::STATUS_POSTED)
+            ->where('j.journal_mode', $journalMode)
             ->where('j.date', $op, $cutoff)
             ->selectRaw('COALESCE(SUM(je.debit), 0) as td, COALESCE(SUM(je.credit), 0) as tc')
             ->first();
@@ -158,15 +164,15 @@ class CashFlowService
     private function empty(string $entityId, string $start, string $end): array
     {
         return [
-            'entity_id'    => $entityId,
+            'entity_id' => $entityId,
             'period_start' => $start,
-            'period_end'   => $end,
+            'period_end' => $end,
             'opening_cash' => '0.00',
-            'ending_cash'  => '0.00',
-            'net_change'   => '0.00',
-            'operating'    => ['lines' => collect(), 'total' => '0.00'],
-            'investing'    => ['lines' => collect(), 'total' => '0.00'],
-            'financing'    => ['lines' => collect(), 'total' => '0.00'],
+            'ending_cash' => '0.00',
+            'net_change' => '0.00',
+            'operating' => ['lines' => collect(), 'total' => '0.00'],
+            'investing' => ['lines' => collect(), 'total' => '0.00'],
+            'financing' => ['lines' => collect(), 'total' => '0.00'],
         ];
     }
 }

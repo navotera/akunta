@@ -39,11 +39,12 @@ beforeEach(function () {
     $accountId = fn (string $code) => Account::where('entity_id', $this->entity->id)
         ->where('code', $code)->firstOrFail()->id;
 
-    $post = function (string $date, array $lines) use ($accountId) {
+    $post = function (string $date, array $lines, string $journalMode = Journal::MODE_INTERNAL) use ($accountId) {
         $j = Journal::create([
             'entity_id' => $this->entity->id,
             'period_id' => $this->period->id,
             'type' => Journal::TYPE_GENERAL,
+            'journal_mode' => $journalMode,
             'number' => 'JRN-'.uniqid(),
             'date' => $date,
             'status' => Journal::STATUS_POSTED,
@@ -64,6 +65,7 @@ beforeEach(function () {
     $post('2026-04-05', [['1101', '1000000', '0'], ['3101', '0', '1000000']]);
     $post('2026-04-10', [['1101', '500000', '0'], ['4101', '0', '500000']]);
     $post('2026-04-15', [['6101', '200000', '0'], ['1101', '0', '200000']]);
+    $this->post = $post;
 
     $this->cashId = $accountId('1101');
 });
@@ -104,6 +106,24 @@ it('returns balance sheet via SPA endpoint', function () {
     $res->assertOk()
         ->assertJsonPath('meta.entity_id', $this->entity->id);
     expect($res->json('data'))->toBeArray();
+});
+
+it('excludes fiscal journals by default and returns a separate fiscal balance sheet when requested', function () {
+    ($this->post)('2026-04-20', [['1101', '3000000', '0'], ['4101', '0', '3000000']], Journal::MODE_FISCAL);
+
+    $internal = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/reports/trial-balance?as_of=2026-04-30');
+    $internal->assertJsonPath('data.total_debit', '1700000.00')
+        ->assertJsonMissingPath('data.fiscal');
+
+    $withFiscal = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/reports/balance-sheet?as_of=2026-04-30&show_fiscal=1');
+    $withFiscal->assertOk()
+        ->assertJsonPath('data.fiscal.balanced', true)
+        ->assertJsonPath('data.fiscal.assets.total', '3000000.00')
+        ->assertJsonPath('data.fiscal.equity.net_income_ytd', '3000000.00');
 });
 
 it('returns general ledger drill-down via SPA endpoint', function () {

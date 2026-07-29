@@ -69,6 +69,7 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::delete('attachments/{id}', [\App\Http\Controllers\Api\Spa\AttachmentController::class, 'destroy']);
 
         Route::get('journals', [\App\Http\Controllers\Api\Spa\JournalController::class, 'index']);
+        Route::get('journals/next-number', [\App\Http\Controllers\Api\Spa\JournalController::class, 'nextNumber']);
         Route::get('journals/{id}', [\App\Http\Controllers\Api\Spa\JournalController::class, 'show']);
         Route::post('journals', [\App\Http\Controllers\Api\Spa\JournalController::class, 'store']);
         Route::patch('journals/{id}', [\App\Http\Controllers\Api\Spa\JournalController::class, 'update']);

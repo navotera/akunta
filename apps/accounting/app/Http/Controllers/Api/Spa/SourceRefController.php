@@ -21,8 +21,8 @@ class SourceRefController extends Controller
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
             'source_app' => 'nullable|string|max:40',
-            'ref_type'   => 'nullable|string|max:40',
-            'q'          => 'nullable|string|max:120',
+            'ref_type' => 'nullable|string|max:40',
+            'q' => 'nullable|string|max:120',
         ]);
 
         $query = SourceRefRegistry::query()
@@ -47,12 +47,12 @@ class SourceRefController extends Controller
 
         return response()->json([
             'data' => $rows->map(fn (SourceRefRegistry $r) => [
-                'source_app'   => $r->source_app,
-                'ref_type'     => $r->ref_type,
-                'ref_id'       => $r->ref_id,
-                'code'         => $r->last_code,
-                'label'        => $r->last_label,
-                'entry_count'  => $r->entry_count,
+                'source_app' => $r->source_app,
+                'ref_type' => $r->ref_type,
+                'ref_id' => $r->ref_id,
+                'code' => $r->last_code,
+                'label' => $r->last_label,
+                'entry_count' => $r->entry_count,
                 'last_seen_at' => optional($r->last_seen_at)->toIso8601String(),
             ])->all(),
         ]);
@@ -67,17 +67,18 @@ class SourceRefController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
-            'source_app'   => 'required|string|max:40',
-            'ref_type'     => 'required|string|max:40',
+            'source_app' => 'required|string|max:40',
+            'ref_type' => 'required|string|max:40',
             'period_start' => 'required|date_format:Y-m-d',
-            'period_end'   => 'required|date_format:Y-m-d|after_or_equal:period_start',
-            'account_id'   => 'nullable|string|size:26',
+            'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
+            'account_id' => 'nullable|string|size:26',
         ]);
 
         $q = DB::table('journal_entries as je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->where('j.entity_id', $entity->id)
             ->where('j.status', Journal::STATUS_POSTED)
+            ->where('j.journal_mode', Journal::MODE_INTERNAL)
             ->whereBetween('j.date', [$data['period_start'], $data['period_end']])
             ->where('je.source_app', $data['source_app'])
             ->where('je.source_ref_type', $data['ref_type'])
@@ -109,29 +110,29 @@ class SourceRefController extends Controller
 
         $aggregated = $rows->map(function ($r) use ($registry) {
             $reg = $registry[$r->source_ref_id] ?? null;
-            $debit  = bcadd((string) $r->total_debit, '0', 2);
+            $debit = bcadd((string) $r->total_debit, '0', 2);
             $credit = bcadd((string) $r->total_credit, '0', 2);
 
             return [
-                'ref_id'       => $r->source_ref_id,
-                'code'         => $reg?->last_code,
-                'label'        => $reg?->last_label,
-                'total_debit'  => $debit,
+                'ref_id' => $r->source_ref_id,
+                'code' => $reg?->last_code,
+                'label' => $reg?->last_label,
+                'total_debit' => $debit,
                 'total_credit' => $credit,
-                'net'          => bcsub($debit, $credit, 2),
-                'entry_count'  => (int) $r->entry_count,
+                'net' => bcsub($debit, $credit, 2),
+                'entry_count' => (int) $r->entry_count,
             ];
         });
 
         return response()->json([
             'data' => $aggregated->all(),
             'meta' => [
-                'source_app'   => $data['source_app'],
-                'ref_type'     => $data['ref_type'],
+                'source_app' => $data['source_app'],
+                'ref_type' => $data['ref_type'],
                 'period_start' => $data['period_start'],
-                'period_end'   => $data['period_end'],
+                'period_end' => $data['period_end'],
                 'totals' => [
-                    'debit'  => $aggregated->reduce(fn ($c, $r) => bcadd($c, $r['total_debit'], 2), '0.00'),
+                    'debit' => $aggregated->reduce(fn ($c, $r) => bcadd($c, $r['total_debit'], 2), '0.00'),
                     'credit' => $aggregated->reduce(fn ($c, $r) => bcadd($c, $r['total_credit'], 2), '0.00'),
                 ],
             ],

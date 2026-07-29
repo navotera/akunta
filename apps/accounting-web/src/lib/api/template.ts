@@ -7,6 +7,7 @@ export interface JournalTemplateSummary {
   description: string | null;
   lines_count: number;
   journal_type?: string | null;
+  journal_mode?: 'internal' | 'fiscal';
   is_active?: boolean;
   is_global?: boolean;
 }
@@ -26,6 +27,7 @@ export interface JournalTemplateDetail {
   code: string;
   name: string;
   description: string | null;
+  journal_mode: 'internal' | 'fiscal';
   lines: JournalTemplateLine[];
 }
 
@@ -34,6 +36,7 @@ export interface JournalTemplateInput {
   name: string;
   description?: string | null;
   journal_type?: 'general' | 'adjustment' | 'closing' | 'reversing' | 'opening' | null;
+  journal_mode?: 'internal' | 'fiscal';
   default_memo?: string | null;
   default_reference?: string | null;
   is_active?: boolean;
@@ -46,29 +49,33 @@ export interface JournalTemplateInput {
 }
 
 export const templateApi = {
-  list: (limit = 4, tenantSlug?: string | null) =>
-    api<{ data: JournalTemplateSummary[] }>(
-      `/api/v1/spa/journal-templates?limit=${limit}`,
+  list: (limit = 4, tenantSlug?: string | null, journalMode?: 'internal' | 'fiscal') => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (journalMode) params.set('journal_mode', journalMode);
+
+    return api<{ data: JournalTemplateSummary[] }>(
+      `/api/v1/spa/journal-templates?${params.toString()}`,
       { tenantSlug },
-    ).then((r) => r.data),
+    ).then((r) => r.data);
+  },
 
   show: (id: string, tenantSlug?: string | null) =>
-    api<{ data: JournalTemplateDetail }>(
-      `/api/v1/spa/journal-templates/${id}`,
-      { tenantSlug },
-    ).then((r) => r.data),
+    api<{ data: JournalTemplateDetail }>(`/api/v1/spa/journal-templates/${id}`, {
+      tenantSlug,
+    }).then((r) => r.data),
 
   create: (input: JournalTemplateInput, tenantSlug?: string | null) =>
-    api<{ data: JournalTemplateDetail }>(
-      `/api/v1/spa/journal-templates`,
-      { json: input, tenantSlug },
-    ).then((r) => r.data),
+    api<{ data: JournalTemplateDetail }>(`/api/v1/spa/journal-templates`, {
+      json: input,
+      tenantSlug,
+    }).then((r) => r.data),
 
   update: (id: string, input: JournalTemplateInput, tenantSlug?: string | null) =>
-    api<{ data: JournalTemplateDetail }>(
-      `/api/v1/spa/journal-templates/${id}`,
-      { json: input, method: 'PATCH', tenantSlug },
-    ).then((r) => r.data),
+    api<{ data: JournalTemplateDetail }>(`/api/v1/spa/journal-templates/${id}`, {
+      json: input,
+      method: 'PATCH',
+      tenantSlug,
+    }).then((r) => r.data),
 
   destroy: (id: string, tenantSlug?: string | null) =>
     api<void>(`/api/v1/spa/journal-templates/${id}`, { method: 'DELETE', tenantSlug }),

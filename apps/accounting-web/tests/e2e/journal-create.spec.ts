@@ -29,7 +29,11 @@ async function pickFirstAccount(panel: ReturnType<Page['getByTestId']>, rowIndex
   await select.selectOption(value!);
 }
 
-async function fillAmount(panel: ReturnType<Page['getByTestId']>, rowIndex: number, amount: string) {
+async function fillAmount(
+  panel: ReturnType<Page['getByTestId']>,
+  rowIndex: number,
+  amount: string,
+) {
   const input = panel.getByTestId('entry-amount').nth(rowIndex);
   await input.fill(amount);
   await input.blur();
@@ -42,10 +46,10 @@ test('creates a balanced draft journal and posts it', async ({ page }) => {
   await expect(page.getByTestId('journal-date')).toBeVisible();
 
   const today = new Date().toISOString().slice(0, 10);
-  const reference = `JU-E2E-${Date.now().toString().slice(-6)}`;
+  const reference = `INV-E2E-${Date.now().toString().slice(-6)}`;
 
   await page.getByTestId('journal-date').fill(today);
-  await page.getByTestId('journal-number').fill(reference);
+  await page.getByTestId('journal-reference').fill(reference);
   await page.getByTestId('journal-memo').fill('E2E happy path');
 
   const debit = page.getByTestId('debit-panel');
@@ -61,13 +65,14 @@ test('creates a balanced draft journal and posts it', async ({ page }) => {
   const postingBtn = page.getByTestId('posting-jurnal');
   await expect(postingBtn).toBeEnabled();
 
-  const createReq = page.waitForResponse((r) =>
-    r.url().includes('/api/v1/spa/journals') &&
-    r.request().method() === 'POST' &&
-    !r.url().endsWith('/post'),
+  const createReq = page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/v1/spa/journals') &&
+      r.request().method() === 'POST' &&
+      !r.url().endsWith('/post'),
   );
-  const postReq = page.waitForResponse((r) =>
-    r.url().includes('/api/v1/spa/journals/') && r.url().endsWith('/post'),
+  const postReq = page.waitForResponse(
+    (r) => r.url().includes('/api/v1/spa/journals/') && r.url().endsWith('/post'),
   );
 
   await postingBtn.click();
@@ -88,7 +93,7 @@ test('blocks posting when unbalanced and surfaces server error', async ({ page }
   const debit = page.getByTestId('debit-panel');
   const credit = page.getByTestId('credit-panel');
 
-  await page.getByTestId('journal-number').fill('JU-E2E-UNB');
+  await page.getByTestId('journal-reference').fill('INV-E2E-UNB');
   await page.getByTestId('journal-memo').fill('Unbalanced E2E');
 
   await pickFirstAccount(debit, 0);
@@ -100,9 +105,8 @@ test('blocks posting when unbalanced and surfaces server error', async ({ page }
   await expect(postingBtn).toBeDisabled();
 
   // Save Draft path — server should reject as 422 (entries unbalanced).
-  const draftRes = page.waitForResponse((r) =>
-    r.url().includes('/api/v1/spa/journals') &&
-    r.request().method() === 'POST',
+  const draftRes = page.waitForResponse(
+    (r) => r.url().includes('/api/v1/spa/journals') && r.request().method() === 'POST',
   );
   await page.getByTestId('save-draft').click();
   const res = await draftRes;

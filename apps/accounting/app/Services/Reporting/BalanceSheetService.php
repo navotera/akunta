@@ -2,6 +2,7 @@
 
 namespace App\Services\Reporting;
 
+use App\Models\Journal;
 use Illuminate\Support\Collection;
 
 /**
@@ -30,9 +31,13 @@ class BalanceSheetService
      *     balanced: bool
      * }
      */
-    public function compute(string $entityId, string $asOfDate, ?string $periodStart = null): array
-    {
-        $trial = $this->trialBalance->compute($entityId, $asOfDate);
+    public function compute(
+        string $entityId,
+        string $asOfDate,
+        ?string $periodStart = null,
+        string $journalMode = Journal::MODE_INTERNAL,
+    ): array {
+        $trial = $this->trialBalance->compute($entityId, $asOfDate, $journalMode);
         $rows = $trial['rows'];
 
         $assetLines = $rows->where('type', 'asset')->values();
@@ -49,6 +54,7 @@ class BalanceSheetService
             $entityId,
             $periodStart ?? $this->defaultPeriodStart($asOfDate),
             $asOfDate,
+            $journalMode,
         );
         $netIncome = $is['net_income'];
 

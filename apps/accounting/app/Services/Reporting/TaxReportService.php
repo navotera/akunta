@@ -20,14 +20,20 @@ use Illuminate\Support\Facades\DB;
 class TaxReportService
 {
     /** @return array{rows: Collection<int, object>, totals: array{base: string, tax: string}, period_start: string, period_end: string, kind: ?string} */
-    public function compute(string $entityId, string $periodStart, string $periodEnd, ?string $kind = null): array
-    {
+    public function compute(
+        string $entityId,
+        string $periodStart,
+        string $periodEnd,
+        ?string $kind = null,
+        string $journalMode = Journal::MODE_FISCAL,
+    ): array {
         $q = DB::table('journal_entries as je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->join('tax_codes as t', 't.id', '=', 'je.tax_code_id')
             ->leftJoin('accounts as a', 'a.id', '=', 'je.account_id')
             ->where('j.entity_id', $entityId)
             ->where('j.status', Journal::STATUS_POSTED)
+            ->where('j.journal_mode', $journalMode)
             ->whereBetween('j.date', [$periodStart, $periodEnd])
             ->whereNotNull('je.tax_code_id');
 
@@ -60,20 +66,20 @@ class TaxReportService
             ->get()
             ->map(function ($r) {
                 $r->tax_amount = bcadd((string) $r->debit, (string) $r->credit, 2);
-                $r->tax_base   = $r->tax_base !== null ? bcadd((string) $r->tax_base, '0', 2) : null;
+                $r->tax_base = $r->tax_base !== null ? bcadd((string) $r->tax_base, '0', 2) : null;
 
                 return $r;
             });
 
         $totalBase = $rows->reduce(fn ($carry, $r) => bcadd($carry, (string) ($r->tax_base ?? '0'), 2), '0.00');
-        $totalTax  = $rows->reduce(fn ($carry, $r) => bcadd($carry, (string) $r->tax_amount, 2), '0.00');
+        $totalTax = $rows->reduce(fn ($carry, $r) => bcadd($carry, (string) $r->tax_amount, 2), '0.00');
 
         return [
-            'rows'        => $rows,
-            'totals'      => ['base' => $totalBase, 'tax' => $totalTax],
-            'period_start'=> $periodStart,
-            'period_end'  => $periodEnd,
-            'kind'        => $kind,
+            'rows' => $rows,
+            'totals' => ['base' => $totalBase, 'tax' => $totalTax],
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'kind' => $kind,
         ];
     }
 }
