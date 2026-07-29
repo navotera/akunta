@@ -8,6 +8,12 @@
   import { journalApi, type JournalMode, type JournalDetail } from '$lib/api/journal.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { page } from '$app/stores';
+  import {
+    loadJournalDraft,
+    saveJournalDraft,
+    type JournalDraft,
+  } from '$lib/stores/journalDraft.js';
 
   interface Row {
     account_id: string;
@@ -54,32 +60,37 @@
     onCancel,
   }: Props = $props();
 
+  const draftPath = $page.url.pathname;
+  const restoredDraft = initial ? null : loadJournalDraft(draftPath);
+
   function fieldError(name: string): string | null {
     return serverErrors?.[name]?.[0] ?? null;
   }
 
   const blankRow = (): Row => ({ account_id: '', amount: '0', memo: null });
 
-  let date = $state(initial?.date ?? new Date().toISOString().slice(0, 10));
-  let number = $state(initial?.number ?? '');
+  let date = $state(restoredDraft?.date ?? initial?.date ?? new Date().toISOString().slice(0, 10));
+  let number = $state(restoredDraft?.number ?? initial?.number ?? '');
   let previewNumber = $state<string | null>(null);
-  let journalMode = $state<JournalMode>(initial?.journal_mode ?? 'internal');
-  let memo = $state(initial?.memo ?? '');
-  let reference = $state(initial?.reference ?? '');
+  let journalMode = $state<JournalMode>(
+    restoredDraft?.journal_mode ?? initial?.journal_mode ?? 'internal',
+  );
+  let memo = $state(restoredDraft?.memo ?? initial?.memo ?? '');
+  let reference = $state(restoredDraft?.reference ?? initial?.reference ?? '');
   let attachments = $state<File[]>([]);
   let attachmentInput = $state<HTMLInputElement>();
   let attachmentToRemove = $state<number | null>(null);
   let pendingJournalMode = $state<JournalMode | null>(null);
 
   let debits = $state<Row[]>(
-    (initial?.entries_debit ?? []).map((e) => ({
+    (restoredDraft?.entries_debit ?? initial?.entries_debit ?? []).map((e) => ({
       account_id: e.account_id,
       amount: e.amount,
       memo: e.memo,
     })),
   );
   let credits = $state<Row[]>(
-    (initial?.entries_credit ?? []).map((e) => ({
+    (restoredDraft?.entries_credit ?? initial?.entries_credit ?? []).map((e) => ({
       account_id: e.account_id,
       amount: e.amount,
       memo: e.memo,
@@ -89,6 +100,21 @@
   // ensure starting rows
   if (debits.length === 0) debits = [blankRow(), blankRow()];
   if (credits.length === 0) credits = [blankRow()];
+
+  $effect(() => {
+    if (initial) return;
+
+    const draft: JournalDraft = {
+      date,
+      number,
+      journal_mode: journalMode,
+      memo,
+      reference,
+      entries_debit: debits,
+      entries_credit: credits,
+    };
+    saveJournalDraft(draftPath, draft);
+  });
 
   const debitTotal = $derived(debits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const creditTotal = $derived(credits.reduce((s, r) => s + Number(r.amount || 0), 0));
@@ -264,7 +290,9 @@
             : 'bg-primary-light text-primary'}"
           data-testid="journal-mode-status"
         >
-          <span class="font-bold">Mode Jurnal: {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'}</span>
+          <span class="font-bold"
+            >Mode Jurnal: {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'}</span
+          >
           <span class="text-text-muted">
             {journalMode === 'fiscal'
               ? 'Akun dan template untuk pelaporan pajak.'
@@ -368,13 +396,15 @@
         {#if attachments.length > 0}
           <ul class="mt-3 space-y-2">
             {#each attachments as file, index (file.name + file.lastModified)}
-              <li class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm">
+              <li
+                class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
+              >
                 <span class="min-w-0 truncate">{file.name}</span>
                 <button
                   type="button"
                   class="shrink-0 text-xs font-medium text-danger hover:underline"
-                  onclick={() => (attachmentToRemove = index)}
-                >Hapus</button>
+                  onclick={() => (attachmentToRemove = index)}>Hapus</button
+                >
               </li>
             {/each}
           </ul>
@@ -417,7 +447,8 @@
             {/if}
           </label>
           <label class="text-sm">
-            <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span>
+            <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span
+            >
             <textarea
               class="w-full resize-y rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
                 'memo',
@@ -493,21 +524,25 @@
         aria-labelledby="remove-attachment-title"
         tabindex="-1"
       >
-        <h2 id="remove-attachment-title" class="text-base font-bold text-text-default">Hapus lampiran?</h2>
+        <h2 id="remove-attachment-title" class="text-base font-bold text-text-default">
+          Hapus lampiran?
+        </h2>
         <p class="mt-2 text-sm text-text-muted">
-          Lampiran <span class="font-medium text-text-default">{attachments[attachmentToRemove].name}</span> akan dihapus dari formulir.
+          Lampiran <span class="font-medium text-text-default"
+            >{attachments[attachmentToRemove].name}</span
+          > akan dihapus dari formulir.
         </p>
         <div class="mt-5 flex justify-end gap-3">
           <button
             type="button"
             class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold hover:bg-page-bg"
-            onclick={() => (attachmentToRemove = null)}
-          >Batal</button>
+            onclick={() => (attachmentToRemove = null)}>Batal</button
+          >
           <button
             type="button"
             class="rounded-md bg-danger px-3 py-2 text-sm font-semibold text-white hover:opacity-90"
-            onclick={confirmRemoveAttachment}
-          >Hapus Lampiran</button>
+            onclick={confirmRemoveAttachment}>Hapus Lampiran</button
+          >
         </div>
       </div>
     </div>
@@ -527,25 +562,29 @@
           Sertakan lampiran ke mode {pendingJournalMode === 'fiscal' ? 'Fiskal' : 'Intern'}?
         </h2>
         <p class="mt-2 text-sm text-text-muted">
-          {attachments.length} lampiran yang dipilih pada mode {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'} masih ada di formulir.
-          Apakah lampiran ini ingin disertakan ke mode {pendingJournalMode === 'fiscal' ? 'Fiskal' : 'Intern'}?
+          {attachments.length} lampiran yang dipilih pada mode {journalMode === 'fiscal'
+            ? 'Fiskal'
+            : 'Intern'} masih ada di formulir. Apakah lampiran ini ingin disertakan ke mode {pendingJournalMode ===
+          'fiscal'
+            ? 'Fiskal'
+            : 'Intern'}?
         </p>
         <div class="mt-5 flex flex-wrap justify-end gap-3">
           <button
             type="button"
             class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold hover:bg-page-bg"
-            onclick={() => (pendingJournalMode = null)}
-          >Batal</button>
+            onclick={() => (pendingJournalMode = null)}>Batal</button
+          >
           <button
             type="button"
             class="rounded-md border border-danger/40 px-3 py-2 text-sm font-semibold text-danger hover:bg-danger-light"
-            onclick={() => confirmModeChange(false)}
-          >Jangan Sertakan</button>
+            onclick={() => confirmModeChange(false)}>Jangan Sertakan</button
+          >
           <button
             type="button"
             class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-            onclick={() => confirmModeChange(true)}
-          >Sertakan Lampiran</button>
+            onclick={() => confirmModeChange(true)}>Sertakan Lampiran</button
+          >
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
   import { attachmentApi } from '$lib/api/attachment.js';
+  import { clearJournalDraft } from '$lib/stores/journalDraft.js';
 
   const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
@@ -64,6 +65,7 @@
           attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, created.id, file),
         ),
       );
+      clearJournalDraft('/journals/new');
       goto(`/journals/${created.id}`);
     } catch (e) {
       captureError(e);
@@ -92,6 +94,7 @@
         ),
       );
       await journalApi.post(created.id);
+      clearJournalDraft('/journals/new');
       goto('/journals');
     } catch (e) {
       captureError(e);
@@ -101,6 +104,7 @@
   }
 
   function cancel() {
+    clearJournalDraft('/journals/new');
     goto('/journals');
   }
 </script>

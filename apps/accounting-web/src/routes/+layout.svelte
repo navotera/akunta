@@ -4,6 +4,7 @@
   import AppShell from '$lib/components/shell/AppShell.svelte';
   import Toaster from '$lib/components/ui/Toaster.svelte';
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
+  import WorkspaceRouter from '$lib/components/shell/WorkspaceRouter.svelte';
   import { palette } from '$lib/stores/palette.svelte.js';
 
   let { children } = $props();
@@ -27,7 +28,7 @@
   </main>
 {:else}
   <AppShell>
-    {@render children?.()}
+    <WorkspaceRouter />
   </AppShell>
   <CommandPalette bind:open={palette.open} />
 {/if}
