@@ -98,7 +98,11 @@ const routes: RouteDefinition[] = [
   { prefix: '/onboarding', exact: true, label: 'Onboarding', icon: '✓', component: OnboardingPage },
 ];
 
-export const workspace = $state({ tabs: [] as WorkspaceTab[], initialized: false });
+export const workspace = $state({
+  tabs: [] as WorkspaceTab[],
+  initialized: false,
+  emptyAt: null as string | null,
+});
 
 export function resolveWorkspaceTab(href: string): WorkspaceTab {
   const pathname = href.split('?')[0];
@@ -112,6 +116,8 @@ export function resolveWorkspaceTab(href: string): WorkspaceTab {
 }
 
 export function ensureWorkspaceTab(href: string): void {
+  if (workspace.emptyAt === href) return;
+  workspace.emptyAt = null;
   if (!workspace.tabs.some((tab) => tab.href === href)) {
     workspace.tabs = [...workspace.tabs, resolveWorkspaceTab(href)];
   }

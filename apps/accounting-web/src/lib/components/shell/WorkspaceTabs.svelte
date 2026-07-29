@@ -1,11 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import {
-    persistWorkspace,
-    resolveWorkspaceTab,
-    workspace,
-  } from '$lib/stores/workspace.svelte.js';
+  import { persistWorkspace, workspace } from '$lib/stores/workspace.svelte.js';
 
   function currentHref(): string {
     return `${$page.url.pathname}${$page.url.search}`;
@@ -22,7 +18,7 @@
 
     const wasActive = href === currentHref();
     workspace.tabs = workspace.tabs.filter((tab) => tab.href !== href);
-    if (workspace.tabs.length === 0) workspace.tabs = [resolveWorkspaceTab('/dashboard')];
+    if (workspace.tabs.length === 0) workspace.emptyAt = href;
     persistWorkspace();
 
     if (wasActive && workspace.tabs.length > 0) {
