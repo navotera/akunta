@@ -25,3 +25,14 @@ docker/postgres/data/
 docker/redis/data/
 */.omx/*
 .omx/
+
+# Local agent/runtime artifacts
+.pi/
+.pi-subagents/
+.omc/
+
+# Frontend generated output
+**/.svelte-kit/
+**/build/
+**/test-results/
+**/playwright-report/

@@ -81,8 +81,17 @@
   }
 
   async function logout() {
-    await auth.logout();
-    goto('/login', { replaceState: true });
+    try {
+      await auth.logout();
+    } catch {
+      // Continue to the logged-out screen; auth.logout() clears local state in
+      // its own finally block even when the server request cannot complete.
+    } finally {
+      // Navigate even if the local logout request fails (for example, due to
+      // an expired CSRF token). The store is cleared by auth.logout(), and the
+      // logged-out page prevents an automatic Ecopa re-login.
+      goto('/login?logged_out=1', { replaceState: true });
+    }
   }
 
   let entityMenuOpen = $state(false);

@@ -11,20 +11,22 @@
     if (href !== currentHref()) void goto(href);
   }
 
-  function closeTab(href: string, event: MouseEvent) {
+  async function closeTab(href: string, event: MouseEvent) {
     event.stopPropagation();
     const index = workspace.tabs.findIndex((tab) => tab.href === href);
     if (index < 0) return;
 
     const wasActive = href === currentHref();
-    workspace.tabs = workspace.tabs.filter((tab) => tab.href !== href);
+    const remainingTabs = workspace.tabs.filter((tab) => tab.href !== href);
+
+    if (wasActive && remainingTabs.length > 0) {
+      const nextTab = remainingTabs[Math.min(index, remainingTabs.length - 1)];
+      if (nextTab) await goto(nextTab.href);
+    }
+
+    workspace.tabs = remainingTabs;
     if (workspace.tabs.length === 0) workspace.emptyAt = href;
     persistWorkspace();
-
-    if (wasActive && workspace.tabs.length > 0) {
-      const nextTab = workspace.tabs[Math.min(index, workspace.tabs.length - 1)];
-      if (nextTab) void goto(nextTab.href);
-    }
   }
 
   function closeOtherTabs() {

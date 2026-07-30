@@ -66,16 +66,22 @@ akunta/
 # Install tooling + packages
 composer install
 
-# Start infra (postgres + redis + workspace)
-docker compose -f docker/docker-compose.yml up -d
+# Start seluruh stack (PostgreSQL, Redis, accounting, ecopa, accounting-web)
+docker compose -f docker/docker-compose.yml up -d --build
 
 # Migrate + seed default super-admin (accounting app)
-cd apps/accounting
-php artisan migrate:fresh --seed
+docker compose -f docker/docker-compose.yml exec accounting php artisan migrate --seed
 
-# Run dev server (port 8765, deprecation notices suppressed for PHP 8.5)
-composer serve
-# Then open http://localhost:8765/admin-accounting
+# Migrate Ecopa
+docker compose -f docker/docker-compose.yml exec ecopa php artisan migrate
+
+# URLs
+# accounting API:  http://localhost:8000
+# ecopa:           http://localhost:8001
+# accounting-web:  http://localhost:5173
+
+# Stop stack tanpa menghapus volume database
+docker compose -f docker/docker-compose.yml down
 
 # Run checks
 composer ci     # lint + phpstan + tests
