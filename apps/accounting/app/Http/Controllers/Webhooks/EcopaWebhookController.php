@@ -24,24 +24,29 @@ class EcopaWebhookController extends Controller
 {
     public function handle(Request $request): JsonResponse
     {
-        $event   = $request->input('event');
+        $event = $request->input('event');
         $subject = $request->input('subject', []);
         $eventId = $request->input('event_id');
 
         Log::info('Ecopa webhook received', compact('event', 'eventId'));
 
+        $result = null;
+
         match (true) {
-            $event === 'user.disabled'        => $this->onUserDisabled($subject),
-            $event === 'user.enabled'         => $this->onUserEnabled($subject),
-            $event === 'user.updated'         => $this->onUserUpdated($subject),
-            $event === 'user.deleted'         => $this->onUserDeleted($subject),
+            $event === 'user.disabled' => $this->onUserDisabled($subject),
+            $event === 'user.enabled' => $this->onUserEnabled($subject),
+            $event === 'user.updated' => $this->onUserUpdated($subject),
+            $event === 'user.deleted' => $this->onUserDeleted($subject),
             str_starts_with((string) $event, 'app_permission.') => $this->onAppPermission($event, $subject),
-            str_starts_with((string) $event, 'entity.')         => $this->onEntity($event, $subject),
-            str_starts_with((string) $event, 'assignment.')     => $this->onAssignment($event, $subject),
+            str_starts_with((string) $event, 'entity.') => $this->onEntity($event, $subject),
+            str_starts_with((string) $event, 'assignment.') => $result = $this->onAssignment($event, $subject),
             default => null, // unknown event — accept to avoid retry storms
         };
 
-        return response()->json(['status' => 'received', 'event' => $event], 200);
+        return response()->json(array_merge(
+            ['status' => 'received', 'event' => $event],
+            $result ?? [],
+        ), 200);
     }
 
     protected function onUserDisabled(array $subject): void
@@ -112,7 +117,7 @@ class EcopaWebhookController extends Controller
         }
 
         Log::info('Ecopa app_permission event applied', [
-            'event'   => $event,
+            'event' => $event,
             'user_id' => $user->id,
         ]);
     }
@@ -159,9 +164,9 @@ class EcopaWebhookController extends Controller
             ['id' => $id],
             array_filter([
                 'tenant_id' => $tenant?->id,
-                'name'      => $subject['name'] ?? null,
-                'npwp'      => $subject['npwp'] ?? null,
-                'address'   => is_array($subject['address'] ?? null) ? $subject['address'] : null,
+                'name' => $subject['name'] ?? null,
+                'npwp' => $subject['npwp'] ?? null,
+                'address' => is_array($subject['address'] ?? null) ? $subject['address'] : null,
             ], fn ($v) => $v !== null),
         );
 
@@ -173,27 +178,55 @@ class EcopaWebhookController extends Controller
      * The local fine-grained `role_id` (finance/tax/auditor) is preserved if
      * already set; otherwise NULL until an Akunta admin assigns one.
      */
-    protected function onAssignment(string $event, array $subject): void
+    protected function onAssignment(string $event, array $subject): array
     {
         $userIdEcopa = (string) ($subject['user_id'] ?? '');
-        $entityId    = (string) ($subject['entity_id'] ?? '');
-        $appCode     = (string) ($subject['app_slug'] ?? $subject['app_code'] ?? '');
+        $entityId = (string) ($subject['entity_id'] ?? '');
+        $appCode = (string) ($subject['app_slug'] ?? $subject['app_code'] ?? '');
 
         if ($userIdEcopa === '' || $entityId === '' || $appCode === '') {
             Log::warning('Ecopa assignment.* missing keys', compact('event', 'subject'));
 
-            return;
+            return [
+                'status' => 'rejected',
+                'code' => 'missing_assignment_keys',
+                'message' => 'Assignment webhook membutuhkan user_id, entity_id, dan app_code.',
+                'retryable' => false,
+            ];
         }
 
         $user = User::query()->where('main_tier_user_id', $userIdEcopa)->first();
-        $app  = RbacApp::query()->where('code', $appCode)->first();
+        $app = RbacApp::query()->where('code', $appCode)->first();
 
         if (! $user || ! $app) {
             Log::info('Ecopa assignment.* skipped — user/app not provisioned', [
                 'event' => $event, 'user_ecopa' => $userIdEcopa, 'app' => $appCode,
             ]);
 
-            return;
+            return [
+                'status' => 'pending',
+                'code' => 'dependency_not_provisioned',
+                'message' => 'User atau aplikasi belum tersedia di Akunta. Assignment akan diproses setelah provisioning selesai.',
+                'retryable' => true,
+                'user_id' => $userIdEcopa,
+                'app_code' => $appCode,
+            ];
+        }
+
+        if (! Entity::query()->whereKey($entityId)->exists()) {
+            Log::warning('Ecopa assignment.* pending — entity not mirrored', [
+                'event' => $event, 'user_ecopa' => $userIdEcopa,
+                'app' => $appCode, 'entity_id' => $entityId,
+            ]);
+
+            return [
+                'status' => 'pending',
+                'code' => 'entity_not_synced',
+                'message' => 'Entity belum tersedia di Akunta. Sinkronkan entity terlebih dahulu sebelum memproses assignment.',
+                'retryable' => true,
+                'entity_id' => $entityId,
+                'app_code' => $appCode,
+            ];
         }
 
         $row = UserAppAssignment::query()
@@ -211,13 +244,17 @@ class EcopaWebhookController extends Controller
                 $user->forceFill(['remember_token' => null])->save();
             }
 
-            return;
+            return [
+                'status' => 'applied',
+                'code' => 'assignment_revoked',
+                'message' => 'Assignment berhasil dicabut di Akunta.',
+            ];
         }
 
         $ecopaRole = $subject['ecopa_role'] ?? $subject['app_role'] ?? null;
 
         if (! $row) {
-            $row = new UserAppAssignment();
+            $row = new UserAppAssignment;
             $row->id = (string) Str::ulid();
             $row->user_id = $user->id;
             $row->app_id = $app->id;
@@ -237,6 +274,14 @@ class EcopaWebhookController extends Controller
         Log::info('Ecopa assignment mirrored', [
             'event' => $event, 'user_id' => $user->id, 'app_id' => $app->id, 'entity_id' => $entityId,
         ]);
+
+        return [
+            'status' => 'applied',
+            'code' => 'assignment_mirrored',
+            'message' => 'Assignment berhasil disinkronkan ke Akunta.',
+            'entity_id' => $entityId,
+            'app_code' => $appCode,
+        ];
     }
 
     /**
