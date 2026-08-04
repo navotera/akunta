@@ -15,6 +15,7 @@
 .phpunit.cache/
 .phpstan-cache/
 composer.lock
+!apps/accounting/composer.lock
 .DS_Store
 .idea/
 .vscode/
