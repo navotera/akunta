@@ -23,6 +23,9 @@ composer.lock
 !.env.example
 docker/postgres/data/
 docker/redis/data/
+docker/redis_data/
+docker/accounting_storage/
+docker/production.env
 */.omx/*
 .omx/
 
