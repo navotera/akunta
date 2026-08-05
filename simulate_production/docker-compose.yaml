@@ -49,6 +49,7 @@ services:
     logging: *default-logging
   accounting:
     image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting:${AKUNTA_IMAGE_TAG:-latest}
+    platform: linux/amd64
     pull_policy: always
     env_file:
       - ./.env
@@ -88,6 +89,7 @@ services:
     logging: *default-logging
   accounting-web:
     image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting-web:${AKUNTA_IMAGE_TAG:-latest}
+    platform: linux/amd64
     pull_policy: always
     depends_on:
       accounting:
