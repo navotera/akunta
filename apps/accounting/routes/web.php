@@ -5,6 +5,7 @@ use App\Http\Controllers\Webhooks\EcopaWebhookController;
 use App\Http\Controllers\Webhooks\OidcBackchannelLogoutController;
 use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
 use App\Http\Middleware\VerifyEcopaSignature;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // Root → bounce ke /sso/login. Kalau Ecopa configured + user sudah login Ecopa,
@@ -43,7 +44,23 @@ Route::post('/oidc/backchannel-logout', [OidcBackchannelLogoutController::class,
 
 // Default `login` route — redirect ke Ecopa SSO when configured.
 // Laravel's AuthenticationException handler calls route('login') as fallback.
-Route::get('/login', function () {
+Route::get('/login', function (Request $request) {
+    $ssoError = (string) $request->query('sso_error', '');
+
+    if ($ssoError !== '') {
+        $messages = [
+            'state_mismatch' => 'Sesi login kedaluwarsa atau tidak terbaca. Mulai login baru.',
+            'token_exchange' => 'Ecopa gagal menyelesaikan login Akunta. Coba lagi atau hubungi admin.',
+            'callback_params' => 'Callback login dari Ecopa tidak lengkap. Mulai login baru.',
+            'provider_error' => 'Ecopa menolak proses login. Coba lagi atau hubungi admin.',
+        ];
+
+        return response()->view('auth.sso-error', [
+            'message' => $messages[$ssoError] ?? 'Login dengan Ecopa gagal. Coba lagi atau hubungi admin.',
+            'retryUrl' => route('ecopa.login'),
+        ], 400);
+    }
+
     return config('ecopa.client_id')
         ? redirect()->route('ecopa.login')
         : abort(404, 'Login disabled — Ecopa not configured.');

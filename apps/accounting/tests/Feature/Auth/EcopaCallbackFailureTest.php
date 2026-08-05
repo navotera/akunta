@@ -35,3 +35,15 @@ it('redirects state mismatches to a stable error page instead of returning a ser
 
     $response->assertRedirect('https://spa.example.test/login?sso_error=state_mismatch');
 });
+
+it('renders a recoverable error page instead of restarting SSO on the backend login route', function () {
+    config()->set('ecopa.client_id', 'test-client');
+
+    $response = $this->get('/login?sso_error=token_exchange');
+
+    $response
+        ->assertStatus(400)
+        ->assertSee('Login Akunta gagal')
+        ->assertSee('Ecopa gagal menyelesaikan login Akunta')
+        ->assertSee('/auth/ecopa/redirect', escape: false);
+});

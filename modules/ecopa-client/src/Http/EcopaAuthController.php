@@ -79,7 +79,13 @@ abstract class EcopaAuthController extends Controller
      */
     protected function redirectToFailure(string $reason, array $errors): RedirectResponse
     {
-        Log::warning('ecopa.oauth.callback_failed', ['reason' => $reason]);
+        Log::warning('ecopa.oauth.callback_failed', [
+            'reason' => $reason,
+            'error' => $errors['ecopa'] ?? null,
+            'callback_host' => request()->getHttpHost(),
+            'ecopa_url' => config('ecopa.url'),
+            'redirect_uri' => config('ecopa.redirect_uri'),
+        ]);
 
         $target = $this->failureRedirect();
         $separator = str_contains($target, '?') ? '&' : '?';
