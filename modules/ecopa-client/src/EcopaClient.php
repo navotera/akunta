@@ -45,10 +45,15 @@ class EcopaClient
      */
     public function verifyState(string $incomingState): bool
     {
-        $stored = Session::pull('ecopa.state');
+        // Do not consume the stored state until it has been validated. A stale
+        // or malformed callback must not invalidate a valid OAuth flow that is
+        // still in flight in another tab or browser request.
+        $stored = Session::get('ecopa.state');
         $ok = $stored !== null && hash_equals((string) $stored, $incomingState);
 
-        if (! $ok) {
+        if ($ok) {
+            Session::forget('ecopa.state');
+        } else {
             \Illuminate\Support\Facades\Log::warning('ecopa.oauth.state_mismatch', [
                 'session_id'      => Session::getId(),
                 'stored_present'  => $stored !== null,
