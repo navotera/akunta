@@ -43,29 +43,21 @@ di direktori `apps/accounting`, lalu restart Accounting API.
 
 ## Menjalankan Project
 
-Jalankan setiap aplikasi dari direktori aplikasinya masing-masing.
+Dari root repository, jalankan satu command berikut:
 
-### Ecopa
+```bash
+bun run dev
+```
+
+Script ini menyalakan Accounting API, Vite di aplikasi Laravel, dan Accounting
+Web secara bersamaan. Tekan `Ctrl+C` untuk menghentikan seluruh proses.
+
+Frontend Accounting berjalan di `http://localhost:5175`. Pastikan PostgreSQL
+sudah aktif sebelum menjalankan aplikasi Laravel.
+
+Jika membutuhkan Ecopa untuk alur SSO lokal, jalankan juga dari terminal lain:
 
 ```bash
 cd ecopa
 php artisan serve --port=8001
 ```
-
-### Accounting API
-
-```bash
-cd apps/accounting
-php artisan serve --port=8000
-```
-
-### Accounting Web
-
-```bash
-cd apps/accounting-web
-bun run dev
-```
-
-Frontend Accounting berjalan di `http://localhost:5175`.
-
-Pastikan PostgreSQL sudah aktif sebelum menjalankan aplikasi Laravel. Jalankan ketiga proses tersebut secara bersamaan pada terminal terpisah.

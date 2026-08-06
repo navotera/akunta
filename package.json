@@ -1,6 +1,9 @@
 {
   "name": "akunta-monorepo",
   "private": true,
+  "scripts": {
+    "dev": "bun scripts/dev.ts"
+  },
   "workspaces": [
     "apps/*-web",
     "packages/*"
