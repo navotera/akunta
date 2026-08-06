@@ -1,75 +1,162 @@
-<claude-mem-context>
-# Memory Context
+# AGENTS.md
 
-# [akunta] recent context, 2026-05-04 6:29pm GMT+8
+Panduan kerja untuk agent dan contributor di repository Akunta. Panduan ini
+berlaku untuk seluruh monorepo. Jika suatu subdirektori memiliki `AGENTS.md`
+sendiri, aturan yang lebih dekat dengan file yang diubah berlaku sebagai
+tambahan.
 
-Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
-Format: ID TIME TYPE TITLE
-Fetch details: get_observations([IDs]) | Search: mem-search skill
+## Gambaran proyek
 
-Stats: 50 obs (15,204t read) | 168,227t work | 91% savings
+Akunta adalah monorepo ekosistem aplikasi akuntansi untuk UKM Indonesia.
+Komponen utamanya:
 
-### Apr 29, 2026
-S59 Reporting phase 2 — Buku Besar drill-down, XLSX export, comparative BS/IS; plus view polish and bug fixes. Committed as e544c95. (Apr 29 at 7:19 PM)
-S60 Commit 1951449 — User/Role/AuditLog Management UI Shipped (Apr 29 at 7:32 PM)
-S61 Session continuation — reporting phase 2 commit + new Pengaturan group with User/Role/AuditLog management UI. (Apr 29 at 7:39 PM)
-S62 Journal Preset Shortcuts + QuickActions Removal Committed — commit 8dd2c4b (Apr 29 at 7:40 PM)
-224 8:29p ✅ Dashboard.php Imports Swapped: AccountResource Out, Journal Model In
-225 " 🟣 Dashboard "+ New" Replaced with 4-Item Journal Template Menu
-226 8:30p 🟣 CreateJournal Preset System Implemented via Query Param
-227 " 🟣 Journal Template Feature + QuickActionsWidget Removal Verified Clean
-228 8:31p 🔵 Test Suite Shows 3 Failures + Abnormally Low Count After Changes
-229 " 🔵 Unstaged Unrelated Changes Exist in Working Tree During Journal Template Commit
-230 " 🟣 Journal Preset Shortcuts + QuickActions Removal Committed — commit 8dd2c4b
-S63 Remove dashboard quick action widget + replace "+ New" menu with 4 journal template shortcuts (Penjualan, Pembelian, Umum, Penyesuaian); remove "Buat COA" from menu (Apr 29 at 8:31 PM)
-S64 Committed Dashboard New-menu refactor — commit 860008d (Apr 29 at 8:32 PM)
-231 8:35p ⚖️ Journal Entry UI: "Buat Jurnal" renamed to "New" with Penjualan/Pembelian/Biaya shortcuts
-232 " 🟣 Dashboard "New" button: replaced 4-item journal menu with 3 focused transaction shortcuts
-233 8:36p 🔴 Removed unused `use App\Models\Journal` import from Dashboard after action refactor
-234 " 🟣 Added 'expense' preset to CreateJournal PRESETS map — enables "Biaya" dashboard shortcut
-235 " ✅ Committed Dashboard New-menu refactor — commit 860008d
-S65 Revise Dashboard journal creation shortcuts: rename "Buat Jurnal" to "New", replace 4-item menu with Penjualan/Pembelian/Biaya (Apr 29 at 8:36 PM)
-S66 Committed SalesEntry feature — commit 3e41d18, 4 files, 465 insertions (Apr 29 at 8:36 PM)
-236 8:37p 🔵 Accounting app has TaxCode model + PPN infrastructure; Partner and Account models have 'type' field
-237 " 🔵 TaxCode model supports 7 kinds including Indonesian PPN+PPh; Partner has 4 types: customer/vendor/employee/other
-238 8:38p 🔵 Account 'type' field uses flat strings: asset/liability/equity/revenue/expense — CoaTemplateSeeder reveals full COA structure
-239 " 🔵 JournalEntry has tax_code_id FK to TaxCode; 7 Action classes exist in accounting app
-240 " 🔵 JournalEntry has partner_id and tax_base fields — per-line partner and tax base tracking
-241 " 🔵 JournalEntry full model — supports 5 analytical dimensions: partner, cost_center, project, branch, tax_code
-242 8:39p 🟣 New RecordSalesAction — creates balanced sales journal with optional PPN Keluaran line
-243 8:40p 🟣 New SalesEntry Filament page — fast-entry form for Penjualan with live PPN preview
-244 " 🟣 Blade view for SalesEntry created — explicit buttons replace getCachedFormActions() loop
-245 " 🔄 SalesEntry: removed getFormActions() — buttons fully delegated to Blade view
-246 8:41p 🟣 Dashboard "Penjualan" action re-routed to SalesEntry page; same-namespace import not needed
-247 " 🔵 SalesEntry route registered at admin-accounting/{tenant}/penjualan/baru — all 3 classes load clean
-248 " 🔵 Test suite shows 3 failures after SalesEntry + RecordSalesAction added — Pint fixed style in 2 files
-249 " 🟣 Committed SalesEntry feature — commit 3e41d18, 4 files, 465 insertions
-S67 Build dedicated Penjualan fast-entry page with RecordSalesAction — hide double-entry mechanics from users (Apr 29 at 8:41 PM)
-250 8:44p ⚖️ Vertical Tab Layout for Sales & Purchase Forms
-251 8:45p 🔵 Attachments Implementation in Accounting App
-252 " 🔵 AttachmentsRelationManager Full Schema & Behavior
-253 8:46p 🔵 SalesEntry Page Structure — Pre-Tab Refactor Baseline
-254 8:47p 🟣 SalesEntry Refactored to Vertical Tabs Layout
-255 " 🟣 RecordSalesAction — Added Auth & Storage Imports for Attachment Support
-256 " 🟣 RecordSalesAction — Attachment Persistence via attachFiles()
-257 8:48p 🟣 RecordPurchaseAction Created — New Purchase Transaction Action
-258 8:49p 🟣 PurchaseEntry Filament Page Created with Vertical Tabs
-259 " 🟣 purchase-entry Blade View Created
-260 " 🔴 Dashboard "Pembelian" Button Wired to PurchaseEntry Page
-261 " 🔵 Smoke Test Passed — All New Classes Load & Routes Registered
-262 " 🔵 Pint Fixed PurchaseEntry Style; 3 Pre-existing Test Failures Remain
-263 8:50p 🟣 Committed: Vertical Tabs + PurchaseEntry Feature — commit 20a6fbf
-S68 Vertical tab layout for SalesEntry and PurchaseEntry forms — optimize viewport display without scrolling (Apr 29 at 8:50 PM)
-264 8:51p 🔵 Filament v3 Tabs Component Missing vertical() and contained() Methods
-265 " 🔵 Installed Filament v3 Tabs Has No vertical() or contained() — API Mismatch Confirmed
-266 " 🔴 SalesEntry: Replaced vertical()/contained() with extraAttributes CSS Class ak-vtabs
-267 " 🔴 PurchaseEntry: Same vertical()/contained() Fix Applied
-268 " 🔵 Custom Filament Theme Files Exist — ak-vtabs CSS Must Be Added to theme-metronic.css
-269 8:52p 🟣 ak-vtabs CSS Rules Added to theme-metronic.css
-270 " 🔵 Filament Tabs Blade Templates Not Found in Vendor — CSS Selector Verification Blocked
-271 " 🔵 apps/accounting/vendor/filament Does Not Exist — Vendor Path Wrong
-272 8:53p 🔵 Accounting App Has Own vendor/ at Absolute Path — Tabs Blade Files Located
-273 " 🔵 Filament Forms Tabs Root Class is fi-fo-tabs — ak-vtabs CSS Selectors Wrong
+- `apps/accounting/` — backend Accounting dan panel administratif Laravel 11.
+- `apps/accounting-web/` — frontend SvelteKit untuk Accounting.
+- `apps/payroll/` dan `apps/cash-mgmt/` — aplikasi domain yang menggunakan
+  Accounting melalui API.
+- `apps/poso/` dan `apps/poso-web/` — API serta frontend POSO.
+- `ecopa/` — Main Tier untuk autentikasi, SSO, dan katalog aplikasi (Laravel
+  12 + Filament 4).
+- `modules/` — package Composer bersama, termasuk core, RBAC, audit, UI, API
+  client, dan Ecopa client.
+- `packages/akunta-ui/` — package TypeScript bersama.
+- `docker/` — Dockerfile dan template Compose untuk development/production.
+- `docs/` — specification, keputusan arsitektur, testing, dan handover.
 
-Access 168k tokens of past work via get_observations([IDs]) or mem-search skill.
-</claude-mem-context>
+`apps/main-tier/` adalah path lama/deprecated. Jangan menambahkan implementasi
+baru di sana kecuali diminta secara eksplisit.
+
+## Dokumentasi yang harus dibaca
+
+Gunakan dokumentasi sesuai konteks perubahan:
+
+- [`GETTING_STARTED.md`](GETTING_STARTED.md) — setup lokal, port, dan alur SSO.
+- [`README.md`](README.md) — gambaran monorepo dan quick start.
+- [`docs/spec.md`](docs/spec.md) — perilaku produk dan kontrak domain.
+- [`docs/decisions.md`](docs/decisions.md) — keputusan teknis yang sudah
+  disepakati.
+- [`docs/architecture.md`](docs/architecture.md) — batas komponen dan alur
+  sistem.
+- [`docs/testing.md`](docs/testing.md) — test suite dan pola pengujian.
+- `docs/handover-*.md` — konteks sesi terbaru; ini bukan pengganti spec atau
+  keputusan yang sudah locked.
+
+Jika dokumentasi bertentangan dengan implementasi, periksa commit dan test
+terbaru, lalu dokumentasikan keputusan yang diperlukan. Jangan menyalin status,
+jumlah test, atau rencana lama ke file ini.
+
+## Aturan perubahan
+
+1. Periksa `git status` dan diff yang sudah ada sebelum mengedit. Pertahankan
+   perubahan user yang tidak terkait.
+2. Pahami boundary aplikasi sebelum mengubah kode. Perubahan lintas aplikasi
+   harus mempertimbangkan kontrak API, autentikasi, tenant, idempotensi, dan
+   test di kedua sisi.
+3. Gunakan package bersama yang sudah tersedia. Aplikasi tier ketiga harus
+   berkomunikasi dengan Accounting melalui `modules/api-client`, bukan dengan
+   mengimpor model atau service internal Accounting.
+4. Semua endpoint dan query yang memproses data tenant wajib mempertahankan
+   autentikasi, authorization, dan tenant context. Jangan menonaktifkan
+   `TenantResolver`, policy, atau permission hanya untuk membuat test atau
+   demo lewat, kecuali pada fixture test yang memang mengisolasi middleware.
+5. Jurnal harus tetap balance. Pertahankan invariant domain seperti periode
+   terbuka, status posting, fiscal/intern mode, dan aturan pajak; cek
+   `docs/spec.md` serta `docs/decisions.md` sebelum mengubahnya.
+6. Migration baru harus forward-compatible dan tidak mengubah migration yang
+   sudah pernah dijalankan. Untuk perubahan schema, tambahkan atau perbarui
+   test migrasi/model yang relevan.
+7. Jangan menambahkan secret ke repository. Jangan mengubah `.env` lokal,
+   data database, atau konfigurasi production sebagai bagian dari perubahan
+   kode biasa.
+8. Jangan mengedit artefak hasil generate atau dependency vendor: `vendor/`,
+   `node_modules/`, `.svelte-kit/`, `build/`, `storage/`, dan cache. Edit
+   source atau konfigurasi yang menghasilkan artefak tersebut.
+9. Ikuti gaya file di sekitarnya. Untuk PHP gunakan Laravel Pint; file baru
+   mengikuti namespace PSR-4 dan pola Pest yang dipakai aplikasi terkait.
+10. Perubahan perilaku publik harus disertai test dan, bila perlu, update
+    dokumentasi atau kontrak API.
+
+## Perintah kerja dan verifikasi
+
+Jalankan dari root kecuali diberi prefix `cd`:
+
+```bash
+# Dependency
+composer install
+bun install
+
+# Static checks root
+composer lint:check
+composer stan
+
+# Regression suite yang terdokumentasi
+(cd apps/accounting && ./vendor/bin/pest)
+(cd apps/payroll && ./vendor/bin/pest)
+(cd apps/cash-mgmt && ./vendor/bin/pest)
+(cd modules/api-client && ./vendor/bin/pest)
+
+# Frontend Accounting
+(cd apps/accounting-web && bun run check)
+(cd apps/accounting-web && bun run lint)
+(cd apps/accounting-web && bun run build)
+(cd apps/accounting-web && bun run test)
+(cd apps/accounting-web && bun run test:e2e)
+```
+
+`composer ci` menjalankan lint check, PHPStan, dan test root. Untuk perubahan
+yang hanya menyentuh satu app atau module, jalankan suite dan formatter yang
+relevan terlebih dahulu; tambahkan regression suite penuh bila risikonya
+lintas boundary atau menyentuh shared module.
+
+Untuk test tertentu, jalankan dari direktori aplikasi terkait, misalnya:
+
+```bash
+cd apps/accounting
+./vendor/bin/pest tests/Feature/Path/ToTest.php
+./vendor/bin/pest --filter="deskripsi test"
+```
+
+Untuk test yang memanggil aplikasi lain, gunakan `Http::fake()` dan verifikasi
+payload serta idempotency key. Untuk cookie tenant/entity yang memang tidak
+terenkripsi, gunakan helper unencrypted yang sesuai dengan pola di
+`docs/testing.md`. Jangan menghapus middleware global untuk menyembunyikan
+masalah integrasi; nonaktifkan hanya dalam test unit/middleware yang sedang
+mengisolasi komponen tersebut.
+
+## Frontend dan development server
+
+`bun run dev` di root menjalankan Accounting API dan Accounting Web. Ecopa
+dijalankan terpisah dari `ecopa/` jika alur SSO diperlukan. Ikuti port dan
+konfigurasi di `GETTING_STARTED.md`; jangan mengasumsikan service lokal
+tersedia hanya karena dependency sudah terpasang.
+
+Gunakan script yang benar-benar didefinisikan oleh `package.json` masing-masing
+package. Jangan menambahkan script baru hanya untuk menjalankan satu pemeriksaan
+lokal tanpa alasan yang jelas.
+
+## Database, Docker, dan deployment
+
+- Test otomatis menggunakan konfigurasi test aplikasi; hindari database
+  development atau production.
+- Untuk smoke test schema, gunakan database SQLite sementara atau database
+  disposable yang ditentukan dokumentasi.
+- Baseline production adalah `docker/docker-compose.example.yml` dengan
+  `docker/production.env.example`. File secret `.env` berada di direktori
+  deployment dan tidak boleh di-commit.
+- Jangan menghidupkan kembali path `simulate_production/` yang sudah dihapus.
+- Perubahan Docker/Compose harus divalidasi dengan `docker compose ... config`
+  dan, bila relevan, healthcheck serta log service.
+- Jangan menjalankan migration production, `pull`, atau `up` pada server hanya
+  karena diminta melakukan perubahan kode; itu adalah langkah deployment
+  terpisah dan memerlukan target serta otorisasi yang jelas.
+
+## Sebelum menyerahkan pekerjaan
+
+- Jalankan formatter, test, dan static check yang relevan.
+- Jalankan `git diff --check`.
+- Tinjau `git diff` agar tidak ada perubahan generated file, secret, atau
+  perubahan tidak terkait.
+- Laporkan perintah yang dijalankan, hasilnya, dan test yang belum dijalankan
+  atau gagal karena masalah yang sudah ada.
+- Jangan membuat commit, push, reset, atau menghapus perubahan user kecuali
+  diminta secara eksplisit.
