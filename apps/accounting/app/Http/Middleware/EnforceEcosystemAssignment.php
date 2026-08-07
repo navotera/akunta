@@ -76,7 +76,6 @@ class EnforceEcosystemAssignment
             return $request->user()?->getDefaultTenant();
         }
 
-        return Entity::where('slug', $slug)->first()
-            ?? Entity::find($slug);
+        return Entity::find($slug);
     }
 }

@@ -49,3 +49,17 @@ test('unauthenticated /api/v1/me returns 401', async ({ request }) => {
   const res = await request.get('/api/v1/me');
   expect(res.status()).toBe(401);
 });
+
+test('SSO callback failure stays on a recoverable login page', async ({ page }) => {
+  const ssoRedirects: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/auth/ecopa/redirect')) ssoRedirects.push(request.url());
+  });
+
+  await page.goto('/login?sso_error=token_exchange');
+  await expect(page.getByTestId('sso-error')).toBeVisible();
+  await expect(page.getByTestId('ecopa-login-button')).toBeVisible();
+  await page.waitForTimeout(750);
+
+  expect(ssoRedirects).toHaveLength(0);
+});

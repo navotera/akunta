@@ -15,7 +15,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('entities', function (Blueprint $table) {
-            $table->ulid('id')->primary();
+            $table->ulid('id');
+            $table->primary('id');
             $table->foreignUlid('tenant_id')->constrained('tenants')->cascadeOnDelete();
             $table->string('name');
             $table->string('legal_form', 16)->nullable();

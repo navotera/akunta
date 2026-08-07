@@ -8,7 +8,7 @@ const entryRow = z.object({
 
 export const journalSchema = z
   .object({
-    number: z.string().min(1, 'Nomor wajib').max(40),
+    number: z.string().max(40).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Tanggal tidak valid'),
     memo: z.string().min(1, 'Keterangan wajib').max(400),
     reference: z.string().max(120).nullable().default(null),

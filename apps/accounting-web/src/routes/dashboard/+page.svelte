@@ -19,7 +19,17 @@
   onMount(async () => {
     if (!auth.user) {
       const u = await auth.refresh();
-      if (!u) { goto('/login', { replaceState: true }); return; }
+      if (!u) {
+        // Only an actual 401 means the SSO session is missing. Keep backend
+        // failures on the dashboard so they do not create an auth redirect loop.
+        if (!auth.error) {
+          goto('/login', { replaceState: true });
+        } else {
+          error = auth.error;
+          loading = false;
+        }
+        return;
+      }
     }
     try {
       status = await onboardingApi.status();

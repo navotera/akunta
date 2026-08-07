@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class JournalController extends Controller
 {
@@ -81,6 +82,10 @@ class JournalController extends Controller
         $accounts = Account::query()
             ->where('entity_id', $entity->id)
             ->whereIn('code', $codes)
+            ->where(function ($query) {
+                $query->where('availability', Account::AVAILABILITY_INTERN)
+                    ->orWhere('availability', Account::AVAILABILITY_BOTH);
+            })
             ->get()
             ->keyBy('code');
         $missing = array_values(array_diff($codes, $accounts->keys()->all()));
@@ -155,7 +160,7 @@ class JournalController extends Controller
     public function bulk(Request $request): JsonResponse
     {
         $payload = $request->validate([
-            'journals'   => 'required|array|min:1|max:200',
+            'journals' => 'required|array|min:1|max:200',
             'journals.*' => 'array',
         ]);
 
@@ -190,7 +195,7 @@ class JournalController extends Controller
                 if (($resp['status_code'] ?? 0) >= 200 && ($resp['status_code'] ?? 0) < 300) {
                     $okCount++;
                 }
-            } catch (\Illuminate\Validation\ValidationException $e) {
+            } catch (ValidationException $e) {
                 $results[$i] = ['error' => 'validation_failed', 'errors' => $e->errors(), 'status_code' => 422];
             } catch (\Throwable $e) {
                 $results[$i] = ['error' => 'internal_error', 'message' => $e->getMessage(), 'status_code' => 500];
@@ -198,10 +203,10 @@ class JournalController extends Controller
         }
 
         return response()->json([
-            'total'        => count($payload['journals']),
-            'succeeded'    => $okCount,
-            'failed'       => count($payload['journals']) - $okCount,
-            'results'      => $results,
+            'total' => count($payload['journals']),
+            'succeeded' => $okCount,
+            'failed' => count($payload['journals']) - $okCount,
+            'results' => $results,
         ], 207); // Multi-Status
     }
 
@@ -224,14 +229,14 @@ class JournalController extends Controller
             $existing = Journal::where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing !== null) {
                 return [
-                    'error'               => 'duplicate_idempotency_key',
+                    'error' => 'duplicate_idempotency_key',
                     'existing_journal_id' => $existing->id,
-                    'status_code'         => 409,
+                    'status_code' => 409,
                 ];
             }
         }
 
-        $entity = \Akunta\Rbac\Models\Entity::find($data['entity_id']);
+        $entity = Entity::find($data['entity_id']);
         if ($entity === null) {
             return ['error' => 'entity_not_found', 'status_code' => 422];
         }
@@ -250,6 +255,10 @@ class JournalController extends Controller
         $accounts = Account::query()
             ->where('entity_id', $entity->id)
             ->whereIn('code', $codes)
+            ->where(function ($query) {
+                $query->where('availability', Account::AVAILABILITY_INTERN)
+                    ->orWhere('availability', Account::AVAILABILITY_BOTH);
+            })
             ->get()
             ->keyBy('code');
         $missing = array_values(array_diff($codes, $accounts->keys()->all()));
@@ -296,9 +305,9 @@ class JournalController extends Controller
         }
 
         return [
-            'journal_id'  => $journal->id,
-            'status'      => $journal->fresh()->status,
-            'number'      => $journal->number,
+            'journal_id' => $journal->id,
+            'status' => $journal->fresh()->status,
+            'number' => $journal->number,
             'status_code' => 201,
         ];
     }

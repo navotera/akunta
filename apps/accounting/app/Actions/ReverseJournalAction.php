@@ -8,7 +8,6 @@ use Akunta\Rbac\Models\User;
 use App\Exceptions\JournalException;
 use App\Models\Journal;
 use App\Models\JournalEntry;
-use Illuminate\Support\Str;
 
 class ReverseJournalAction extends BaseAction
 {
@@ -29,6 +28,7 @@ class ReverseJournalAction extends BaseAction
                 'entity_id' => $journal->entity_id,
                 'period_id' => $journal->period_id,
                 'type' => Journal::TYPE_REVERSING,
+                'journal_mode' => $journal->journal_mode,
                 'number' => $journal->number.'-R',
                 'date' => now()->toDateString(),
                 'reference' => $journal->reference,

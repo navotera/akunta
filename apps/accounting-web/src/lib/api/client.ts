@@ -36,13 +36,14 @@ const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
  *
  * Guards:
  *  - SSR safety: noop when `window` is undefined.
- *  - Loop guard: noop when already on /auth/* or /login, since those pages
- *    already coordinate with the same backend route.
+ *  - Loop guard: noop when already on /auth/*, since the backend auth routes
+ *    already coordinate with the same Ecopa flow. The /login page must be
+ *    allowed to initiate this redirect.
  */
 export function redirectToEcopaLogin(): void {
   if (typeof window === 'undefined') return;
   const path = window.location.pathname;
-  if (path.startsWith('/auth/') || path === '/login') return;
+  if (path.startsWith('/auth/')) return;
   // Use full assignment so the SPA history is replaced — user shouldn't be
   // able to "back" into a stale auth state.
   window.location.href = ECOPA_LOGIN_PATH;

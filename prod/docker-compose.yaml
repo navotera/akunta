@@ -1,0 +1,92 @@
+name: akunta
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  accounting:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    env_file:
+      - ./.env
+    environment:
+      ECOPA_URL: ${ECOPA_URL} 
+      ECOPA_CLIENT_ID: ${ECOPA_CLIENT_ID} 
+      ECOPA_CLIENT_SECRET: ${ECOPA_CLIENT_SECRET}
+      ECOPA_REDIRECT_URI: ${ECOPA_REDIRECT_URI}
+      ECOPA_API_TOKEN: ${ECOPA_API_TOKEN}
+      ECOPA_EXPECTED_ISSUER: ${ECOPA_EXPECTED_ISSUER}
+      ECOPA_JWKS_CACHE_SECONDS: ${ECOPA_JWKS_CACHE_SECONDS}
+      ECOPA_HTTP_TIMEOUT: ${ECOPA_HTTP_TIMEOUT}
+      ECOPA_WEBHOOK_SECRET: ${ECOPA_WEBHOOK_SECRET}
+      AUTH_SSO_AUTO_REGISTER: ${AUTH_SSO_AUTO_REGISTER}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in .env}
+      APP_URL: ${APP_URL:?APP_URL must be set in .env}
+      SPA_URL: ${SPA_URL:?SPA_URL must be set in .env}
+      LOG_CHANNEL: stderr
+      LOG_STACK: stderr
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PHP_OPCACHE_ENABLE: "1"
+      REDIS_HOST: redis-db
+      REDIS_PORT: "6379"
+    working_dir: /var/www/html/apps/accounting
+    # Bind mount: uploads and generated files stay on the host filesystem.
+    volumes:
+      - ./accounting_storage:/var/www/html/apps/accounting/storage
+    networks:
+      - backend
+      - akunta_postgre
+      - accounting_redis
+    ports:
+      - "${ACCOUNTING_API_BIND:-127.0.0.1}:${ACCOUNTING_API_PORT:-8000}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent http://127.0.0.1:8080/up >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging: *default-logging
+  accounting-web:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting-web:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    depends_on:
+      accounting:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "${ACCOUNTING_WEB_BIND:-127.0.0.1}:${ACCOUNTING_WEB_PORT:-8080}:80"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --spider --quiet http://127.0.0.1/ || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+  akunta_postgre:
+    external: true
+    name: akunta_postgre
+  accounting_redis:
+    external: true
+    name: accounting_redis

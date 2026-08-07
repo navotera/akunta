@@ -28,8 +28,8 @@ class SeedSampleJournalTemplatesAction
     {
         return [
             [
-                'code'        => 'SAMPLE-RENT',
-                'name'        => 'Sewa Kantor Bulanan',
+                'code' => 'SAMPLE-RENT',
+                'name' => 'Sewa Kantor Bulanan',
                 'description' => 'Pencatatan beban sewa kantor yang dibayar tunai setiap bulan. Cocok untuk recurring journal frequency=monthly.',
                 'lines' => [
                     ['account_code' => '6201', 'side' => 'debit',  'amount' => 5_000_000, 'memo' => 'Sewa kantor bulan ini'],
@@ -37,8 +37,8 @@ class SeedSampleJournalTemplatesAction
                 ],
             ],
             [
-                'code'        => 'SAMPLE-SALES-PPN',
-                'name'        => 'Penjualan Tunai + PPN 11%',
+                'code' => 'SAMPLE-SALES-PPN',
+                'name' => 'Penjualan Tunai + PPN 11%',
                 'description' => 'Penjualan langsung diterima cash, dengan PPN keluaran 11%. Kas naik sebesar DPP + PPN, Pendapatan dicatat tanpa PPN, sisanya jadi Hutang PPN.',
                 'lines' => [
                     ['account_code' => '1101', 'side' => 'debit',  'amount' => 1_110_000, 'memo' => 'Penerimaan kas (DPP + PPN)'],
@@ -47,8 +47,8 @@ class SeedSampleJournalTemplatesAction
                 ],
             ],
             [
-                'code'        => 'SAMPLE-PURCHASE-PPN',
-                'name'        => 'Pembelian Barang + PPN 11%',
+                'code' => 'SAMPLE-PURCHASE-PPN',
+                'name' => 'Pembelian Barang + PPN 11%',
                 'description' => 'Pembelian persediaan secara kredit dari supplier ber-NPWP. PPN Masukan dicatat sebagai aktiva (bisa dikreditkan), Hutang Usaha bertambah sebesar total faktur.',
                 'lines' => [
                     ['account_code' => '1301', 'side' => 'debit',  'amount' => 2_000_000, 'memo' => 'Persediaan barang'],
@@ -57,8 +57,8 @@ class SeedSampleJournalTemplatesAction
                 ],
             ],
             [
-                'code'        => 'SAMPLE-DEPRECIATION',
-                'name'        => 'Penyusutan Peralatan Bulanan',
+                'code' => 'SAMPLE-DEPRECIATION',
+                'name' => 'Penyusutan Peralatan Bulanan',
                 'description' => 'Beban penyusutan garis lurus per bulan untuk peralatan kantor. Cocok untuk recurring monthly + auto_post=true (tidak perlu review tiap bulan).',
                 'lines' => [
                     ['account_code' => '6301', 'side' => 'debit',  'amount' => 500_000, 'memo' => 'Beban penyusutan peralatan'],
@@ -66,8 +66,8 @@ class SeedSampleJournalTemplatesAction
                 ],
             ],
             [
-                'code'        => 'SAMPLE-PAYROLL',
-                'name'        => 'Pembayaran Gaji + Potongan PPh 21',
+                'code' => 'SAMPLE-PAYROLL',
+                'name' => 'Pembayaran Gaji + Potongan PPh 21',
                 'description' => 'Gaji bruto dibebankan, PPh 21 dipotong (jadi hutang ke kas negara), sisanya dibayar via kas/bank ke karyawan.',
                 'lines' => [
                     ['account_code' => '6101', 'side' => 'debit',  'amount' => 10_000_000, 'memo' => 'Beban gaji bruto'],
@@ -127,26 +127,27 @@ class SeedSampleJournalTemplatesAction
                 }
 
                 $tmpl = JournalTemplate::create([
-                    'entity_id'    => $entityId,
-                    'code'         => $def['code'],
-                    'name'         => $def['name'],
-                    'description'  => $def['description'],
+                    'entity_id' => $entityId,
+                    'code' => $def['code'],
+                    'name' => $def['name'],
+                    'description' => $def['description'],
                     'journal_type' => Journal::TYPE_GENERAL,
+                    'journal_mode' => Journal::MODE_INTERNAL,
                     'default_memo' => $def['name'],
-                    'is_active'    => true,
-                    'created_by'   => $createdBy,
+                    'is_active' => true,
+                    'created_by' => $createdBy,
                 ]);
 
                 foreach ($def['lines'] as $i => $line) {
                     JournalTemplateLine::create([
                         'template_id' => $tmpl->id,
-                        'line_no'     => $i + 1,
-                        'account_id'  => $accounts[$line['account_code']]->id,
-                        'side'        => $line['side'],
+                        'line_no' => $i + 1,
+                        'account_id' => $accounts[$line['account_code']]->id,
+                        'side' => $line['side'],
                         // Sample templates store account-only — user fills the
                         // amount when applying the template to a new journal.
-                        'amount'      => 0,
-                        'memo'        => $line['memo'] ?? null,
+                        'amount' => 0,
+                        'memo' => $line['memo'] ?? null,
                     ]);
                 }
                 $created++;
@@ -154,10 +155,10 @@ class SeedSampleJournalTemplatesAction
         });
 
         return [
-            'created'                 => $created,
-            'skipped_existing'        => $skippedExisting,
+            'created' => $created,
+            'skipped_existing' => $skippedExisting,
             'skipped_missing_account' => $skippedMissing,
-            'total'                   => count($defs),
+            'total' => count($defs),
         ];
     }
 }

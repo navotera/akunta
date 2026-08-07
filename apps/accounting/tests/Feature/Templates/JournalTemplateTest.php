@@ -6,17 +6,18 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Tenant;
 use App\Actions\InstantiateJournalTemplateAction;
 use App\Actions\RunRecurringJournalAction;
+use App\Exceptions\JournalException;
 use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
 use App\Models\Period;
 use App\Models\RecurringJournal;
-use Illuminate\Support\Carbon;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 
 beforeEach(function () {
-    Gate::define('journal.post', fn (?\Illuminate\Contracts\Auth\Authenticatable $u = null) => true);
+    Gate::define('journal.post', fn (?Authenticatable $u = null) => true);
 
     $tenant = Tenant::create(['name' => 'PT Demo', 'slug' => 'demo-'.uniqid()]);
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Demo']);
@@ -36,30 +37,30 @@ beforeEach(function () {
 
     $this->cash = Account::create([
         'entity_id' => $this->entity->id, 'code' => '1101', 'name' => 'Kas',
-        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
     $this->rent = Account::create([
         'entity_id' => $this->entity->id, 'code' => '6201', 'name' => 'Beban Sewa',
-        'type' => 'expense', 'normal_balance' => 'debit', 'is_postable' => true,
+        'type' => 'expense', 'normal_balance' => 'debit', 'is_postable' => true, 'availability' => 'both',
     ]);
 });
 
 function makeRentTemplate($entity, $rent, $cash): JournalTemplate
 {
     $t = JournalTemplate::create([
-        'entity_id'    => $entity->id,
-        'code'         => 'RENT',
-        'name'         => 'Sewa Kantor Bulanan',
+        'entity_id' => $entity->id,
+        'code' => 'RENT',
+        'name' => 'Sewa Kantor Bulanan',
         'journal_type' => 'general',
         'default_memo' => 'Beban sewa kantor',
     ]);
     JournalTemplateLine::create([
         'template_id' => $t->id, 'line_no' => 1,
-        'account_id'  => $rent->id, 'side' => 'debit', 'amount' => 5000000,
+        'account_id' => $rent->id, 'side' => 'debit', 'amount' => 5000000,
     ]);
     JournalTemplateLine::create([
         'template_id' => $t->id, 'line_no' => 2,
-        'account_id'  => $cash->id, 'side' => 'credit', 'amount' => 5000000,
+        'account_id' => $cash->id, 'side' => 'credit', 'amount' => 5000000,
     ]);
 
     return $t;
@@ -98,6 +99,18 @@ it('applies amount overrides at instantiate time', function () {
         ->and((string) $journal->entries[1]->credit)->toBe('7500000.00');
 });
 
+it('instantiates a fiscal journal from a fiscal template', function () {
+    $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
+    $tmpl->update(['journal_mode' => Journal::MODE_FISCAL]);
+
+    $journal = app(InstantiateJournalTemplateAction::class)->execute(
+        template: $tmpl->fresh(),
+        date: '2026-04-15',
+    );
+
+    expect($journal->journal_mode)->toBe(Journal::MODE_FISCAL);
+});
+
 it('rejects unbalanced overrides', function () {
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 
@@ -108,20 +121,20 @@ it('rejects unbalanced overrides', function () {
             1 => ['amount' => '7500000'],
             2 => ['amount' => '6000000'],
         ],
-    ))->toThrow(\App\Exceptions\JournalException::class);
+    ))->toThrow(JournalException::class);
 });
 
 it('runs a monthly recurring journal and advances next_run_at', function () {
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 
     $rec = RecurringJournal::create([
-        'entity_id'   => $this->entity->id,
+        'entity_id' => $this->entity->id,
         'template_id' => $tmpl->id,
-        'name'        => 'Rent — monthly',
-        'frequency'   => RecurringJournal::FREQUENCY_MONTHLY,
-        'start_date'  => '2026-04-15',
+        'name' => 'Rent — monthly',
+        'frequency' => RecurringJournal::FREQUENCY_MONTHLY,
+        'start_date' => '2026-04-15',
         'next_run_at' => '2026-04-15',
-        'status'      => 'active',
+        'status' => 'active',
     ]);
 
     $journal = app(RunRecurringJournalAction::class)->execute($rec, '2026-04-20');
@@ -137,13 +150,13 @@ it('skips a paused recurring schedule', function () {
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 
     $rec = RecurringJournal::create([
-        'entity_id'   => $this->entity->id,
+        'entity_id' => $this->entity->id,
         'template_id' => $tmpl->id,
-        'name'        => 'Rent — paused',
-        'frequency'   => RecurringJournal::FREQUENCY_MONTHLY,
-        'start_date'  => '2026-04-15',
+        'name' => 'Rent — paused',
+        'frequency' => RecurringJournal::FREQUENCY_MONTHLY,
+        'start_date' => '2026-04-15',
         'next_run_at' => '2026-04-15',
-        'status'      => RecurringJournal::STATUS_PAUSED,
+        'status' => RecurringJournal::STATUS_PAUSED,
     ]);
 
     $journal = app(RunRecurringJournalAction::class)->execute($rec, '2026-04-20');
@@ -156,13 +169,13 @@ it('is idempotent on a single run-date — second run reuses the same journal', 
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 
     $rec = RecurringJournal::create([
-        'entity_id'   => $this->entity->id,
+        'entity_id' => $this->entity->id,
         'template_id' => $tmpl->id,
-        'name'        => 'Rent',
-        'frequency'   => RecurringJournal::FREQUENCY_MONTHLY,
-        'start_date'  => '2026-04-15',
+        'name' => 'Rent',
+        'frequency' => RecurringJournal::FREQUENCY_MONTHLY,
+        'start_date' => '2026-04-15',
         'next_run_at' => '2026-04-15',
-        'status'      => 'active',
+        'status' => 'active',
     ]);
 
     // Roll back next_run_at to retry same run-date
@@ -180,14 +193,14 @@ it('ends a recurring schedule when next_run_at exceeds end_date', function () {
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 
     $rec = RecurringJournal::create([
-        'entity_id'   => $this->entity->id,
+        'entity_id' => $this->entity->id,
         'template_id' => $tmpl->id,
-        'name'        => 'Rent — short',
-        'frequency'   => RecurringJournal::FREQUENCY_MONTHLY,
-        'start_date'  => '2026-04-15',
-        'end_date'    => '2026-04-30',
+        'name' => 'Rent — short',
+        'frequency' => RecurringJournal::FREQUENCY_MONTHLY,
+        'start_date' => '2026-04-15',
+        'end_date' => '2026-04-30',
         'next_run_at' => '2026-04-15',
-        'status'      => 'active',
+        'status' => 'active',
     ]);
 
     app(RunRecurringJournalAction::class)->execute($rec, '2026-04-20');

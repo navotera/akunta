@@ -77,11 +77,11 @@ class AuthController extends Controller
                 ->unique()
                 ->values())
             ->orderBy('name')
-            ->get(['id', 'name', 'slug'])
+            ->get(['id', 'name'])
             ->map(fn (Entity $e) => [
                 'id' => $e->id,
                 'name' => $e->name,
-                'slug' => $e->slug ?? null,
+                'slug' => null,
             ])
             ->all();
 

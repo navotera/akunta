@@ -14,7 +14,7 @@
 <div class="px-6 py-6">
   <header class="mb-4">
     <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
-    <div class="mt-1 flex items-baseline justify-between gap-4">
+    <div class="mt-1 flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold leading-tight text-text-default">{title}</h1>
         {#if subtitle}
@@ -22,13 +22,15 @@
         {/if}
       </div>
       {#if actions}
-        <div class="flex items-center gap-2">{@render actions()}</div>
+        <div class="flex flex-wrap items-end gap-3">{@render actions()}</div>
       {/if}
     </div>
   </header>
 
   {#if toolbar}
-    <section class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-card-bg p-3">
+    <section
+      class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-card-bg p-3"
+    >
       {@render toolbar()}
     </section>
   {/if}

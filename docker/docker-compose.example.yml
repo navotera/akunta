@@ -1,0 +1,121 @@
+name: akunta-production
+
+# Production baseline.
+#
+# Before starting:
+#   1. Copy this file to the production directory as docker-compose.yaml.
+#   2. Put the production .env file next to docker-compose.yaml.
+#   3. Replace every CHANGE_ME value in .env.
+#   4. Log in to GHCR on the host running Compose.
+#   5. Make sure the external PostgreSQL network exists.
+#
+# Example:
+#   docker login ghcr.io
+#   docker compose --env-file .env -f docker-compose.yaml pull
+#   docker compose --env-file .env -f docker-compose.yaml up -d
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  redis:
+    image: redis:7-alpine
+    env_file:
+      - ./.env
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"
+    # Bind mount: keep production Redis data on the host for backup/inspection.
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+  accounting:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in .env}
+      APP_URL: ${APP_URL:?APP_URL must be set in .env}
+      SPA_URL: ${SPA_URL:?SPA_URL must be set in .env}
+      LOG_CHANNEL: stderr
+      LOG_STACK: stderr
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PHP_OPCACHE_ENABLE: "1"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    working_dir: /var/www/html/apps/accounting
+    # Bind mount: uploads and generated files stay on the host filesystem.
+    volumes:
+      - ./accounting_storage:/var/www/html/apps/accounting/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - postgres_db
+    ports:
+      - "${ACCOUNTING_API_BIND:-127.0.0.1}:${ACCOUNTING_API_PORT:-8000}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent http://127.0.0.1:8080/up >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging: *default-logging
+  accounting-web:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting-web:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    depends_on:
+      accounting:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "${ACCOUNTING_WEB_BIND:-127.0.0.1}:${ACCOUNTING_WEB_PORT:-8080}:80"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget --spider --quiet http://127.0.0.1/ || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
+  postgres_db:
+    external: true
+    name: ${POSTGRES_NETWORK:-homeopensynergic_default}

@@ -15,6 +15,7 @@
 .phpunit.cache/
 .phpstan-cache/
 composer.lock
+!apps/accounting/composer.lock
 .DS_Store
 .idea/
 .vscode/
@@ -23,3 +24,19 @@ composer.lock
 !.env.example
 docker/postgres/data/
 docker/redis/data/
+docker/redis_data/
+docker/accounting_storage/
+docker/production.env
+*/.omx/*
+.omx/
+
+# Local agent/runtime artifacts
+.pi/
+.pi-subagents/
+.omc/
+
+# Frontend generated output
+**/.svelte-kit/
+**/build/
+**/test-results/
+**/playwright-report/

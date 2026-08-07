@@ -8,6 +8,17 @@
   // Default flow: bounce to Ecopa OIDC. The legacy local form is reachable via
   // `?local=1` for environments where Ecopa is not configured (typically dev).
   let useLocalForm = $derived($page.url.searchParams.get('local') === '1');
+  let loggedOut = $derived($page.url.searchParams.get('logged_out') === '1');
+  let ssoError = $derived($page.url.searchParams.get('sso_error'));
+  let ssoErrorMessage = $derived(
+    ssoError === 'state_mismatch'
+      ? 'Sesi login kedaluwarsa atau tidak terbaca. Mulai login baru.'
+      : ssoError === 'token_exchange'
+        ? 'Ecopa gagal menyelesaikan login Akunta. Coba lagi atau hubungi admin.'
+        : ssoError
+          ? 'Login dengan Ecopa gagal. Coba lagi atau hubungi admin.'
+          : null,
+  );
 
   let email = $state('');
   let password = $state('');
@@ -16,8 +27,12 @@
   let formError = $state<string | null>(null);
 
   onMount(() => {
-    if (!useLocalForm) redirectToEcopaLogin();
+    if (!useLocalForm && !loggedOut && !ssoError) redirectToEcopaLogin();
   });
+
+  function startSsoLogin() {
+    redirectToEcopaLogin();
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -35,10 +50,51 @@
   }
 </script>
 
-{#if !useLocalForm}
-  <div class="flex min-h-screen items-center justify-center px-4 text-text-muted">
-    Mengarahkan ke Ecopa…
+{#if loggedOut}
+  <div class="flex min-h-screen items-center justify-center px-4">
+    <div
+      class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
+    >
+      <h1 class="mb-1 text-xl font-bold">Anda telah logout</h1>
+      <p class="mb-5 text-sm text-text-muted">Sesi Akunta sudah ditutup.</p>
+      <button
+        type="button"
+        class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
+        onclick={startSsoLogin}
+        data-testid="ecopa-login-button"
+      >
+        Masuk dengan Ecopa
+      </button>
+    </div>
   </div>
+{:else if !useLocalForm}
+  {#if ssoErrorMessage}
+    <div class="flex min-h-screen items-center justify-center px-4">
+      <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
+        <h1 class="mb-1 text-xl font-bold">Login Akunta gagal</h1>
+        <p class="mb-5 text-sm text-text-muted">{ssoErrorMessage}</p>
+        <div
+          class="mb-5 rounded-md border border-danger bg-danger-light px-3 py-2 text-left text-sm text-danger"
+          role="alert"
+          data-testid="sso-error"
+        >
+          Tidak ada data yang berubah. Silakan mulai ulang proses login.
+        </div>
+        <button
+          type="button"
+          class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
+          onclick={startSsoLogin}
+          data-testid="ecopa-login-button"
+        >
+          Coba lagi dengan Ecopa
+        </button>
+      </div>
+    </div>
+  {:else}
+    <div class="flex min-h-screen items-center justify-center px-4 text-text-muted">
+      Mengarahkan ke Ecopa…
+    </div>
+  {/if}
 {:else}
   <div class="flex min-h-screen items-center justify-center px-4">
     <form
@@ -50,7 +106,10 @@
       <p class="mb-5 text-sm text-text-muted">Masuk ke aplikasi akuntansi (mode lokal).</p>
 
       {#if formError}
-        <div class="mb-4 rounded-md border border-danger bg-danger-light px-3 py-2 text-sm text-danger" role="alert">
+        <div
+          class="mb-4 rounded-md border border-danger bg-danger-light px-3 py-2 text-sm text-danger"
+          role="alert"
+        >
           {formError}
         </div>
       {/if}

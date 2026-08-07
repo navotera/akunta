@@ -45,6 +45,8 @@ return [
         '/oidc/backchannel-logout',
         '/webhooks/ecopa',
         '/login',
+        // Backend entrypoint for the separate SvelteKit SPA.
+        '/dashboard',
         // Dev: Filament panel uses Entity as Filament-tenant; tenant DB provisioning deferred to step 12.
         // Remove these exemptions once SaaS provisioning lands + control DB is live.
         '/admin-accounting',
