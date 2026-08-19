@@ -28,6 +28,12 @@ export class ApiError extends Error {
 
 const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
 
+export function isEcopaIntegrationEnabled(): boolean {
+  if (typeof localStorage === 'undefined') return !import.meta.env.DEV;
+  const value = localStorage.getItem('akunta.ecopa.integration');
+  return value === null ? !import.meta.env.DEV : value === 'on';
+}
+
 /**
  * Redirect the browser to the Ecopa OIDC login flow on Akunta backend. The
  * Laravel route `ecopa.login` (`/auth/ecopa/redirect`) handles both the
@@ -42,6 +48,7 @@ const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
  */
 export function redirectToEcopaLogin(): void {
   if (typeof window === 'undefined') return;
+  if (!isEcopaIntegrationEnabled()) return;
   const path = window.location.pathname;
   if (path.startsWith('/auth/')) return;
   // Use full assignment so the SPA history is replaced — user shouldn't be

@@ -101,15 +101,41 @@ export interface GeneralLedgerData {
   lines: GeneralLedgerLine[];
 }
 
+export interface FiscalReconciliationRow {
+  account_id: string;
+  code: string;
+  name: string;
+  type: string;
+  book_amount: string;
+  positive_adjustment: string;
+  negative_adjustment: string;
+  final_amount: string;
+}
+
+export interface FiscalReconciliationData {
+  entity_id: string;
+  period_start: string;
+  period_end: string;
+  book_net_income: string;
+  positive_adjustments: string;
+  negative_adjustments: string;
+  final_net_income: string;
+  rows: FiscalReconciliationRow[];
+}
+
 interface Envelope<T> {
   data: T;
   meta: ReportMeta;
 }
 
 export const reportingApi = {
-  trialBalance: (asOf: string, tenantSlug?: string | null) =>
+  trialBalance: (
+    asOf: string,
+    journalMode: 'internal' | 'fiscal' = 'internal',
+    tenantSlug?: string | null,
+  ) =>
     api<Envelope<TrialBalanceData>>(
-      `/api/v1/spa/reports/trial-balance?as_of=${encodeURIComponent(asOf)}`,
+      `/api/v1/spa/reports/trial-balance?as_of=${encodeURIComponent(asOf)}&journal_mode=${journalMode}`,
       { tenantSlug },
     ),
 
@@ -117,20 +143,27 @@ export const reportingApi = {
     asOf: string,
     periodStart?: string | null,
     showFiscal = false,
+    journalMode: 'internal' | 'fiscal' = 'internal',
     tenantSlug?: string | null,
   ) => {
     const params = new URLSearchParams({ as_of: asOf });
     if (periodStart) params.set('period_start', periodStart);
     if (showFiscal) params.set('show_fiscal', '1');
+    params.set('journal_mode', journalMode);
     return api<Envelope<BalanceSheetData>>(
       `/api/v1/spa/reports/balance-sheet?${params.toString()}`,
       { tenantSlug },
     );
   },
 
-  incomeStatement: (periodStart: string, periodEnd: string, tenantSlug?: string | null) =>
+  incomeStatement: (
+    periodStart: string,
+    periodEnd: string,
+    journalMode: 'internal' | 'fiscal' = 'internal',
+    tenantSlug?: string | null,
+  ) =>
     api<Envelope<IncomeStatementData>>(
-      `/api/v1/spa/reports/income-statement?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}`,
+      `/api/v1/spa/reports/income-statement?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}&journal_mode=${journalMode}`,
       { tenantSlug },
     ),
 
@@ -146,6 +179,7 @@ export const reportingApi = {
       source_ref_type?: string;
       source_ref_id?: string;
     } = {},
+    journalMode: 'internal' | 'fiscal' = 'internal',
     tenantSlug?: string | null,
   ) => {
     const params = new URLSearchParams({
@@ -153,10 +187,17 @@ export const reportingApi = {
       period_start: periodStart,
       period_end: periodEnd,
     });
+    params.set('journal_mode', journalMode);
     for (const [k, v] of Object.entries(filters)) if (v) params.set(k, v);
     return api<Envelope<GeneralLedgerData>>(
       `/api/v1/spa/reports/general-ledger?${params.toString()}`,
       { tenantSlug },
     );
   },
+
+  fiscalReconciliation: (periodStart: string, periodEnd: string, tenantSlug?: string | null) =>
+    api<Envelope<FiscalReconciliationData>>(
+      `/api/v1/spa/reports/fiscal-reconciliation?period_start=${encodeURIComponent(periodStart)}&period_end=${encodeURIComponent(periodEnd)}`,
+      { tenantSlug },
+    ),
 };

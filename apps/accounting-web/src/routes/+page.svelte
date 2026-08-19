@@ -5,7 +5,8 @@
 
   onMount(async () => {
     const u = await auth.refresh();
-    goto(u ? '/dashboard' : '/login', { replaceState: true });
+    const local = new URLSearchParams(window.location.search).get('local') === '1';
+    goto(u ? '/dashboard' : local ? '/login?local=1' : '/login', { replaceState: true });
   });
 </script>
 

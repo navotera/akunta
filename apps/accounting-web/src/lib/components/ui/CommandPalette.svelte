@@ -4,6 +4,7 @@
   import { accountApi, type Account } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { periodApi, type Period } from '$lib/api/period.js';
+  import { formatDate } from '$lib/utils/date.js';
 
   interface Item {
     id: string;
@@ -107,7 +108,7 @@
           items.push({
             id: `pe:${p.id}`,
             label: p.name,
-            sub: `${p.start_date} → ${p.end_date} · ${p.status}`,
+    sub: `${formatDate(p.start_date)} → ${formatDate(p.end_date)} · ${p.status}`,
             href: `/periode?focus=${encodeURIComponent(p.id)}`,
             icon: '⌚',
             group: 'Periode',

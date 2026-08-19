@@ -8,6 +8,10 @@
     code?: string | null;
     /** Optional muted tag rendered far right (e.g. "PARENT", "GLOBAL"). */
     tag?: string | null;
+    /** Accounting journal scope shown as a badge on account options. */
+    availability?: 'intern' | 'fiskal' | 'both' | null;
+    /** True when the option still belongs to the removable demo dataset. */
+    isFake?: boolean;
     disabled?: boolean;
   }
 
@@ -152,6 +156,15 @@
           role="option"
           aria-selected={o.id === value}
         >
+          {#if o.isFake}
+            <span
+              class="h-1.5 w-1.5 shrink-0 rounded-full bg-text-muted/60"
+              title="Akun hasil import fake data"
+              aria-label="Akun fake"
+            ></span>
+          {:else}
+            <span class="h-1.5 w-1.5 shrink-0" aria-hidden="true"></span>
+          {/if}
           {#if o.code}
             <span class="font-mono text-xs text-text-muted w-14 shrink-0">{o.code}</span>
           {/if}
@@ -159,8 +172,18 @@
           {#if o.sublabel}
             <span class="text-xs text-text-muted truncate">{o.sublabel}</span>
           {/if}
+          {#if o.availability}
+            <span
+              class="ml-auto inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold {o.availability ===
+              'fiskal'
+                ? 'bg-[#fff0b8] text-[#8a5a00]'
+                : o.availability === 'intern'
+                  ? 'bg-paid-light text-paid'
+                  : 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'}"
+            >{o.availability === 'fiskal' ? 'Fiskal' : o.availability === 'intern' ? 'Intern' : 'Intern & Fiskal'}</span>
+          {/if}
           {#if o.tag}
-            <span class="ml-auto text-[0.6rem] uppercase tracking-wider text-text-muted">{o.tag}</span>
+            <span class="text-[0.6rem] uppercase tracking-wider text-text-muted">{o.tag}</span>
           {/if}
         </button>
       {:else}

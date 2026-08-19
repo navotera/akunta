@@ -18,7 +18,7 @@
         <span class="text-primary mr-1">✦</span> Mulai dari template
       </strong>
       <span class="block text-xs text-text-muted leading-snug mt-1"
-        >Isi otomatis akun debit & kredit</span
+        >Pilih bookmarked journal template</span
       >
     </div>
   </header>

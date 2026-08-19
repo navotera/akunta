@@ -1,7 +1,10 @@
 <script lang="ts">
   import { page } from '$app/stores';
 
-  interface Tab { href: string; label: string; }
+  interface Tab {
+    href: string;
+    label: string;
+  }
 
   const tabs: Tab[] = [
     { href: '/laporan/laba-rugi', label: 'Laba Rugi' },
@@ -9,6 +12,7 @@
     { href: '/laporan/neraca-saldo', label: 'Neraca Saldo' },
     { href: '/laporan/buku-besar', label: 'Buku Besar' },
     { href: '/laporan/buku-pembantu', label: 'Buku Pembantu' },
+    { href: '/fiskal/koreksi', label: 'Pajak Final' },
   ];
 
   function isActive(href: string): boolean {

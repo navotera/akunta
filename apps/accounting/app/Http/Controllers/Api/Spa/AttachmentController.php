@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\Spa;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Attachment;
+use App\Models\FiscalAdjustment;
 use App\Models\Journal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +35,8 @@ class AttachmentController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
+        $this->authorizeParent($request, $entity->id, $data['attachable_type'], $data['attachable_id'], false);
+
         return response()->json([
             'data' => $items->map(fn (Attachment $a) => $this->serialize($a))->all(),
         ]);
@@ -44,23 +47,13 @@ class AttachmentController extends Controller
         $entity = $this->resolveEntity($request);
 
         $data = $request->validate([
-            'attachable_type' => 'required|string|in:'.Journal::class,
+            'attachable_type' => 'required|string|in:'.Journal::class.','.FiscalAdjustment::class,
             'attachable_id' => 'required|string|size:26',
             'file' => 'required|file|max:5120', // KB
             'description' => 'nullable|string|max:255',
         ]);
 
-        // Verify ownership of the parent record (only Journal supported in MVP).
-        if ($data['attachable_type'] === Journal::class) {
-            $exists = Journal::where('entity_id', $entity->id)
-                ->where('id', $data['attachable_id'])
-                ->exists();
-            if (! $exists) {
-                throw ValidationException::withMessages([
-                    'attachable_id' => 'Parent journal not found in this tenant.',
-                ]);
-            }
-        }
+        $this->authorizeParent($request, $entity->id, $data['attachable_type'], $data['attachable_id'], true);
 
         $file = $request->file('file');
         $disk = config('filesystems.default');
@@ -91,6 +84,7 @@ class AttachmentController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
+        $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, false);
 
         return response()->json([
             'data' => array_merge($this->serialize($attachment), [
@@ -106,6 +100,7 @@ class AttachmentController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
+        $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true);
 
         Storage::disk($attachment->disk)->delete($attachment->path);
         $attachment->delete();
@@ -126,5 +121,42 @@ class AttachmentController extends Controller
             'created_at' => optional($a->created_at)?->toIso8601String(),
             'uploaded_by' => $a->uploaded_by,
         ];
+    }
+
+    private function authorizeParent(Request $request, string $entityId, string $type, string $id, bool $write): void
+    {
+        $user = $request->user();
+        if ($type === Journal::class) {
+            $journal = Journal::query()->where('entity_id', $entityId)->find($id);
+            if (! $journal) {
+                throw ValidationException::withMessages(['attachable_id' => 'Parent journal not found in this tenant.']);
+            }
+            $isInspector = $user?->assignments()->whereNull('revoked_at')
+                ->whereHas('role', fn ($query) => $query->where('code', 'inspector'))->exists() ?? false;
+            abort_if($isInspector && $journal->journal_mode !== Journal::MODE_FISCAL, 403);
+            abort_unless($user?->hasPermission($write ? 'journal.update' : 'journal.read', $entityId), 403);
+
+            return;
+        }
+
+        if ($type === FiscalAdjustment::class) {
+            $adjustment = FiscalAdjustment::query()->where('entity_id', $entityId)->find($id);
+            if (! $adjustment) {
+                throw ValidationException::withMessages(['attachable_id' => 'Koreksi Fiskal tidak ditemukan pada entitas ini.']);
+            }
+            abort_unless(
+                $user?->hasPermission($write ? 'fiscal.adjustment.manage' : 'fiscal.adjustment.read', $entityId),
+                403,
+            );
+            if ($write && $adjustment->status !== FiscalAdjustment::STATUS_DRAFT) {
+                throw ValidationException::withMessages([
+                    'status' => 'Bukti koreksi yang sudah disetujui tidak dapat diubah.',
+                ]);
+            }
+
+            return;
+        }
+
+        abort(422, 'Unsupported attachment parent.');
     }
 }

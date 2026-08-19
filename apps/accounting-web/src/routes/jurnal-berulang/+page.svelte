@@ -7,6 +7,7 @@
   import { ApiError } from '$lib/api/client.js';
   import Combobox from '$lib/components/ui/Combobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { formatDate } from '$lib/utils/date.js';
 
   let items = $state<RecurringJournal[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
@@ -124,7 +125,7 @@
 <div class="px-6 py-6">
   <header class="mb-5 flex items-center justify-between">
     <div>
-      <p class="text-xs font-medium text-text-muted">Operasional / Jurnal Berulang</p>
+      <p class="text-xs font-medium text-text-muted">Jurnal / Jurnal Berulang</p>
       <h1 class="text-2xl font-bold">Jurnal Berulang</h1>
       <p class="text-sm text-text-muted">{items.length} schedule</p>
     </div>
@@ -162,7 +163,7 @@
               <td class="px-4 py-2 font-medium">{r.name}</td>
               <td class="px-4 py-2 font-mono text-xs">{r.template_code ?? r.template_id.slice(0, 8)}</td>
               <td class="px-4 py-2 capitalize">{r.frequency}</td>
-              <td class="px-4 py-2">{r.start_date}</td>
+              <td class="px-4 py-2">{formatDate(r.start_date)}</td>
               <td class="px-4 py-2">{r.next_run_at ?? '—'}</td>
               <td class="px-4 py-2">
                 <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(r.status)}">

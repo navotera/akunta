@@ -46,7 +46,7 @@ class JournalTemplateController extends Controller
             $query->where('journal_mode', $journalMode);
         }
 
-        $templates = $query->get(['id', 'name', 'code', 'description', 'journal_type', 'journal_mode', 'is_active', 'entity_id']);
+        $templates = $query->get(['id', 'name', 'code', 'description', 'journal_type', 'journal_mode', 'is_active', 'is_bookmarked', 'entity_id']);
 
         return response()->json([
             'data' => $templates->map(fn (JournalTemplate $t) => $this->summary($t))->all(),
@@ -131,6 +131,16 @@ class JournalTemplateController extends Controller
         return response()->json(null, 204);
     }
 
+    public function bookmark(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $template = JournalTemplate::where('entity_id', $entity->id)->findOrFail($id);
+        $data = $request->validate(['is_bookmarked' => 'required|boolean']);
+        $template->update(['is_bookmarked' => $data['is_bookmarked']]);
+
+        return response()->json(['data' => $this->summary($template->fresh()->loadCount('lines'))]);
+    }
+
     private function validatePayload(Request $request, string $entityId, ?string $templateId = null): array
     {
         $codeUnique = $templateId
@@ -146,6 +156,7 @@ class JournalTemplateController extends Controller
             'default_memo' => 'nullable|string|max:400',
             'default_reference' => 'nullable|string|max:120',
             'is_active' => 'sometimes|boolean',
+            'is_bookmarked' => 'sometimes|boolean',
             'lines' => 'array',
             'lines.*.account_id' => 'required|string|size:26',
             'lines.*.side' => 'required|in:debit,credit',
@@ -191,6 +202,7 @@ class JournalTemplateController extends Controller
             'journal_type' => $t->journal_type,
             'journal_mode' => $t->journal_mode,
             'is_active' => (bool) $t->is_active,
+            'is_bookmarked' => (bool) $t->is_bookmarked,
             'is_global' => $t->entity_id === null,
             'lines_count' => $t->lines_count,
         ];
@@ -208,6 +220,7 @@ class JournalTemplateController extends Controller
             'default_memo' => $t->default_memo,
             'default_reference' => $t->default_reference,
             'is_active' => (bool) $t->is_active,
+            'is_bookmarked' => (bool) $t->is_bookmarked,
             'is_global' => $t->entity_id === null,
             'lines' => $t->lines->map(fn ($l) => [
                 'line_no' => $l->line_no,

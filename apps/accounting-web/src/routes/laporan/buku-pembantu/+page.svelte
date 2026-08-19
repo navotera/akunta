@@ -11,6 +11,7 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { formatDate } from '$lib/utils/date.js';
 
   function firstOfMonth(): string {
     const d = new Date();
@@ -83,7 +84,7 @@
 <ReportShell
   title="Buku Pembantu"
   breadcrumb="Laporan / Buku Pembantu"
-  subtitle={meta ? `${meta.source_app} · ${meta.ref_type} · ${meta.period_start} → ${meta.period_end}` : null}
+  subtitle={meta ? `${meta.source_app} · ${meta.ref_type} · ${formatDate(meta.period_start)} → ${formatDate(meta.period_end)}` : null}
 >
   {#snippet toolbar()}
     <label class="text-sm">

@@ -3,11 +3,12 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
-  import { redirectToEcopaLogin } from '$lib/api/client.js';
+  import { isEcopaIntegrationEnabled, redirectToEcopaLogin } from '$lib/api/client.js';
 
   // Default flow: bounce to Ecopa OIDC. The legacy local form is reachable via
   // `?local=1` for environments where Ecopa is not configured (typically dev).
-  let useLocalForm = $derived($page.url.searchParams.get('local') === '1');
+  let localMode = $state(false);
+  let useLocalForm = $derived(localMode || $page.url.searchParams.get('local') === '1');
   let loggedOut = $derived($page.url.searchParams.get('logged_out') === '1');
   let ssoError = $derived($page.url.searchParams.get('sso_error'));
   let ssoErrorMessage = $derived(
@@ -27,8 +28,27 @@
   let formError = $state<string | null>(null);
 
   onMount(() => {
-    if (!useLocalForm && !loggedOut && !ssoError) redirectToEcopaLogin();
+    localMode = !isEcopaIntegrationEnabled();
+    if (localMode && !loggedOut) {
+      void loginLocal();
+    } else if (!useLocalForm && !loggedOut && !ssoError) {
+      redirectToEcopaLogin();
+    }
   });
+
+  async function loginLocal() {
+    if (submitting) return;
+    submitting = true;
+    formError = null;
+    try {
+      await auth.localLogin();
+      goto('/dashboard', { replaceState: true });
+    } catch (err) {
+      formError = err instanceof Error ? err.message : String(err);
+    } finally {
+      submitting = false;
+    }
+  }
 
   function startSsoLogin() {
     redirectToEcopaLogin();
@@ -52,19 +72,35 @@
 
 {#if loggedOut}
   <div class="flex min-h-screen items-center justify-center px-4">
-    <div
-      class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
-    >
+    <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
       <h1 class="mb-1 text-xl font-bold">Anda telah logout</h1>
       <p class="mb-5 text-sm text-text-muted">Sesi Akunta sudah ditutup.</p>
       <button
         type="button"
         class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
-        onclick={startSsoLogin}
-        data-testid="ecopa-login-button"
+        onclick={localMode ? loginLocal : startSsoLogin}
+        data-testid={localMode ? 'local-login-button' : 'ecopa-login-button'}
       >
-        Masuk dengan Ecopa
+        {localMode ? 'Masuk kembali' : 'Masuk dengan Ecopa'}
       </button>
+    </div>
+  </div>
+{:else if localMode}
+  <div class="flex min-h-screen items-center justify-center px-4">
+    <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
+      <h1 class="mb-1 text-xl font-bold">Akunta</h1>
+      {#if submitting}
+        <p class="text-sm text-text-muted">Menyiapkan akun lokal…</p>
+      {:else if formError}
+        <p class="mb-4 text-sm text-danger">{formError}</p>
+        <button
+          type="button"
+          class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
+          onclick={loginLocal}
+        >
+          Coba lagi
+        </button>
+      {/if}
     </div>
   </div>
 {:else if !useLocalForm}

@@ -7,7 +7,8 @@ namespace App\Services\Onboarding;
 /**
  * Loads the per-industry CoA templates from `database/seed-data/coa-templates/`.
  *
- * Template format (each row): [code, name, type, normal_balance, parent_code|null, is_postable]
+ * Template format (each row):
+ * [code, name, type, normal_balance, parent_code|null, is_postable, availability?, description?]
  */
 class CoaTemplateRegistry
 {
@@ -15,16 +16,17 @@ class CoaTemplateRegistry
     public function available(): array
     {
         return [
-            'generic'    => ['key' => 'generic',    'label' => 'Generic UMKM',      'description' => 'CoA dasar untuk UMKM segala industri (4-digit).'],
-            'retail'     => ['key' => 'retail',     'label' => 'Retail / Toko',     'description' => 'Persediaan multi-kategori, EDC/E-Wallet, marketplace.'],
-            'fnb'        => ['key' => 'fnb',        'label' => 'F&B / Kuliner',     'description' => 'Restoran, cafe, catering — bahan + minuman + service charge.'],
-            'jasa'       => ['key' => 'jasa',       'label' => 'Jasa / Profesional','description' => 'Konsultan, agency, IT, akuntan — project-based, retainer.'],
+            'generic' => ['key' => 'generic',    'label' => 'Generic UMKM',      'description' => 'CoA dasar untuk UMKM segala industri (4-digit).'],
+            'retail' => ['key' => 'retail',     'label' => 'Retail / Toko',     'description' => 'Persediaan multi-kategori, EDC/E-Wallet, marketplace.'],
+            'fnb' => ['key' => 'fnb',        'label' => 'F&B / Kuliner',     'description' => 'Restoran, cafe, catering — bahan + minuman + service charge.'],
+            'jasa' => ['key' => 'jasa',       'label' => 'Jasa / Profesional', 'description' => 'Konsultan, agency, IT, akuntan — project-based, retainer.'],
+            'teknologi' => ['key' => 'teknologi',  'label' => 'Teknologi & IT',    'description' => 'Custom software, SaaS, hosting, hardware/software IT, konsultasi, dan managed services.'],
             'manufaktur' => ['key' => 'manufaktur', 'label' => 'Manufaktur',        'description' => 'Bahan baku, WIP, barang jadi, biaya produksi.'],
             'konstruksi' => ['key' => 'konstruksi', 'label' => 'Konstruksi',        'description' => 'Kontraktor — retensi, termin, alat berat, jaminan.'],
         ];
     }
 
-    /** @return list<array{0: string, 1: string, 2: string, 3: string, 4: ?string, 5: bool}> */
+    /** @return list<array{0: string, 1: string, 2: string, 3: string, 4: ?string, 5: bool, 6?: string, 7?: string}> */
     public function load(string $key): array
     {
         $key = $this->normalizeKey($key);

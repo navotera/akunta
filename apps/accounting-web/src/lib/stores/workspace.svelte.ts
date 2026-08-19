@@ -3,6 +3,7 @@ import DashboardPage from '../../routes/dashboard/+page.svelte';
 import AccountPage from '../../routes/akun/+page.svelte';
 import PeriodPage from '../../routes/periode/+page.svelte';
 import IntegrationPage from '../../routes/integrasi/+page.svelte';
+import SettingsPage from '../../routes/settings/+page.svelte';
 import JournalsPage from '../../routes/journals/+page.svelte';
 import JournalDetailPage from '../../routes/journals/[id]/+page.svelte';
 import NewJournalPage from '../../routes/journals/new/+page.svelte';
@@ -14,6 +15,10 @@ import BalanceSheetPage from '../../routes/laporan/neraca/+page.svelte';
 import GeneralLedgerPage from '../../routes/laporan/buku-besar/+page.svelte';
 import SubsidiaryLedgerPage from '../../routes/laporan/buku-pembantu/+page.svelte';
 import OnboardingPage from '../../routes/onboarding/+page.svelte';
+import AutoMappingPage from '../../routes/auto-mapping/+page.svelte';
+import AutoMappingDetailPage from '../../routes/auto-mapping/[id]/+page.svelte';
+import AutoMappingDocumentationPage from '../../routes/documentation/auto-mapping/+page.svelte';
+import DocumentationPage from '../../routes/documentation/+page.svelte';
 
 type PageComponent = Component<Record<string, never>>;
 
@@ -50,6 +55,10 @@ const routes: RouteDefinition[] = [
     icon: '↻',
     component: RecurringJournalPage,
   },
+  { prefix: '/auto-mapping/', label: 'Detail Auto Mapping', icon: '⇄', component: AutoMappingDetailPage },
+  { prefix: '/auto-mapping', exact: true, label: 'Auto Mapping', icon: '⇄', component: AutoMappingPage },
+  { prefix: '/documentation/auto-mapping', exact: true, label: 'Dokumentasi Auto Mapping', icon: '▤', component: AutoMappingDocumentationPage },
+  { prefix: '/documentation', exact: true, label: 'Documentation', icon: '▤', component: DocumentationPage },
   { prefix: '/akun', exact: true, label: 'Bagan Akun', icon: '⊞', component: AccountPage },
   { prefix: '/periode', exact: true, label: 'Periode', icon: '⌚', component: PeriodPage },
   {
@@ -60,6 +69,7 @@ const routes: RouteDefinition[] = [
     component: JournalTemplatePage,
   },
   { prefix: '/integrasi', exact: true, label: 'Integrasi', icon: '⌘', component: IntegrationPage },
+  { prefix: '/settings', exact: true, label: 'Setting', icon: '⚙', component: SettingsPage },
   {
     prefix: '/laporan/neraca-saldo',
     exact: true,
@@ -98,6 +108,8 @@ const routes: RouteDefinition[] = [
   { prefix: '/onboarding', exact: true, label: 'Onboarding', icon: '✓', component: OnboardingPage },
 ];
 
+const WORKSPACE_STORAGE_KEY = 'akunta:accounting-workspace-tabs';
+
 export const workspace = $state({
   tabs: [] as WorkspaceTab[],
   initialized: false,
@@ -127,26 +139,30 @@ export function initializeWorkspace(href: string): void {
   if (workspace.initialized) return;
 
   let restored: WorkspaceTab[] = [];
-  if (typeof sessionStorage !== 'undefined') {
+  if (typeof localStorage !== 'undefined') {
     try {
       const stored = JSON.parse(
-        sessionStorage.getItem('akunta:accounting-workspace-tabs') ?? '[]',
+        localStorage.getItem(WORKSPACE_STORAGE_KEY) ??
+          sessionStorage.getItem(WORKSPACE_STORAGE_KEY) ??
+          '[]',
       ) as Array<Pick<WorkspaceTab, 'href'>>;
       restored = stored.filter((tab) => tab?.href).map((tab) => resolveWorkspaceTab(tab.href));
     } catch {
-      sessionStorage.removeItem('akunta:accounting-workspace-tabs');
+      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+      sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
     }
   }
 
   workspace.tabs = restored;
   ensureWorkspaceTab(href);
   workspace.initialized = true;
+  persistWorkspace();
 }
 
 export function persistWorkspace(): void {
-  if (typeof sessionStorage === 'undefined') return;
-  sessionStorage.setItem(
-    'akunta:accounting-workspace-tabs',
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(
+    WORKSPACE_STORAGE_KEY,
     JSON.stringify(workspace.tabs.map(({ href, label, icon }) => ({ href, label, icon }))),
   );
 }

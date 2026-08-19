@@ -7,17 +7,22 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { formatDate } from '$lib/utils/date.js';
 
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<TrialBalanceData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let journalMode = $state<'internal' | 'fiscal'>('internal');
+  let isInspector = $derived(
+    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
+  );
 
   async function load() {
     loading = true;
     error = null;
     try {
-      const res = await reportingApi.trialBalance(asOf);
+      const res = await reportingApi.trialBalance(asOf, journalMode);
       report = res.data;
     } catch (e) {
       error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
@@ -34,12 +39,25 @@
         return;
       }
     }
+    if (isInspector) journalMode = 'fiscal';
     await load();
   });
 </script>
 
-<ReportShell title="Neraca Saldo" breadcrumb="Laporan / Neraca Saldo" subtitle={report ? `Per ${report.as_of}` : null}>
+<ReportShell
+  title="Neraca Saldo"
+  breadcrumb="Laporan / Neraca Saldo"
+  subtitle={report ? `Per ${formatDate(report.as_of)}` : null}
+>
   {#snippet toolbar()}
+    <label class="text-sm"
+      ><span class="block font-medium mb-1">Buku</span><select
+        class="rounded-md border border-border-default px-3 py-2"
+        bind:value={journalMode}
+        disabled={isInspector}
+        ><option value="internal">Intern</option><option value="fiscal">Fiskal</option></select
+      ></label
+    >
     <label class="text-sm">
       <span class="block font-medium mb-1">Per Tanggal</span>
       <DateInput value={asOf} onChange={(iso) => (asOf = iso)} testId="report-as-of" />
@@ -72,23 +90,35 @@
       </thead>
       <tbody>
         {#each report.rows as r (r.id)}
-          <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => goto(`/laporan/buku-besar?account_id=${r.id}`)}>
+          <tr
+            class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+            onclick={() => goto(`/laporan/buku-besar?account_id=${r.id}`)}
+          >
             <td class="px-4 py-2 font-mono">{r.code}</td>
             <td class="px-4 py-2">{r.name}</td>
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(r.total_debit)}</td>
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(r.total_credit)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum font-semibold">{formatRupiah(r.balance)}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum font-semibold"
+              >{formatRupiah(r.balance)}</td
+            >
           </tr>
         {:else}
-          <tr><td colspan="5" class="px-4 py-10 text-center text-text-muted">Tidak ada saldo pada tanggal ini.</td></tr>
+          <tr
+            ><td colspan="5" class="px-4 py-10 text-center text-text-muted"
+              >Tidak ada saldo pada tanggal ini.</td
+            ></tr
+          >
         {/each}
       </tbody>
       {#if report.rows.length > 0}
         <tfoot class="bg-page-bg font-semibold">
           <tr class="border-t-2 border-border-default">
             <td class="px-4 py-3" colspan="2">Total</td>
-            <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(report.total_debit)}</td>
-            <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(report.total_credit)}</td>
+            <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(report.total_debit)}</td
+            >
+            <td class="px-4 py-3 text-right font-mono tabnum"
+              >{formatRupiah(report.total_credit)}</td
+            >
             <td class="px-4 py-3 text-right font-mono tabnum text-paid">
               {report.total_debit === report.total_credit ? '✓ Balance' : '⚠ Tidak balance'}
             </td>

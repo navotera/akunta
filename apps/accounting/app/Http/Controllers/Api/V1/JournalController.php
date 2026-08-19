@@ -27,6 +27,7 @@ class JournalController extends Controller
     {
         $data = $request->validate([
             'entity_id' => 'required|string|size:26',
+            'transaction_code' => 'nullable|string|max:80',
             'reference' => 'nullable|string|max:120',
             'date' => 'required|date_format:Y-m-d',
             'currency' => 'nullable|string|size:3',
@@ -104,6 +105,7 @@ class JournalController extends Controller
                     'period_id' => $period->id,
                     'type' => Journal::TYPE_GENERAL,
                     'number' => $this->generateNumber(),
+                    'transaction_code' => $data['transaction_code'] ?? null,
                     'date' => $data['date'],
                     'reference' => $data['reference'] ?? null,
                     'memo' => $data['metadata']['memo'] ?? null,
@@ -174,6 +176,7 @@ class JournalController extends Controller
             try {
                 $data = validator($itemRaw, [
                     'entity_id' => 'required|string|size:26',
+                    'transaction_code' => 'nullable|string|max:80',
                     'reference' => 'nullable|string|max:120',
                     'date' => 'required|date_format:Y-m-d',
                     'currency' => 'nullable|string|size:3',
@@ -273,6 +276,7 @@ class JournalController extends Controller
                     'period_id' => $period->id,
                     'type' => Journal::TYPE_GENERAL,
                     'number' => $this->generateNumber(),
+                    'transaction_code' => $data['transaction_code'] ?? null,
                     'date' => $data['date'],
                     'reference' => $data['reference'] ?? null,
                     'memo' => $data['metadata']['memo'] ?? null,

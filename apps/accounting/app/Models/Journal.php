@@ -31,6 +31,10 @@ class Journal extends Model
 
     public const STATUS_DRAFT = 'draft';
 
+    public const STATUS_SUBMITTED = 'submitted';
+
+    public const STATUS_REJECTED = 'rejected';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -40,7 +44,9 @@ class Journal extends Model
         'period_id',
         'type',
         'journal_mode',
+        'input_group_id',
         'number',
+        'transaction_code',
         'date',
         'reference',
         'memo',
@@ -54,11 +60,17 @@ class Journal extends Model
         'auto_reverse_on',
         'template_id',
         'created_by',
+        'review_note',
+        'reviewed_by',
+        'reviewed_at',
+        'auto_mapping_raw_data_id',
+        'auto_mapping_rule_id',
     ];
 
     protected $casts = [
         'date' => 'date',
         'posted_at' => 'datetime',
+        'reviewed_at' => 'datetime',
         'auto_reverse_on' => 'date',
     ];
 
@@ -94,6 +106,11 @@ class Journal extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function reviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
     public function reversedBy(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reversed_by_journal_id');
@@ -102,6 +119,11 @@ class Journal extends Model
     public function template(): BelongsTo
     {
         return $this->belongsTo(JournalTemplate::class, 'template_id');
+    }
+
+    public function fiscalAdjustments(): HasMany
+    {
+        return $this->hasMany(FiscalAdjustment::class);
     }
 
     public function isPosted(): bool

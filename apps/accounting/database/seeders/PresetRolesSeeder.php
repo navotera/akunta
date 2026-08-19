@@ -14,6 +14,9 @@ class PresetRolesSeeder extends Seeder
 {
     public const ROLES = [
         ['super_admin', 'Super Admin', 'Pemilik tenant, akses semua'],
+        ['admin', 'Admin', 'Akses penuh ke seluruh fitur aplikasi'],
+        ['supervisor', 'Supervisor', 'Review dan posting jurnal yang diajukan operator'],
+        ['operator', 'Operator', 'Membuat, mengubah, dan mengajukan jurnal untuk direview'],
         ['app_admin', 'App Admin', 'Admin per aplikasi'],
         ['owner', 'Owner / Direktur', 'View all across apps & entities, no edit'],
         ['finance_manager', 'Finance Manager', 'Approval level tinggi, cross-app financial oversight'],
@@ -27,6 +30,7 @@ class PresetRolesSeeder extends Seeder
         ['internal_auditor', 'Internal Auditor', 'Akses audit log + read-only seluruh app/entity'],
         ['auditor_external', 'Auditor (External)', 'Read-only, bisa di-lock per periode'],
         ['viewer', 'Viewer', 'Read-only dashboard'],
+        ['inspector', 'Inspector', 'Read-only inspection access'],
     ];
 
     public function run(): void

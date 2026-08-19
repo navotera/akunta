@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
@@ -15,6 +16,7 @@ use Illuminate\Validation\ValidationException;
 
 class AccountController extends Controller
 {
+    use AuthorizesBookAccess;
     use ResolvesTenant;
 
     public function index(Request $request): JsonResponse
@@ -23,6 +25,9 @@ class AccountController extends Controller
         $postableOnly = $request->boolean('postable_only', true);
         $search = (string) $request->query('search', '');
         $journalMode = $request->query('journal_mode');
+        if ($this->isInspector($request)) {
+            $journalMode = Journal::MODE_FISCAL;
+        }
 
         if ($journalMode !== null && ! in_array($journalMode, [Journal::MODE_INTERNAL, Journal::MODE_FISCAL], true)) {
             throw ValidationException::withMessages(['journal_mode' => 'Invalid journal mode.']);
@@ -31,6 +36,9 @@ class AccountController extends Controller
         $query = Account::query()
             ->where('entity_id', $entity->id)
             ->where('is_active', true)
+            ->withExists(['fakeDataRecords as is_fake' => fn ($query) => $query
+                ->where('entity_id', $entity->id)
+                ->where('group_key', 'accounts')])
             ->orderBy('code');
 
         if ($postableOnly) {
@@ -47,22 +55,27 @@ class AccountController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('code', 'like', "%{$search}%")
-                    ->orWhere('name', 'like', "%{$search}%");
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
             });
         }
 
-        return response()->json([
-            'data' => $query->limit(500)->get([
-                'id', 'code', 'name', 'type', 'normal_balance',
-                'parent_account_id', 'is_postable', 'is_active', 'availability',
-            ]),
+        $accounts = $query->limit(500)->get([
+            'id', 'code', 'name', 'description', 'type', 'normal_balance',
+            'parent_account_id', 'is_postable', 'is_active', 'availability', 'legal_basis',
         ]);
+
+        return response()->json(['data' => $accounts]);
     }
 
     public function show(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $account = Account::where('entity_id', $entity->id)->findOrFail($id);
+        $account = Account::where('entity_id', $entity->id)
+            ->withExists(['fakeDataRecords as is_fake' => fn ($query) => $query
+                ->where('entity_id', $entity->id)
+                ->where('group_key', 'accounts')])
+            ->findOrFail($id);
 
         return response()->json(['data' => $this->serialize($account)]);
     }
@@ -84,6 +97,9 @@ class AccountController extends Controller
         $account = Account::where('entity_id', $entity->id)->findOrFail($id);
 
         $data = $this->validatePayload($request, $entity->id, $account->id);
+        if ($account->children()->exists()) {
+            $data['is_postable'] = false;
+        }
         $account->fill($data)->save();
 
         return response()->json(['data' => $this->serialize($account->refresh())]);
@@ -114,30 +130,56 @@ class AccountController extends Controller
     {
         $codeUnique = "unique:accounts,code,{$accountId},id,entity_id,{$entityId}";
 
-        return $request->validate([
+        $data = $request->validate([
             'code' => "required|string|max:40|{$codeUnique}",
             'name' => 'required|string|max:120',
+            'description' => 'nullable|string|max:2000',
             'type' => 'required|in:asset,liability,equity,revenue,cogs,expense,contra_asset,contra_liability,contra_equity,contra_revenue',
             'normal_balance' => 'required|in:debit,credit',
             'parent_account_id' => 'nullable|string|size:26|different:id',
             'is_postable' => 'sometimes|boolean',
             'is_active' => 'sometimes|boolean',
             'availability' => 'sometimes|in:'.Account::AVAILABILITY_INTERN.','.Account::AVAILABILITY_FISKAL.','.Account::AVAILABILITY_BOTH,
+            'legal_basis' => 'sometimes|nullable|string|max:2000',
         ]);
+
+        $existing = $accountId
+            ? Account::where('entity_id', $entityId)->find($accountId)
+            : null;
+        $availability = $data['availability'] ?? $existing?->availability ?? Account::AVAILABILITY_INTERN;
+        $legalBasis = array_key_exists('legal_basis', $data)
+            ? $data['legal_basis']
+            : $existing?->legal_basis;
+
+        if (in_array($availability, [Account::AVAILABILITY_FISKAL, Account::AVAILABILITY_BOTH], true)
+            && blank($legalBasis)) {
+            throw ValidationException::withMessages([
+                'legal_basis' => 'Dasar hukum wajib diisi untuk akun Fiskal atau Intern & Fiskal.',
+            ]);
+        }
+
+        return $data;
     }
 
     private function serialize(Account $a): array
     {
+        $isFake = array_key_exists('is_fake', $a->getAttributes())
+            ? (bool) $a->is_fake
+            : $a->fakeDataRecords()->where('entity_id', $a->entity_id)->where('group_key', 'accounts')->exists();
+
         return [
             'id' => $a->id,
             'code' => $a->code,
             'name' => $a->name,
+            'description' => $a->description,
             'type' => $a->type,
             'normal_balance' => $a->normal_balance,
             'parent_account_id' => $a->parent_account_id,
             'is_postable' => (bool) $a->is_postable,
             'is_active' => (bool) $a->is_active,
             'availability' => $a->availability,
+            'legal_basis' => $a->legal_basis,
+            'is_fake' => $isFake,
         ];
     }
 }

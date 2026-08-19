@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -9,6 +8,8 @@
   import { ecosystem } from '$lib/stores/ecosystem.svelte.js';
   import type { EcosystemApp, EcosystemStatus } from '$lib/api/ecosystem.js';
   import WorkspaceTabs from './WorkspaceTabs.svelte';
+  import { formatDate } from '$lib/utils/date.js';
+  import { fakeDataApi } from '$lib/api/fake-data.js';
 
   interface NavItem {
     href?: string;
@@ -24,19 +25,12 @@
 
   const groups: NavGroup[] = [
     {
-      title: 'Operasional',
+      title: 'Jurnal',
       items: [
-        {
-          label: 'Jurnal & Buku Besar',
-          icon: '✎',
-          match: ['/journals', '/jurnal-berulang'],
-          href: '/journals',
-          children: [
-            { href: '/journals', label: 'List' },
-            { href: '/journals/new', label: 'Buat Jurnal' },
-            { href: '/jurnal-berulang', label: 'Jurnal Berulang' },
-          ],
-        },
+        { href: '/journals', label: 'Jurnal', icon: '✎', match: ['/journals'] },
+        { href: '/template-jurnal', label: 'Journal Template', icon: '☰' },
+        { href: '/jurnal-berulang', label: 'Jurnal Berulang', icon: '↻' },
+        { href: '/auto-mapping', label: 'Auto Mapping', icon: '⇄' },
       ],
     },
     {
@@ -44,8 +38,8 @@
       items: [
         { href: '/akun', label: 'Bagan Akun', icon: '⊞' },
         { href: '/periode', label: 'Periode', icon: '⌚' },
-        { href: '/template-jurnal', label: 'Template Jurnal', icon: '☰' },
         { href: '/integrasi', label: 'Integrasi', icon: '⌘' },
+        { href: '/settings', label: 'Setting', icon: '⚙' },
       ],
     },
     {
@@ -58,7 +52,17 @@
         { href: '/laporan/buku-pembantu', label: 'Buku Pembantu', icon: '⌬' },
       ],
     },
+    {
+      title: 'Fiskal',
+      items: [{ href: '/fiskal/koreksi', label: 'Koreksi & Pajak Final', icon: 'F' }],
+    },
+    {
+      title: 'Documentation',
+      items: [{ href: '/documentation', label: 'Documentation', icon: '▤' }],
+    },
   ];
+
+  const MENU_STORAGE_KEY = 'akunta:accounting-sidebar-groups';
 
   const { children } = $props<{ children?: import('svelte').Snippet }>();
 
@@ -70,7 +74,46 @@
     return false;
   }
 
+  // Keep the sidebar compact by default, with the journal group open on journal pages.
   let openParents = $state<Record<string, boolean>>({});
+  let openGroups = $state<Record<string, boolean>>({
+    Jurnal:
+      $page.url.pathname.startsWith('/journals') ||
+      $page.url.pathname === '/template-jurnal' ||
+      $page.url.pathname === '/jurnal-berulang',
+  });
+  let menuStateRestored = $state(false);
+
+  $effect(() => {
+    const pathname = $page.url.pathname;
+    if (!menuStateRestored && typeof localStorage !== 'undefined') {
+      try {
+        const stored = JSON.parse(localStorage.getItem(MENU_STORAGE_KEY) ?? '{}') as Record<
+          string,
+          boolean
+        >;
+        openGroups = { ...openGroups, ...stored };
+      } catch {
+        localStorage.removeItem(MENU_STORAGE_KEY);
+      }
+      menuStateRestored = true;
+    }
+
+    const activeGroup = groups.find((group) =>
+      group.items.some(
+        (item) => item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`)),
+      ),
+    )?.title;
+    if (activeGroup && !openGroups[activeGroup]) {
+      openGroups[activeGroup] = true;
+    }
+  });
+
+  function persistMenuState() {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(openGroups));
+    }
+  }
 
   function toggleParent(key: string) {
     openParents[key] = !openParents[key];
@@ -79,6 +122,33 @@
   function isParentOpen(item: NavItem): boolean {
     return openParents[item.label] === true;
   }
+
+  function toggleGroup(key: string) {
+    openGroups[key] = !openGroups[key];
+    persistMenuState();
+  }
+
+  function isGroupOpen(key: string): boolean {
+    return openGroups[key] === true;
+  }
+
+  const ecosystemOpen = $derived(isGroupOpen('Ekosistem'));
+  const isInspector = $derived(
+    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
+  );
+  const visibleGroups = $derived(
+    isInspector
+      ? groups.filter((group) => group.title === 'Fiskal')
+      : groups.filter(
+          (group) =>
+            group.title !== 'Fiskal' ||
+            tenant.available.find((item) => item.id === tenant.id)?.bookkeeping_mode ===
+              'independent_books',
+        ),
+  );
+  const visibleEntities = $derived(
+    isInspector ? tenant.available.filter((item) => item.id === tenant.id) : tenant.available,
+  );
 
   async function logout() {
     try {
@@ -94,13 +164,15 @@
     }
   }
 
+  async function stopImpersonation() {
+    await fakeDataApi.stopImpersonation();
+    await auth.refresh();
+    goto('/settings');
+  }
+
   let entityMenuOpen = $state(false);
   let periodMenuOpen = $state(false);
   let ecosystemRequested = $state(false);
-
-  onMount(() => {
-    if (tenant.id) period.refresh();
-  });
 
   $effect(() => {
     // Refetch periods when active tenant changes.
@@ -218,6 +290,12 @@
   }
 
   function pickEntity(id: string) {
+    const selected = tenant.available.find((item) => item.id === id);
+    if (selected?.is_active === false) {
+      entityMenuOpen = false;
+      goto('/settings');
+      return;
+    }
     tenant.switch(id);
     entityMenuOpen = false;
     // Force a hard reload so every onMount() refetches with the new tenant.
@@ -240,10 +318,12 @@
 
 <div class="flex min-h-screen bg-page-bg">
   <!-- Sidebar — matches Filament fi-sidebar slim 240px / Metronic Demo3 light -->
-  <aside class="hidden w-60 shrink-0 flex-col border-r border-border-default bg-sidebar-bg md:flex">
+  <aside
+    class="ak-sidebar hidden w-60 shrink-0 flex-col border-r border-border-default bg-sidebar-bg md:flex"
+  >
     <a
       href="/dashboard"
-      class="flex items-center gap-2.5 px-5 py-4 border-b border-border-soft hover:bg-page-bg transition-colors"
+      class="ak-sidebar-brand mt-5 mb-5 flex items-center gap-2.5 px-5 py-4 transition-colors"
       title="Ke Dashboard"
     >
       <span
@@ -252,7 +332,7 @@
         A
       </span>
       <div class="flex flex-col leading-tight">
-        <strong class="text-[0.95rem] font-bold tracking-tight text-text-strong">Akunta</strong>
+        <strong class="text-xl font-bold tracking-tight text-text-strong">Akunta</strong>
         <span class="text-[0.65rem] font-medium uppercase tracking-wider text-text-muted"
           >Accounting</span
         >
@@ -260,90 +340,111 @@
     </a>
 
     <nav class="flex-1 overflow-y-auto py-3">
-      {#each groups as g (g.title)}
-        <div class="mb-4">
-          <p class="px-5 mb-1 ak-section-title">{g.title}</p>
-          <ul>
-            {#each g.items as it (it.label)}
-              <li>
-                {#if it.children?.length}
-                  {@const open = isParentOpen(it)}
-                  <div
-                    class="ak-nav-item"
-                    style="display: flex; align-items: stretch; gap: 0; padding: 0; background: transparent; color: var(--m-text);"
-                  >
-                    {#if it.href}
-                      <a
-                        href={it.href}
-                        class="flex flex-1 items-center gap-2"
-                        style="padding: 0.5rem 0.75rem; color: inherit; text-decoration: none;"
-                      >
-                        <span class="ak-nav-icon">{it.icon ?? ''}</span>
-                        <span>{it.label}</span>
-                      </a>
-                    {:else}
+      {#each visibleGroups as g (g.title)}
+        {@const groupOpen = isGroupOpen(g.title)}
+        <div class="mt-3 mb-6" class:ak-master-menu={g.title === 'Master'}>
+          <button
+            type="button"
+            class="flex w-full items-center justify-between px-5 mb-1 text-left"
+            onclick={() => toggleGroup(g.title)}
+            aria-expanded={groupOpen}
+          >
+            <span class="ak-section-title">{g.title}</span>
+            <span class="text-sm text-text-muted" aria-hidden="true">{groupOpen ? '▾' : '▸'}</span>
+          </button>
+          {#if groupOpen}
+            <ul>
+              {#each g.items as it (it.label)}
+                <li>
+                  {#if it.children?.length}
+                    {@const open = isParentOpen(it)}
+                    <div
+                      class="ak-nav-item"
+                      style="display: flex; align-items: stretch; gap: 0; padding: 0; background: transparent; color: var(--m-sidebar-text);"
+                    >
+                      {#if it.href}
+                        <a
+                          href={it.href}
+                          class="flex flex-1 items-center gap-2"
+                          style="padding: 0.5rem 0.75rem; color: inherit; text-decoration: none;"
+                        >
+                          <span class="ak-nav-icon">{it.icon ?? ''}</span>
+                          <span>{it.label}</span>
+                        </a>
+                      {:else}
+                        <button
+                          type="button"
+                          class="flex flex-1 items-center gap-2"
+                          style="padding: 0.5rem 0.75rem; color: inherit; background: transparent;"
+                          onclick={() => toggleParent(it.label)}
+                        >
+                          <span class="ak-nav-icon">{it.icon ?? ''}</span>
+                          <span>{it.label}</span>
+                        </button>
+                      {/if}
                       <button
                         type="button"
-                        class="flex flex-1 items-center gap-2"
-                        style="padding: 0.5rem 0.75rem; color: inherit; background: transparent;"
+                        class="text-text-muted hover:text-primary"
+                        style="font-size: 1.5rem; line-height: 0.6; padding: 0.5rem 15px 0.5rem 0.4rem; background: transparent;"
                         onclick={() => toggleParent(it.label)}
+                        aria-expanded={open}
+                        aria-label={open ? 'Tutup' : 'Buka'}
                       >
-                        <span class="ak-nav-icon">{it.icon ?? ''}</span>
-                        <span>{it.label}</span>
+                        {open ? '▾' : '▸'}
                       </button>
-                    {/if}
-                    <button
-                      type="button"
-                      class="text-text-muted hover:text-primary"
-                      style="font-size: 1.5rem; line-height: 0.6; padding: 0.5rem 15px 0.5rem 0.4rem; background: transparent;"
-                      onclick={() => toggleParent(it.label)}
-                      aria-expanded={open}
-                      aria-label={open ? 'Tutup' : 'Buka'}
-                    >
-                      {open ? '▾' : '▸'}
-                    </button>
-                  </div>
-                  {#if open}
-                    <ul class="mt-0.5">
-                      {#each it.children as child (child.href ?? child.label)}
-                        {@const childActive = isActive(child)}
-                        <li>
-                          <a
-                            href={child.href}
-                            class="ak-nav-item text-[0.8125rem]"
-                            style="background: transparent; color: var(--m-text); font-weight: {childActive
-                              ? '600'
-                              : '500'};"
-                          >
-                            <span
-                              class="ak-nav-icon"
-                              style="font-size: 0.5rem; color: {childActive
-                                ? '#17C653'
-                                : 'var(--m-text-muted)'};"
+                    </div>
+                    {#if open}
+                      <ul class="mt-0.5">
+                        {#each it.children as child (child.href ?? child.label)}
+                          {@const childActive = isActive(child)}
+                          <li>
+                            <a
+                              href={child.href}
+                              class="ak-nav-item ak-nav-subitem"
+                              style="background: transparent; font-weight: {childActive
+                                ? '600'
+                                : '400'};"
                             >
-                              {childActive ? '●' : '·'}
-                            </span>
-                            <span>{child.label}</span>
-                          </a>
-                        </li>
-                      {/each}
-                    </ul>
+                              <span
+                                class="ak-nav-icon"
+                                style="font-size: 0.5rem; color: {childActive
+                                  ? '#17C653'
+                                  : 'var(--m-sidebar-muted)'};"
+                              >
+                                {childActive ? '●' : '·'}
+                              </span>
+                              <span>{child.label}</span>
+                            </a>
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  {:else}
+                    <a href={it.href} class="ak-nav-item {isActive(it) ? 'is-active' : ''}">
+                      <span class="ak-nav-icon">{it.icon ?? ''}</span>
+                      <span>{it.label}</span>
+                    </a>
                   {/if}
-                {:else}
-                  <a href={it.href} class="ak-nav-item {isActive(it) ? 'is-active' : ''}">
-                    <span class="ak-nav-icon">{it.icon ?? ''}</span>
-                    <span>{it.label}</span>
-                  </a>
-                {/if}
-              </li>
-            {/each}
-          </ul>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       {/each}
 
-      <div class="mb-4">
+      <div class="mt-3 mb-6">
         <div class="flex items-center justify-between px-5 mb-1">
-          <p class="ak-section-title m-0">Ekosistem</p>
+          <button
+            type="button"
+            class="flex flex-1 items-center justify-between text-left"
+            onclick={() => toggleGroup('Ekosistem')}
+            aria-expanded={ecosystemOpen}
+          >
+            <span class="ak-section-title">Ekosistem</span>
+            <span class="text-sm text-text-muted" aria-hidden="true"
+              >{ecosystemOpen ? '▾' : '▸'}</span
+            >
+          </button>
           <button
             type="button"
             class="text-text-muted hover:text-primary text-xs"
@@ -355,44 +456,46 @@
             ↻
           </button>
         </div>
-        <ul>
-          {#if ecosystem.loading && displayedApps.length === 0}
-            <li class="px-5 py-1.5 text-xs text-text-muted">Memuat…</li>
-          {:else if displayedApps.length === 0}
-            <li class="px-5 py-1.5 text-xs text-text-muted">
-              {ecosystem.error ? 'Tidak terhubung' : 'Belum ada app terhubung'}
-            </li>
-          {:else}
-            {#each displayedApps as app (app.slug)}
-              <li>
-                <button
-                  type="button"
-                  class="ak-nav-item ak-eco-item"
-                  style="background: transparent; width: 100%; text-align: left; cursor: {app.url
-                    ? 'pointer'
-                    : 'default'};"
-                  onclick={() => openApp(app)}
-                  title={app.url ?? app.label}
-                >
-                  <span class="ak-nav-icon" aria-hidden="true"
-                    >{ECO_ICON[app.icon_key] ?? ECO_ICON.app}</span
+        {#if ecosystemOpen}
+          <ul>
+            {#if ecosystem.loading && displayedApps.length === 0}
+              <li class="px-5 py-1.5 text-xs text-text-muted">Memuat…</li>
+            {:else if displayedApps.length === 0}
+              <li class="px-5 py-1.5 text-xs text-text-muted">
+                {ecosystem.error ? 'Tidak terhubung' : 'Belum ada app terhubung'}
+              </li>
+            {:else}
+              {#each displayedApps as app (app.slug)}
+                <li>
+                  <button
+                    type="button"
+                    class="ak-nav-item ak-eco-item"
+                    style="background: transparent; width: 100%; text-align: left; cursor: {app.url
+                      ? 'pointer'
+                      : 'default'};"
+                    onclick={() => openApp(app)}
+                    title={app.url ?? app.label}
                   >
-                  <span class="flex-1 truncate">{app.label}</span>
-                  {#if app.count !== null}
-                    <span class="ak-eco-count">{app.count}</span>
-                  {/if}
-                  <span class="ak-eco-dot {ECO_STATUS_CLASS[app.status]}" aria-label={app.status}
-                  ></span>
-                </button>
-              </li>
-            {/each}
-            {#if showingPreview}
-              <li class="px-5 pt-1 text-[0.65rem] uppercase tracking-wider text-text-muted">
-                Preview · belum tersinkron
-              </li>
+                    <span class="ak-nav-icon" aria-hidden="true"
+                      >{ECO_ICON[app.icon_key] ?? ECO_ICON.app}</span
+                    >
+                    <span class="flex-1 truncate">{app.label}</span>
+                    {#if app.count !== null}
+                      <span class="ak-eco-count">{app.count}</span>
+                    {/if}
+                    <span class="ak-eco-dot {ECO_STATUS_CLASS[app.status]}" aria-label={app.status}
+                    ></span>
+                  </button>
+                </li>
+              {/each}
+              {#if showingPreview}
+                <li class="px-5 pt-1 text-[0.9rem] uppercase tracking-wider text-text-muted">
+                  Preview · belum tersinkron
+                </li>
+              {/if}
             {/if}
-          {/if}
-        </ul>
+          </ul>
+        {/if}
       </div>
     </nav>
 
@@ -454,13 +557,14 @@
         </button>
       </div>
       <div class="flex items-center gap-2">
-        {#if tenant.available.length > 0}
+        {#if visibleEntities.length > 0}
           <div class="relative" use:handleClickOutside={() => (entityMenuOpen = false)}>
             <button
               type="button"
               class="flex h-9 items-center gap-2 rounded-md border border-border-default bg-card-bg px-3 text-sm font-medium text-text-default hover:border-primary"
               onclick={() => (entityMenuOpen = !entityMenuOpen)}
               data-testid="entity-switcher"
+              title="Workspace hanya dapat diganti melalui Settings → Workspace"
               aria-haspopup="listbox"
               aria-expanded={entityMenuOpen}
             >
@@ -481,19 +585,24 @@
                 <li
                   class="border-b border-border-soft px-3 py-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
                 >
-                  Pilih Entitas ({tenant.available.length})
+                  Pilih Entitas ({visibleEntities.length})
                 </li>
-                {#each tenant.available as t (t.id)}
+                {#each visibleEntities as t (t.id)}
                   <li>
                     <button
                       type="button"
                       class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {tenant.id ===
                       t.id
                         ? 'bg-primary-light text-primary-active font-semibold'
-                        : 'text-text-default'}"
-                      onclick={() => pickEntity(t.id)}
+                        : t.is_active === false
+                          ? 'text-text-muted'
+                          : 'text-text-default'}"
+                      disabled
                       role="option"
                       aria-selected={tenant.id === t.id}
+                      title={t.is_active === false
+                        ? 'Workspace nonaktif. Buka Settings untuk mengaktifkannya.'
+                        : undefined}
                     >
                       <span
                         class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary"
@@ -505,11 +614,23 @@
                         {#if t.slug}<span class="block truncate text-xs text-text-muted"
                             >{t.slug}</span
                           >{/if}
+                        {#if t.is_active === false}
+                          <span class="block text-xs font-medium text-warning"
+                            >Nonaktif · buka Settings</span
+                          >
+                        {/if}
                       </span>
                       {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}
                     </button>
                   </li>
                 {/each}
+                <li class="border-t border-border-soft px-3 py-2 text-xs text-text-muted">
+                  Switch to other workspace di
+                  <a
+                    href="/settings?section=workspace"
+                    class="font-medium text-primary underline-offset-2 hover:underline">sini</a
+                  >
+                </li>
               </ul>
             {/if}
           </div>
@@ -565,7 +686,7 @@
                       <span class="min-w-0 flex-1">
                         <span class="block truncate">{p.name}</span>
                         <span class="block truncate text-xs text-text-muted"
-                          >{p.start_date} → {p.end_date}</span
+                          >{formatDate(p.start_date)} → {formatDate(p.end_date)}</span
                         >
                       </span>
                       {#if p.status !== 'open'}
@@ -601,6 +722,19 @@
         {/if}
       </div>
     </header>
+
+    {#if auth.user?.is_impersonating}
+      <div
+        class="flex items-center justify-between gap-3 bg-warning px-6 py-2 text-sm font-semibold text-white"
+      >
+        <span>Anda sedang melihat aplikasi sebagai user fake.</span>
+        <button
+          type="button"
+          class="rounded bg-white/20 px-3 py-1 text-xs hover:bg-white/30"
+          onclick={stopImpersonation}>Kembali ke akun admin</button
+        >
+      </div>
+    {/if}
 
     <WorkspaceTabs />
 

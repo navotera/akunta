@@ -63,6 +63,21 @@ export const auth = {
     }
   },
 
+  async localLogin(): Promise<AuthUser> {
+    state.loading = true;
+    state.error = null;
+    try {
+      state.user = await authApi.localLogin();
+      tenant.hydrate(state.user);
+      return state.user;
+    } catch (e) {
+      state.error = e instanceof Error ? e.message : String(e);
+      throw e;
+    } finally {
+      state.loading = false;
+    }
+  },
+
   async logout(): Promise<void> {
     try {
       await authApi.logout();

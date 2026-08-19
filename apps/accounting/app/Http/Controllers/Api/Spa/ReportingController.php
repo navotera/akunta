@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Rbac\Models\Entity;
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
 use App\Services\Reporting\BalanceSheetService;
+use App\Services\Reporting\FiscalReconciliationService;
 use App\Services\Reporting\GeneralLedgerService;
 use App\Services\Reporting\IncomeStatementService;
 use App\Services\Reporting\TrialBalanceService;
@@ -18,11 +20,14 @@ use Illuminate\Validation\ValidationException;
 
 class ReportingController extends Controller
 {
+    use AuthorizesBookAccess;
+
     public function __construct(
         private readonly TrialBalanceService $trialBalance,
         private readonly BalanceSheetService $balanceSheet,
         private readonly IncomeStatementService $incomeStatement,
         private readonly GeneralLedgerService $generalLedger,
+        private readonly FiscalReconciliationService $fiscalReconciliation,
     ) {}
 
     public function trialBalance(Request $request): JsonResponse
@@ -30,9 +35,12 @@ class ReportingController extends Controller
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
             'as_of' => 'required|date_format:Y-m-d',
+            'journal_mode' => 'nullable|in:internal,fiscal',
         ]);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->authorizeBookRead($request, $mode);
 
-        $report = $this->trialBalance->compute($entity->id, $data['as_of']);
+        $report = $this->trialBalance->compute($entity->id, $data['as_of'], $mode);
 
         return response()->json([
             'data' => $report,
@@ -51,14 +59,19 @@ class ReportingController extends Controller
             'as_of' => 'required|date_format:Y-m-d',
             'period_start' => 'nullable|date_format:Y-m-d|before_or_equal:as_of',
             'show_fiscal' => 'sometimes|boolean',
+            'journal_mode' => 'nullable|in:internal,fiscal',
         ]);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->authorizeBookRead($request, $mode);
 
         $report = $this->balanceSheet->compute(
             $entity->id,
             $data['as_of'],
             $data['period_start'] ?? null,
+            $mode,
         );
-        if ($request->boolean('show_fiscal')) {
+        if ($request->boolean('show_fiscal') && $mode === Journal::MODE_INTERNAL) {
+            $this->authorizeBookRead($request, Journal::MODE_FISCAL);
             $report['fiscal'] = $this->balanceSheet->compute(
                 $entity->id,
                 $data['as_of'],
@@ -83,12 +96,16 @@ class ReportingController extends Controller
         $data = $request->validate([
             'period_start' => 'required|date_format:Y-m-d',
             'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
+            'journal_mode' => 'nullable|in:internal,fiscal',
         ]);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->authorizeBookRead($request, $mode);
 
         $report = $this->incomeStatement->compute(
             $entity->id,
             $data['period_start'],
             $data['period_end'],
+            $mode,
         );
 
         return response()->json([
@@ -114,7 +131,10 @@ class ReportingController extends Controller
             'source_app' => 'nullable|string|max:40',
             'source_ref_type' => 'nullable|string|max:40',
             'source_ref_id' => 'nullable|string|max:80',
+            'journal_mode' => 'nullable|in:internal,fiscal',
         ]);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->authorizeBookRead($request, $mode);
 
         $filters = array_filter([
             'cost_center_id' => $data['cost_center_id'] ?? null,
@@ -131,10 +151,39 @@ class ReportingController extends Controller
             $data['period_start'],
             $data['period_end'],
             $filters,
+            $mode,
         );
 
         return response()->json([
             'data' => $report,
+            'meta' => [
+                'entity_id' => $entity->id,
+                'entity_name' => $entity->name,
+                'generated_at' => now()->toIso8601String(),
+            ],
+        ]);
+    }
+
+    public function fiscalReconciliation(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->authorizeBookRead($request, Journal::MODE_FISCAL);
+        abort_unless(
+            $request->user()?->hasPermission('fiscal.adjustment.read', $entity->id),
+            403,
+            'Anda tidak memiliki izin melihat rekonsiliasi Fiskal.',
+        );
+        $data = $request->validate([
+            'period_start' => 'required|date_format:Y-m-d',
+            'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
+        ]);
+
+        return response()->json([
+            'data' => $this->fiscalReconciliation->compute(
+                $entity->id,
+                $data['period_start'],
+                $data['period_end'],
+            ),
             'meta' => [
                 'entity_id' => $entity->id,
                 'entity_name' => $entity->name,

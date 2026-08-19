@@ -84,6 +84,22 @@ it('filters templates by journal mode', function () {
         ->assertJsonPath('data.0.journal_mode', Journal::MODE_FISCAL);
 });
 
+it('toggles a tenant template bookmark', function () {
+    $template = JournalTemplate::create([
+        'entity_id' => $this->entity->id, 'code' => 'TPL-BOOK', 'name' => 'Bookmarked',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/journal-templates/{$template->id}/bookmark", [
+            'is_bookmarked' => true,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.is_bookmarked', true);
+
+    expect($template->refresh()->is_bookmarked)->toBeTrue();
+});
+
 it('rejects template lines unavailable for the template mode', function () {
     $this->cash->update(['availability' => 'intern']);
 

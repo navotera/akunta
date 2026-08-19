@@ -20,14 +20,24 @@ class SettingsPermissionsSeeder extends Seeder
     {
         app(PermissionRegistry::class)->registerMany('accounting', [
             [
-                'code'        => 'settings.coa_template.manage',
+                'code' => 'settings.coa_template.manage',
                 'description' => 'Akses halaman Pengaturan → Template CoA (terapkan template per industri).',
-                'category'    => 'settings',
+                'category' => 'settings',
             ],
             [
-                'code'        => 'settings.cron.manage',
+                'code' => 'settings.cron.manage',
                 'description' => 'Akses halaman Pengaturan → Cron (status scheduler + activity log + retensi).',
-                'category'    => 'settings',
+                'category' => 'settings',
+            ],
+            [
+                'code' => 'settings.fake_data.manage',
+                'description' => 'Import dan hapus data simulasi yang ditandai fake.',
+                'category' => 'settings',
+            ],
+            [
+                'code' => 'automapping.manage',
+                'description' => 'Mengonfigurasi rule, akun COA, tanggal, dan deskripsi Auto Mapping.',
+                'category' => 'journal',
             ],
         ]);
     }

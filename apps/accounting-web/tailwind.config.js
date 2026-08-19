@@ -9,9 +9,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: tokens.color.primary,
-        'primary-light': tokens.color.primaryLight,
-        'primary-active': tokens.color.primaryActive,
+        primary: 'var(--m-primary)',
+        'primary-light': 'var(--m-primary-light)',
+        'primary-active': 'var(--m-primary-active)',
         success: tokens.color.success,
         'success-light': tokens.color.successLight,
         danger: tokens.color.danger,
@@ -29,7 +29,7 @@ export default {
         'text-strong': tokens.color.textStrong,
         'card-bg': tokens.color.bgCard,
         'page-bg': tokens.color.bgPage,
-        'sidebar-bg': tokens.color.bgSidebar,
+        'sidebar-bg': 'var(--m-sidebar-bg)',
         'topbar-bg': tokens.color.bgTopbar,
         'border-default': tokens.color.border,
         'border-soft': tokens.color.borderSoft,

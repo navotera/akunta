@@ -1,4 +1,5 @@
 import { ecosystemApi, type EcosystemApp } from '$lib/api/ecosystem.js';
+import { isEcopaIntegrationEnabled } from '$lib/api/client.js';
 
 interface EcosystemState {
   apps: EcosystemApp[];
@@ -29,6 +30,10 @@ export const ecosystem = {
   },
 
   async refresh(): Promise<void> {
+    if (!isEcopaIntegrationEnabled()) {
+      this.clear();
+      return;
+    }
     state.loading = true;
     try {
       const res = await ecosystemApi.list();

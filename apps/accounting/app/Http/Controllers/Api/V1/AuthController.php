@@ -10,7 +10,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -36,6 +36,29 @@ class AuthController extends Controller
 
         /** @var User $user */
         $user = Auth::user();
+        $user->forceFill(['last_login_at' => now()])->save();
+
+        return response()->json([
+            'data' => $this->userPayload($user),
+        ]);
+    }
+
+    public function localLogin(Request $request): JsonResponse
+    {
+        abort_unless(app()->environment('local') && ! config('ecopa.client_id'), 404);
+
+        $email = (string) env('SUPER_ADMIN_EMAIL', 'superadmin@akunta.local');
+        /** @var User|null $user */
+        $user = User::query()->where('email', $email)->first();
+
+        if (! $user) {
+            throw ValidationException::withMessages([
+                'email' => 'Local super admin belum tersedia. Jalankan seeder lokal terlebih dahulu.',
+            ]);
+        }
+
+        Auth::guard('web')->login($user, remember: true);
+        $request->session()->regenerate();
         $user->forceFill(['last_login_at' => now()])->save();
 
         return response()->json([
@@ -77,11 +100,16 @@ class AuthController extends Controller
                 ->unique()
                 ->values())
             ->orderBy('name')
-            ->get(['id', 'name'])
+            ->get(['id', 'name', 'is_active', 'workspace_settings'])
             ->map(fn (Entity $e) => [
                 'id' => $e->id,
+                'tenant_id' => $e->tenant_id,
                 'name' => $e->name,
                 'slug' => null,
+                'theme_color' => $e->theme_color,
+                'logo_url' => $e->logo_path ? Storage::disk('public')->url($e->logo_path) : null,
+                'is_active' => (bool) $e->is_active,
+                'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
             ])
             ->all();
 
@@ -89,8 +117,12 @@ class AuthController extends Controller
             'id' => $user->id,
             'email' => $user->email,
             'name' => $user->name,
+            'roles' => $user->assignments()->whereNull('revoked_at')->with('role')->get()->pluck('role.code')->filter()->unique()->values()->all(),
             'tenants' => $tenants,
             'is_sso_admin' => session('ecopa.app_role') === 'admin',
+            'is_admin' => session('ecopa.app_role') === 'admin' || $user->hasPermission('workspace.manage'),
+            'is_impersonating' => session()->has('impersonator_id'),
+            'impersonator_id' => session('impersonator_id'),
         ];
     }
 }

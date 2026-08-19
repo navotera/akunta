@@ -9,12 +9,17 @@ use App\Exceptions\JournalException;
 use App\Models\Account;
 use App\Models\Journal;
 use App\Models\Period;
+use Illuminate\Support\Facades\Gate;
 
 class PostJournalAction extends BaseAction
 {
     public function execute(Journal $journal, ?User $user = null): Journal
     {
-        $this->authorize('journal.post', $journal);
+        if ($user !== null) {
+            Gate::forUser($user)->authorize('journal.post', $journal);
+        } else {
+            $this->authorize('journal.post', $journal);
+        }
 
         $this->validate($journal);
 
@@ -48,9 +53,9 @@ class PostJournalAction extends BaseAction
         return $journal;
     }
 
-    protected function validate(Journal $journal): void
+    public function validate(Journal $journal): void
     {
-        if ($journal->status !== Journal::STATUS_DRAFT) {
+        if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_SUBMITTED], true)) {
             throw JournalException::notDraft($journal->status);
         }
 

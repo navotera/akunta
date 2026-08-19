@@ -1,4 +1,5 @@
 import type { AuthUser } from '$lib/api/auth.js';
+import { applyWorkspaceTheme } from './theme.svelte.js';
 
 const STORAGE_KEY = 'akunta.active_entity_id';
 
@@ -49,21 +50,24 @@ export const tenant = {
   hydrate(user: AuthUser): void {
     state.available = user.tenants;
     const storedId = readStored();
-    const match = state.available.find((t) => t.id === storedId);
-    const chosen = match ?? state.available[0] ?? null;
+    const active = state.available.filter((t) => t.is_active !== false);
+    const match = active.find((t) => t.id === storedId);
+    const chosen = match ?? active[0] ?? state.available[0] ?? null;
     state.id = chosen?.id ?? null;
     state.name = chosen?.name ?? null;
     state.slug = chosen?.slug ?? null;
     if (state.id) writeStored(state.id);
+    applyWorkspaceTheme(state.id, chosen?.theme_color ?? undefined);
   },
 
   switch(entityId: string): void {
     const t = state.available.find((x) => x.id === entityId);
-    if (!t) return;
+    if (!t || t.is_active === false) return;
     state.id = t.id;
     state.name = t.name;
     state.slug = t.slug;
     writeStored(t.id);
+    applyWorkspaceTheme(t.id, t.theme_color);
   },
 
   clear(): void {
@@ -72,5 +76,6 @@ export const tenant = {
     state.slug = null;
     state.available = [];
     writeStored(null);
+    applyWorkspaceTheme(null);
   },
 };

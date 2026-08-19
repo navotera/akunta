@@ -4,12 +4,15 @@ export interface Account {
   id: string;
   code: string;
   name: string;
+  description: string | null;
   type: string;
   normal_balance: 'debit' | 'credit';
   parent_account_id: string | null;
   is_postable: boolean;
   is_active: boolean;
   availability: 'intern' | 'fiskal' | 'both';
+  legal_basis: string | null;
+  is_fake: boolean;
 }
 
 export type AccountOption = Account;
@@ -18,12 +21,14 @@ export type AccountJournalMode = 'internal' | 'fiscal';
 export interface AccountInput {
   code: string;
   name: string;
+  description?: string | null;
   type: string;
   normal_balance: 'debit' | 'credit';
   parent_account_id?: string | null;
   is_postable?: boolean;
   is_active?: boolean;
   availability?: 'intern' | 'fiskal' | 'both';
+  legal_basis?: string | null;
 }
 
 export const accountApi = {

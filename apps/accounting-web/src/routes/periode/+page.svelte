@@ -5,6 +5,7 @@
   import { periodApi, type Period, type PeriodInput } from '$lib/api/period.js';
   import { ApiError } from '$lib/api/client.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import { formatDate } from '$lib/utils/date.js';
 
   let items = $state<Period[]>([]);
   let loading = $state(true);
@@ -133,8 +134,8 @@
           {#each items as p (p.id)}
             <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(p)}>
               <td class="px-4 py-2 font-medium">{p.name}</td>
-              <td class="px-4 py-2">{p.start_date}</td>
-              <td class="px-4 py-2">{p.end_date}</td>
+              <td class="px-4 py-2">{formatDate(p.start_date)}</td>
+              <td class="px-4 py-2">{formatDate(p.end_date)}</td>
               <td class="px-4 py-2">
                 <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(p.status)}">
                   {p.status}

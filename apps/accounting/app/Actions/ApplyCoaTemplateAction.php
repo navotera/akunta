@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions;
 
+use Akunta\Rbac\Models\Entity;
 use App\Models\Account;
+use App\Services\AccountSopService;
 use App\Services\Onboarding\CoaTemplateRegistry;
 use Illuminate\Support\Facades\DB;
 
@@ -18,7 +20,10 @@ use Illuminate\Support\Facades\DB;
  */
 class ApplyCoaTemplateAction
 {
-    public function __construct(private readonly CoaTemplateRegistry $registry) {}
+    public function __construct(
+        private readonly CoaTemplateRegistry $registry,
+        private readonly AccountSopService $accountSop,
+    ) {}
 
     /**
      * @return array{created: int, skipped: int, total: int, key: string}
@@ -26,6 +31,11 @@ class ApplyCoaTemplateAction
     public function execute(string $entityId, string $templateKey): array
     {
         $rows = $this->registry->load($templateKey);
+        $entity = Entity::query()->findOrFail($entityId);
+        $independentBooks = data_get($entity->workspace_settings, 'bookkeeping_mode') === 'independent_books';
+        $defaultAvailability = $independentBooks
+            ? Account::AVAILABILITY_BOTH
+            : Account::AVAILABILITY_INTERN;
 
         $existing = Account::query()
             ->where('entity_id', $entityId)
@@ -35,23 +45,36 @@ class ApplyCoaTemplateAction
         $created = 0;
         $skipped = 0;
 
-        DB::transaction(function () use ($rows, $entityId, &$existing, &$created, &$skipped) {
+        DB::transaction(function () use ($rows, $entityId, $independentBooks, $defaultAvailability, &$existing, &$created, &$skipped) {
             // Phase 1 — create rows without parent_id
             foreach ($rows as $row) {
                 [$code, $name, $type, $normal, $parentCode, $isPostable] = $row;
+                $sop = $this->accountSop->definitionFor($name);
+                $availability = $row[6] ?? ($sop['availability'] ?? $defaultAvailability);
+                $description = $row[7] ?? ($sop['description'] ?? null);
+                if (! $independentBooks) {
+                    if ($availability === Account::AVAILABILITY_FISKAL) {
+                        $skipped++;
+
+                        continue;
+                    }
+                    $availability = Account::AVAILABILITY_INTERN;
+                }
                 if (isset($existing[$code])) {
                     $skipped++;
 
                     continue;
                 }
                 $acc = Account::create([
-                    'entity_id'      => $entityId,
-                    'code'           => $code,
-                    'name'           => $name,
-                    'type'           => $type,
+                    'entity_id' => $entityId,
+                    'code' => $code,
+                    'name' => $name,
+                    'description' => $description,
+                    'type' => $type,
                     'normal_balance' => $normal,
-                    'is_postable'    => $isPostable,
-                    'is_active'      => true,
+                    'is_postable' => $isPostable,
+                    'is_active' => true,
+                    'availability' => $availability,
                 ]);
                 $existing[$code] = $acc->id;
                 $created++;
@@ -63,7 +86,7 @@ class ApplyCoaTemplateAction
                 if ($parentCode === null) {
                     continue;
                 }
-                $childId  = $existing[$code]       ?? null;
+                $childId = $existing[$code] ?? null;
                 $parentId = $existing[$parentCode] ?? null;
                 if ($childId !== null && $parentId !== null) {
                     Account::where('id', $childId)
@@ -76,8 +99,8 @@ class ApplyCoaTemplateAction
         return [
             'created' => $created,
             'skipped' => $skipped,
-            'total'   => count($rows),
-            'key'     => $templateKey,
+            'total' => count($rows),
+            'key' => $templateKey,
         ];
     }
 }

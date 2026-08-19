@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa\Widgets;
 
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 
 class RecentJournalsController extends Controller
 {
+    use AuthorizesBookAccess;
     use ResolvesTenant;
 
     public function index(Request $request): JsonResponse
@@ -21,6 +23,7 @@ class RecentJournalsController extends Controller
 
         $items = Journal::query()
             ->where('entity_id', $entity->id)
+            ->when($this->isInspector($request), fn ($query) => $query->where('journal_mode', Journal::MODE_FISCAL))
             ->withSum('entries as total_debit', 'debit')
             ->latest('date')
             ->latest('created_at')

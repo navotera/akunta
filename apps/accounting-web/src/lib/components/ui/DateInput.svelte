@@ -19,6 +19,8 @@
     testId?: string;
   }
 
+  import { formatDate } from '$lib/utils/date.js';
+
   let {
     value,
     onChange,
@@ -34,16 +36,7 @@
   const display = $derived(format(value));
 
   function format(iso: string): string {
-    if (!iso) return '';
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-    if (!m) return iso;
-    const [, y, mm, d] = m;
-    const date = new Date(Number(y), Number(mm) - 1, Number(d));
-    if (Number.isNaN(date.getTime())) return iso;
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = date.toLocaleString('id-ID', { month: 'long' });
-    const year = String(date.getFullYear()).slice(-2);
-    return `${day} ${month} ${year}`;
+    return iso ? formatDate(iso) : '';
   }
 
   function open() {

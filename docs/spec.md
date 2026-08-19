@@ -653,6 +653,109 @@ ALTER TABLE journal_templates ADD COLUMN applies_to_type VARCHAR NULL;
 - **12c-iii** Buku Pembantu + Register PPN reports
 - **12c-iv** Template per-type + recurring per-type
 
+### 8.7 Buku Intern dan Fiskal ✅ [IMPLEMENTED — 2026-08-18]
+
+Entitas memilih `bookkeeping_mode` melalui onboarding atau pengaturan:
+
+- `independent_books` — mengaktifkan ledger Intern dan Fiskal yang independen.
+- `internal_only` — hanya mengaktifkan ledger Intern.
+
+Pada `independent_books`, form jurnal menyediakan tiga mekanisme input:
+
+| Pilihan input | Hasil persistensi |
+|---|---|
+| Intern | Satu jurnal dengan `journal_mode=internal` |
+| Fiskal | Satu jurnal dengan `journal_mode=fiscal` |
+| Intern & Fiskal | Dua jurnal draft atomik: satu `internal`, satu `fiscal` |
+
+`Intern & Fiskal` bukan mode ledger ketiga. Kedua jurnal mempunyai
+`transaction_code` dan `input_group_id` yang sama agar asal input dapat
+ditelusuri, tetapi ID, nomor, entries, attachment, status workflow, posting,
+reversal, dan saldo tetap independen. Sesudah create tidak ada sinkronisasi
+otomatis antarpasangan. Mode gabungan hanya menerima akun
+`availability=both`.
+
+Akun dengan `availability=fiskal` atau `availability=both` wajib menyimpan
+dasar hukum pajak. Akun `availability=intern` tidak mewajibkan metadata ini.
+
+Koreksi Fiskal berada pada `fiscal_adjustments`. Koreksi approved dengan bukti
+memengaruhi rekonsiliasi Pajak Final tanpa membuat atau mengubah journal entry.
+Dashboard Fiskal menyajikan analisis potensi pajak sebagai simulasi, bukan nilai
+SPT final.
+
+Inspector adalah role read-only Fiskal: tidak dapat membuka dashboard atau data
+Intern dan langsung diarahkan ke daftar jurnal Fiskal. Pembatasan wajib
+ditegakkan di backend.
+
+Label status daftar jurnal mengikuti status backend yang ada: `draft` ditampilkan
+sebagai Diajukan, `submitted` sebagai Di review, `posted` sebagai Tersimpan, dan
+`rejected` sebagai Perlu Revisi. Jurnal Tersimpan terkunci bagi operator;
+Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
+
+### 8.8 Fake Data Lengkap dan Aman
+
+Settings menyediakan import fake data per kelompok dan Import All. Import data
+keuangan wajib meminta satu periode terbuka milik entitas aktif. Dataset demo
+Teknologi & IT mengisi buku Intern dan Fiskal, dashboard, neraca saldo, neraca,
+buku besar, buku pembantu berbasis source-ref, template jurnal, jurnal berulang,
+serta contoh koreksi fiskal.
+
+Setiap model yang benar-benar dibuat importer dicatat di `fake_data_records`.
+Record yang sudah ada atau dibuat manual tidak boleh diadopsi sebagai fake.
+Penghapusan hanya mengikuti marker pada entity yang sama, memeriksa dependency,
+dan wajib mempertahankan data manual, termasuk saat marker rusak menunjuk ke
+entity lain.
+
+Akun yang masih mempunyai marker fake ditandai titik abu-abu di halaman COA
+dan pemilih akun jurnal. Ketika akun tersebut digunakan oleh jurnal non-fake,
+marker akun dan seluruh akun induknya harus dilepas dalam transaksi yang sama.
+Akun itu menjadi permanen dan tidak lagi menjadi target Clear Fake Data.
+
+Import COA bersifat idempotent dan tidak boleh membuat akun ekuivalen hanya
+karena variasi kapitalisasi, spasi, tanda baca, atau nama yang sangat mirip.
+Pencocokan nama harus konservatif: tipe akun, saldo normal, sifat postable, dan
+ketersediaan buku wajib kompatibel. Akun manual yang dipakai sebagai ekuivalen
+tidak boleh diberi marker fake atau ditimpa atributnya.
+
+### 8.9 Deskripsi Bagan Akun
+
+Setiap akun dapat menyimpan deskripsi operasional hingga 2.000 karakter.
+Deskripsi yang disediakan template harus menjelaskan definisi akun, kondisi
+penggunaan, dan contoh peristiwa ekonomi. Daftar, tree, dan T-view COA
+menampilkan deskripsi sebagai tooltip saat item akun diarahkan dengan pointer;
+form akun menjadi sumber untuk membuat atau memperbarui teks tersebut.
+
+Template Teknologi & IT wajib mempunyai deskripsi eksplisit untuk seluruh akun,
+termasuk akun induk. Import fake data mengisi deskripsi yang sama. Import ulang
+hanya boleh memperbarui deskripsi akun yang memiliki marker fake pada entity
+yang sama dan tidak boleh menimpa nama atau deskripsi akun manual yang kebetulan
+memakai kode serupa.
+
+COA Teknologi & IT mencakup kebutuhan custom software, SaaS, hosting/domain,
+resale hardware dan lisensi, implementasi/integrasi, support/maintenance,
+managed IT services, keamanan siber/audit TI, pelatihan, infrastruktur internal,
+riset produk, compliance, serta biaya langsung per kontrak pelanggan.
+
+### 8.10 SOP Akun dan Review Ketersediaan Buku
+
+Setiap akun tersimpan, baik manual maupun fake, wajib mempunyai deskripsi SOP
+yang menjelaskan definisi, waktu penggunaan, dan contoh peristiwa ekonomi.
+Backfill SOP bersifat fail-closed: jika satu nama akun belum mempunyai definisi
+terkurasi, tidak satu pun perubahan dalam scope eksekusi boleh ditulis. Deskripsi
+manual yang sudah terisi tidak boleh ditimpa oleh backfill.
+
+Pada workspace `independent_books`, akun ekonomi biasa seperti kas, piutang,
+persediaan, utang, ekuitas, pendapatan, HPP, pajak transaksi, dan beban
+operasional tersedia pada Intern & Fiskal. Akun estimasi/alokasi manajemen,
+penyusutan komersial, dan kapitalisasi produk software intern tersedia pada
+Intern. Akun penyusutan fiskal, PPh Badan fiskal, serta penyajian koreksi fiskal
+tersedia pada Fiskal. Workspace `internal_only` tetap memetakan seluruh akun ke
+Intern.
+
+Editor akun menampilkan pilihan ketersediaan sebagai tiga badge radio berwarna,
+bukan dropdown. Warna mengikuti bahasa visual COA: Intern hijau, Fiskal kuning,
+dan Intern & Fiskal berupa gradasi hijau-kuning.
+
 ---
 
 ## 9. Perpajakan Indonesia 🟡 [PROPOSED — belum ada di original]
