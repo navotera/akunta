@@ -9,13 +9,16 @@ use Akunta\Rbac\Services\PermissionRegistry;
 use App\Models\Account;
 use App\Models\Branch;
 use App\Models\CostCenter;
+use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Models\JournalEntry;
 use App\Models\JournalTemplate;
 use App\Models\Period;
 use App\Models\Project;
 use App\Models\RecurringJournal;
 use App\Models\TaxCode;
 use App\Models\WebhookSubscription;
+use App\Observers\JournalEntryObserver;
 use App\Services\CronLogger;
 use App\Services\WebhookDispatcher;
 use App\Tenancy\Contracts\TenantProvisioner;
@@ -60,6 +63,7 @@ class AppServiceProvider extends ServiceProvider
         $this->registerCronLogger();
         $this->registerSettingsPermissions();
         $this->registerEntityRelations();
+        JournalEntry::observe(JournalEntryObserver::class);
     }
 
     /**
@@ -71,15 +75,16 @@ class AppServiceProvider extends ServiceProvider
     protected function registerEntityRelations(): void
     {
         $rels = [
-            'accounts'             => Account::class,
-            'periods'              => Period::class,
-            'journals'             => Journal::class,
-            'costCenters'          => CostCenter::class,
-            'projects'             => Project::class,
-            'branches'             => Branch::class,
-            'journalTemplates'     => JournalTemplate::class,
-            'recurringJournals'    => RecurringJournal::class,
-            'taxCodes'             => TaxCode::class,
+            'accounts' => Account::class,
+            'periods' => Period::class,
+            'journals' => Journal::class,
+            'fiscalAdjustments' => FiscalAdjustment::class,
+            'costCenters' => CostCenter::class,
+            'projects' => Project::class,
+            'branches' => Branch::class,
+            'journalTemplates' => JournalTemplate::class,
+            'recurringJournals' => RecurringJournal::class,
+            'taxCodes' => TaxCode::class,
             'webhookSubscriptions' => WebhookSubscription::class,
         ];
 
@@ -113,14 +118,44 @@ class AppServiceProvider extends ServiceProvider
             try {
                 app(PermissionRegistry::class)->registerMany('accounting', [
                     [
-                        'code'        => 'settings.coa_template.manage',
+                        'code' => 'settings.coa_template.manage',
                         'description' => 'Akses halaman Pengaturan → Template CoA.',
-                        'category'    => 'settings',
+                        'category' => 'settings',
                     ],
                     [
-                        'code'        => 'settings.cron.manage',
+                        'code' => 'settings.cron.manage',
                         'description' => 'Akses halaman Pengaturan → Cron (status + activity log + retensi).',
-                        'category'    => 'settings',
+                        'category' => 'settings',
+                    ],
+                    [
+                        'code' => 'workspace.manage',
+                        'description' => 'Menambah dan mengubah workspace accounting.',
+                        'category' => 'settings',
+                    ],
+                    [
+                        'code' => 'settings.fake_data.manage',
+                        'description' => 'Import dan hapus data simulasi yang ditandai fake.',
+                        'category' => 'settings',
+                    ],
+                    [
+                        'code' => 'automapping.manage',
+                        'description' => 'Mengelola rule dan data Auto Mapping.',
+                        'category' => 'journal',
+                    ],
+                    [
+                        'code' => 'fiscal.adjustment.read',
+                        'description' => 'Melihat jurnal, koreksi, bukti, dan laporan Fiskal.',
+                        'category' => 'fiscal',
+                    ],
+                    [
+                        'code' => 'fiscal.adjustment.manage',
+                        'description' => 'Membuat dan mengubah koreksi Fiskal draft.',
+                        'category' => 'fiscal',
+                    ],
+                    [
+                        'code' => 'fiscal.adjustment.approve',
+                        'description' => 'Menyetujui koreksi untuk laporan pajak final.',
+                        'category' => 'fiscal',
                     ],
                 ]);
             } catch (\Throwable) {
@@ -162,25 +197,25 @@ class AppServiceProvider extends ServiceProvider
         $j->loadMissing('entries');
 
         return [
-            'id'              => $j->id,
-            'entity_id'       => $j->entity_id,
-            'period_id'       => $j->period_id,
-            'number'          => $j->number,
-            'type'            => $j->type,
-            'date'            => $j->date?->toDateString(),
-            'reference'       => $j->reference,
-            'memo'            => $j->memo,
-            'status'          => $j->status,
-            'source_app'      => $j->source_app,
-            'source_id'       => $j->source_id,
+            'id' => $j->id,
+            'entity_id' => $j->entity_id,
+            'period_id' => $j->period_id,
+            'number' => $j->number,
+            'type' => $j->type,
+            'date' => $j->date?->toDateString(),
+            'reference' => $j->reference,
+            'memo' => $j->memo,
+            'status' => $j->status,
+            'source_app' => $j->source_app,
+            'source_id' => $j->source_id,
             'idempotency_key' => $j->idempotency_key,
-            'posted_at'       => $j->posted_at?->toIso8601String(),
-            'lines'           => $j->entries->map(fn ($e) => [
-                'line_no'    => $e->line_no,
+            'posted_at' => $j->posted_at?->toIso8601String(),
+            'lines' => $j->entries->map(fn ($e) => [
+                'line_no' => $e->line_no,
                 'account_id' => $e->account_id,
-                'debit'      => (string) $e->debit,
-                'credit'     => (string) $e->credit,
-                'memo'       => $e->memo,
+                'debit' => (string) $e->debit,
+                'credit' => (string) $e->credit,
+                'memo' => $e->memo,
             ])->all(),
         ];
     }
@@ -189,6 +224,14 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('journal.post', function (?User $user, Journal $journal): bool {
             return $user?->hasPermission('journal.post', $journal->entity_id) ?? false;
+        });
+
+        Gate::define('journal.submit', function (?User $user, Journal $journal): bool {
+            return $user?->hasPermission('journal.submit', $journal->entity_id) ?? false;
+        });
+
+        Gate::define('journal.review', function (?User $user, Journal $journal): bool {
+            return $user?->hasPermission('journal.review', $journal->entity_id) ?? false;
         });
 
         Gate::define('journal.reverse', function (?User $user, Journal $journal): bool {

@@ -126,7 +126,7 @@ class User extends Authenticatable
 
         $superAdmin = (clone $activeAssignments)
             ->whereHas('role', function ($q) {
-                $q->where('code', 'super_admin');
+                $q->whereIn('code', ['super_admin', 'admin']);
             })
             ->exists();
 

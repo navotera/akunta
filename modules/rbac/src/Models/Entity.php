@@ -13,6 +13,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string              $id
  * @property string              $tenant_id
  * @property string              $name
+ * @property string|null         $workspace_code
+ * @property bool                $is_active
+ * @property array<mixed>|null  $workspace_settings
+ * @property string             $theme_color
+ * @property string|null        $logo_path
+ * @property string|null        $director_name
+ * @property string|null        $phone
+ * @property string|null        $email
  * @property string|null         $legal_form
  * @property string|null         $npwp
  * @property string|null         $parent_entity_id
@@ -29,6 +37,8 @@ class Entity extends Model
 
     protected $casts = [
         'address' => 'array',
+        'is_active' => 'boolean',
+        'workspace_settings' => 'array',
     ];
 
     public function tenant(): BelongsTo

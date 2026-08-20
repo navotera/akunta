@@ -24,6 +24,8 @@
       label: a.name,
       code: a.code,
       tag: a.is_postable === false ? 'PARENT' : null,
+      availability: a.availability,
+      isFake: a.is_fake,
     })),
   );
 </script>

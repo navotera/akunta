@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Account extends Model
 {
@@ -22,12 +23,14 @@ class Account extends Model
         'entity_id',
         'code',
         'name',
+        'description',
         'parent_account_id',
         'type',
         'normal_balance',
         'is_postable',
         'is_active',
         'availability',
+        'legal_basis',
     ];
 
     protected $casts = [
@@ -57,5 +60,10 @@ class Account extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_account_id');
+    }
+
+    public function fakeDataRecords(): MorphMany
+    {
+        return $this->morphMany(FakeDataRecord::class, 'model');
     }
 }

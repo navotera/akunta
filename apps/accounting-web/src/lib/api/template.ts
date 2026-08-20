@@ -9,6 +9,7 @@ export interface JournalTemplateSummary {
   journal_type?: string | null;
   journal_mode?: 'internal' | 'fiscal';
   is_active?: boolean;
+  is_bookmarked?: boolean;
   is_global?: boolean;
 }
 
@@ -28,6 +29,7 @@ export interface JournalTemplateDetail {
   name: string;
   description: string | null;
   journal_mode: 'internal' | 'fiscal';
+  is_bookmarked?: boolean;
   lines: JournalTemplateLine[];
 }
 
@@ -73,6 +75,13 @@ export const templateApi = {
   update: (id: string, input: JournalTemplateInput, tenantSlug?: string | null) =>
     api<{ data: JournalTemplateDetail }>(`/api/v1/spa/journal-templates/${id}`, {
       json: input,
+      method: 'PATCH',
+      tenantSlug,
+    }).then((r) => r.data),
+
+  bookmark: (id: string, isBookmarked: boolean, tenantSlug?: string | null) =>
+    api<{ data: JournalTemplateSummary }>(`/api/v1/spa/journal-templates/${id}/bookmark`, {
+      json: { is_bookmarked: isBookmarked },
       method: 'PATCH',
       tenantSlug,
     }).then((r) => r.data),

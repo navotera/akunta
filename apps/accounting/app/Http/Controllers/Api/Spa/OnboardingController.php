@@ -37,7 +37,29 @@ class OnboardingController extends Controller
                 'account_count' => $accountCount,
                 'has_open_period' => $periodCount > 0,
                 'period_count' => $periodCount,
-                'completed' => $accountCount > 0 && $periodCount > 0,
+                'bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode'),
+                'has_bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode') !== null,
+                'completed' => $accountCount > 0
+                    && $periodCount > 0
+                    && data_get($entity->workspace_settings, 'bookkeeping_mode') !== null,
+            ],
+        ]);
+    }
+
+    public function bookkeepingMode(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $data = $request->validate([
+            'bookkeeping_mode' => 'required|in:independent_books,internal_only',
+        ]);
+        $settings = is_array($entity->workspace_settings) ? $entity->workspace_settings : [];
+        $settings['bookkeeping_mode'] = $data['bookkeeping_mode'];
+        $entity->forceFill(['workspace_settings' => $settings])->save();
+
+        return response()->json([
+            'data' => [
+                'entity_id' => $entity->id,
+                'bookkeeping_mode' => $data['bookkeeping_mode'],
             ],
         ]);
     }

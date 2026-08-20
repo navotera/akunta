@@ -45,6 +45,46 @@ Jika dokumentasi bertentangan dengan implementasi, periksa commit dan test
 terbaru, lalu dokumentasikan keputusan yang diperlukan. Jangan menyalin status,
 jumlah test, atau rencana lama ke file ini.
 
+## Invariant buku Intern dan Fiskal
+
+Konteks domain berikut sudah dikunci. Baca juga bagian “independent
+Intern/Fiskal books and fiscal corrections” di `docs/decisions.md` dan §8.7 di
+`docs/spec.md` sebelum mengubah jurnal, laporan, dashboard, akun, attachment,
+onboarding, atau RBAC:
+
+- `bookkeeping_mode=independent_books` berarti buku Intern dan Fiskal adalah
+  dua ledger lengkap yang independen. Nilai pada setiap record jurnal tetap
+  hanya `internal` atau `fiscal`; `both` bukan ledger ketiga.
+- Pilihan input `Intern & Fiskal` membuat dua jurnal draft secara atomik.
+  Keduanya memakai `transaction_code` dan `input_group_id` yang sama, tetapi
+  mempunyai ID, nomor, status, posting, reversal, attachment, entry, dan saldo
+  masing-masing. Setelah dibuat, perubahan salah satu jurnal tidak boleh
+  otomatis mengubah pasangannya.
+- Input tunggal `Intern` atau `Fiskal` tidak membuat jurnal pada buku lain.
+  Input gabungan hanya boleh memakai akun dengan `availability=both`; input
+  tunggal mengikuti `intern`, `fiskal`, atau `both` sesuai bukunya.
+- Lampiran input gabungan disimpan sebagai attachment masing-masing jurnal.
+  Kegagalan membuat salah satu jurnal harus menggagalkan seluruh pembuatan
+  pasangan; jangan meninggalkan pasangan parsial.
+- Koreksi Fiskal disimpan di `fiscal_adjustments`, bukan sebagai mutasi jurnal.
+  Draft koreksi tidak memengaruhi laporan. Koreksi approved memengaruhi hanya
+  rekonsiliasi/laporan Pajak Final, wajib memiliki bukti, dan tidak mengubah
+  debit/kredit kedua buku.
+- Dashboard manajemen mempunyai tab Intern/Fiskal. Tab Fiskal adalah estimasi
+  dan rekonsiliasi, bukan angka SPT final; tarif simulasi, kredit pajak,
+  kompensasi rugi, fasilitas tarif, dan pajak final harus dibedakan dengan jelas.
+- Role `inspector` tidak boleh mengakses dashboard atau data Intern. Inspector
+  diarahkan ke daftar jurnal, dan backend wajib memaksa journal/report read ke
+  buku Fiskal. Penyembunyian menu frontend bukan security boundary.
+- Label status daftar jurnal mengikuti status backend: `draft` = Diajukan,
+  `submitted` = Di review, `posted` = Tersimpan, dan `rejected` = Perlu Revisi.
+  Jurnal `posted`/Tersimpan read-only bagi operator; Supervisor/admin dapat
+  mengubahnya melalui endpoint terotorisasi.
+- Mode `internal_only` tidak menyediakan input/laporan Fiskal. Jangan izinkan
+  perpindahan ke mode ini jika entitas sudah memiliki jurnal atau koreksi Fiskal.
+- Perubahan invariant di atas memerlukan keputusan produk eksplisit, test
+  regresi kedua buku, dan pembaruan `docs/decisions.md` serta `docs/spec.md`.
+
 ## Aturan perubahan
 
 1. Periksa `git status` dan diff yang sudah ada sebelum mengedit. Pertahankan
@@ -68,12 +108,19 @@ jumlah test, atau rencana lama ke file ini.
 7. Jangan menambahkan secret ke repository. Jangan mengubah `.env` lokal,
    data database, atau konfigurasi production sebagai bagian dari perubahan
    kode biasa.
-8. Jangan mengedit artefak hasil generate atau dependency vendor: `vendor/`,
+8. Data dummy/fake wajib memiliki provenance/marker yang eksplisit. Fitur
+   `Clear Fake Data` atau `Clear Dummy Data` hanya boleh menghapus record yang
+   dibuat dan ditandai oleh importer fake pada tenant/entity yang sama; jangan
+   pernah melakukan mass-delete berdasarkan tenant, entity, group, tanggal,
+   atau pola nama saja. Jika asal-usul record tidak dapat dibuktikan sebagai
+   fake, jangan hapus dan tambahkan test yang memastikan data input manual user
+   tetap ada.
+9. Jangan mengedit artefak hasil generate atau dependency vendor: `vendor/`,
    `node_modules/`, `.svelte-kit/`, `build/`, `storage/`, dan cache. Edit
    source atau konfigurasi yang menghasilkan artefak tersebut.
-9. Ikuti gaya file di sekitarnya. Untuk PHP gunakan Laravel Pint; file baru
-   mengikuti namespace PSR-4 dan pola Pest yang dipakai aplikasi terkait.
-10. Perubahan perilaku publik harus disertai test dan, bila perlu, update
+10. Ikuti gaya file di sekitarnya. Untuk PHP gunakan Laravel Pint; file baru
+    mengikuti namespace PSR-4 dan pola Pest yang dipakai aplikasi terkait.
+11. Perubahan perilaku publik harus disertai test dan, bila perlu, update
     dokumentasi atau kontrak API.
 
 ## Perintah kerja dan verifikasi
@@ -160,3 +207,31 @@ lokal tanpa alasan yang jelas.
   atau gagal karena masalah yang sudah ada.
 - Jangan membuat commit, push, reset, atau menghapus perubahan user kecuali
   diminta secara eksplisit.
+
+
+## Efficient verification workflow
+
+Use incremental checks during implementation so feedback remains fast while preserving the Definition of Done:
+
+- For a small CSS-only change, inspect the focused diff and validate the affected stylesheet; do not run a production build after every individual edit.
+- For a small TypeScript change, run the TypeScript check first. Add focused tests when behavior or business logic changes.
+- When several related frontend edits are requested consecutively, batch them and run one production build at the end of the feature or at a meaningful checkpoint.
+- Run a production build immediately when changing dependencies, build configuration, Vite configuration, code splitting, entry points, or other bundle-sensitive behavior.
+- Before declaring a frontend feature complete, run the required production build once and report any warnings or exceptions.
+- Do not repeat server, dependency, or unrelated test checks when the current change cannot affect them.
+- For an explicitly requested cosmetic-only tweak, keep scope limited to the affected UI file/style and do not add routes, features, or broad repository checks unless the user asks for them or the focused check reveals a problem.
+- Prefer the narrowest relevant check during iteration, then perform the complete proportional verification at final handoff.
+
+## Development server startup
+
+At the beginning of each agent session, start the local development services
+before making changes, unless they are already running. Use the root launcher:
+
+- Windows: `start-dev.bat`
+- macOS/Linux: `./start-dev.sh`
+
+The launcher uses the existing root `bun run dev` orchestrator when Bun is
+available, and otherwise falls back to `php artisan serve` plus the installed
+Vite CLI through Node. Do not start a second copy if ports 8000 or 5175 are
+already serving the application. Keep the launcher process running while
+working and stop it with `Ctrl+C` when the session ends.

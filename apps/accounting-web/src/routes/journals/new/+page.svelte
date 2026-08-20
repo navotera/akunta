@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
   import { journalApi } from '$lib/api/journal.js';
@@ -17,6 +17,17 @@
   let saving = $state(false);
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
+  let accountsRequest = 0;
+
+  async function refreshAccounts() {
+    const request = ++accountsRequest;
+    const loadedAccounts = await accountApi.list();
+    if (request === accountsRequest) accounts = loadedAccounts;
+  }
+
+  afterNavigate(({ to }) => {
+    if (to?.url.pathname === '/journals/new') void refreshAccounts();
+  });
 
   function captureError(e: unknown) {
     if (e instanceof ApiError) {
@@ -37,14 +48,25 @@
         return;
       }
     }
-    const [loadedAccounts, internalTemplates, fiscalTemplates] = await Promise.all([
-      accountApi.list(),
-      templateApi.list(4, undefined, 'internal'),
-      templateApi.list(4, undefined, 'fiscal'),
+    const [internalTemplates, fiscalTemplates] = await Promise.all([
+      templateApi.list(50, undefined, 'internal'),
+      templateApi.list(50, undefined, 'fiscal'),
     ]);
-    accounts = loadedAccounts;
+    await refreshAccounts();
     templates = [...internalTemplates, ...fiscalTemplates];
   });
+
+  async function uploadAttachments(
+    created: Awaited<ReturnType<typeof journalApi.create>>,
+    files: File[],
+  ) {
+    const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
+    await Promise.all(
+      journals.flatMap((journal) =>
+        files.map((file) => attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, journal.id, file)),
+      ),
+    );
+  }
 
   async function saveDraft(payload: FormPayload) {
     if (saving) return;
@@ -53,20 +75,18 @@
     serverMessage = null;
     try {
       const created = await journalApi.create({
+        transaction_code: payload.transaction_code,
         journal_mode: payload.journal_mode,
+        type: payload.type,
         date: payload.date,
         memo: payload.memo,
         reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
-      await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, created.id, file),
-        ),
-      );
+      await uploadAttachments(created, payload.attachments);
       clearJournalDraft('/journals/new');
-      goto(`/journals/${created.id}`);
+      goto(created.paired_journal ? '/journals' : `/journals/${created.id}`);
     } catch (e) {
       captureError(e);
     } finally {
@@ -81,19 +101,24 @@
     serverMessage = null;
     try {
       const created = await journalApi.create({
+        transaction_code: payload.transaction_code,
         journal_mode: payload.journal_mode,
+        type: payload.type,
         date: payload.date,
         memo: payload.memo,
         reference: payload.reference,
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
+      await uploadAttachments(created, payload.attachments);
+      const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
       await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, created.id, file),
+        journals.map((journal) =>
+          auth.user?.roles?.includes('operator')
+            ? journalApi.submit(journal.id)
+            : journalApi.post(journal.id),
         ),
       );
-      await journalApi.post(created.id);
       clearJournalDraft('/journals/new');
       goto('/journals');
     } catch (e) {

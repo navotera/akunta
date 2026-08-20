@@ -5,8 +5,14 @@
   import BalancePill from './BalancePill.svelte';
   import TemplateSidebar from './TemplateSidebar.svelte';
   import type { AccountOption } from '$lib/api/account.js';
-  import { journalApi, type JournalMode, type JournalDetail } from '$lib/api/journal.js';
+  import {
+    journalApi,
+    type JournalMode,
+    type JournalType,
+    type JournalDetail,
+  } from '$lib/api/journal.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
+  import { auth } from '$lib/stores/auth.svelte.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { page } from '$app/stores';
   import {
@@ -30,6 +36,7 @@
     saving?: boolean;
     serverErrors?: Record<string, string[]> | null;
     serverMessage?: string | null;
+    allowPosting?: boolean;
     onSaveDraft: (payload: FormPayload) => Promise<void> | void;
     onPosting: (payload: FormPayload) => Promise<void> | void;
     onCancel: () => void;
@@ -37,7 +44,9 @@
 
   export interface FormPayload {
     number?: string;
+    transaction_code: string;
     journal_mode: JournalMode;
+    type: JournalType;
     date: string;
     memo: string;
     reference: string | null;
@@ -55,6 +64,7 @@
     saving = false,
     serverErrors = null,
     serverMessage = null,
+    allowPosting = true,
     onSaveDraft,
     onPosting,
     onCancel,
@@ -71,16 +81,26 @@
 
   let date = $state(restoredDraft?.date ?? initial?.date ?? new Date().toISOString().slice(0, 10));
   let number = $state(restoredDraft?.number ?? initial?.number ?? '');
+  let transactionCode = $state(restoredDraft?.transaction_code ?? initial?.transaction_code ?? '');
   let previewNumber = $state<string | null>(null);
   let journalMode = $state<JournalMode>(
     restoredDraft?.journal_mode ?? initial?.journal_mode ?? 'internal',
+  );
+  let journalType = $state<JournalType>(
+    restoredDraft?.type ?? (initial?.type as JournalType | undefined) ?? 'general',
   );
   let memo = $state(restoredDraft?.memo ?? initial?.memo ?? '');
   let reference = $state(restoredDraft?.reference ?? initial?.reference ?? '');
   let attachments = $state<File[]>([]);
   let attachmentInput = $state<HTMLInputElement>();
   let attachmentToRemove = $state<number | null>(null);
+  let attachmentToPreview = $state<File | null>(null);
+  let attachmentPreviewUrl = $state<string | null>(null);
   let pendingJournalMode = $state<JournalMode | null>(null);
+
+  function modeLabel(mode: JournalMode): string {
+    return mode === 'both' ? 'Intern & Fiskal' : mode === 'fiscal' ? 'Fiskal' : 'Intern';
+  }
 
   let debits = $state<Row[]>(
     (restoredDraft?.entries_debit ?? initial?.entries_debit ?? []).map((e) => ({
@@ -107,7 +127,9 @@
     const draft: JournalDraft = {
       date,
       number,
+      transaction_code: transactionCode,
       journal_mode: journalMode,
+      type: journalType,
       memo,
       reference,
       entries_debit: debits,
@@ -116,20 +138,38 @@
     saveJournalDraft(draftPath, draft);
   });
 
+  $effect(() => {
+    if (initial || transactionCode) return;
+    void journalApi
+      .nextTransactionCode(date)
+      .then(({ transaction_code }) => {
+        if (!transactionCode) {
+          transactionCode = transaction_code;
+        }
+      })
+      .catch(() => undefined);
+  });
+
   const debitTotal = $derived(debits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const creditTotal = $derived(credits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const balanced = $derived(debitTotal > 0 && Math.abs(debitTotal - creditTotal) < 0.005);
   const visibleAccounts = $derived(
-    accounts.filter(
-      (account) =>
-        account.availability === 'both' ||
-        (journalMode === 'internal'
-          ? account.availability === 'intern'
-          : account.availability === 'fiskal'),
+    accounts.filter((account) =>
+      journalMode === 'both'
+        ? account.availability === 'both'
+        : account.availability === 'both' ||
+          (journalMode === 'internal'
+            ? account.availability === 'intern'
+            : account.availability === 'fiskal'),
     ),
   );
   const visibleTemplates = $derived(
-    templates.filter((template) => (template.journal_mode ?? 'internal') === journalMode),
+    journalMode === 'both'
+      ? []
+      : templates.filter(
+          (template) =>
+            (template.journal_mode ?? 'internal') === journalMode && template.is_bookmarked === true,
+        ),
   );
   const displayedNumber = $derived(number || previewNumber || 'Memuat nomor jurnal…');
 
@@ -140,7 +180,7 @@
     const request = ++previewRequest;
     previewNumber = null;
     void journalApi
-      .nextNumber(date, journalMode)
+      .nextNumber(date, journalMode === 'both' ? 'internal' : journalMode, journalType)
       .then(({ number: nextNumber }) => {
         if (request === previewRequest) previewNumber = nextNumber;
       })
@@ -149,10 +189,9 @@
       });
   });
 
-  function toggleJournalMode() {
+  function requestJournalMode(nextMode: JournalMode) {
     if (initial || saving) return;
-
-    const nextMode = journalMode === 'fiscal' ? 'internal' : 'fiscal';
+    if (nextMode === journalMode) return;
     if (attachments.length > 0) {
       pendingJournalMode = nextMode;
       return;
@@ -165,12 +204,13 @@
     journalMode = nextMode;
     const availableIds = new Set(
       accounts
-        .filter(
-          (account) =>
-            account.availability === 'both' ||
-            (nextMode === 'internal'
-              ? account.availability === 'intern'
-              : account.availability === 'fiskal'),
+        .filter((account) =>
+          nextMode === 'both'
+            ? account.availability === 'both'
+            : account.availability === 'both' ||
+              (nextMode === 'internal'
+                ? account.availability === 'intern'
+                : account.availability === 'fiskal'),
         )
         .map((account) => account.id),
     );
@@ -205,7 +245,9 @@
     const clean = (rows: Row[]) => rows.filter((r) => r.account_id && Number(r.amount) > 0);
     return {
       number,
+      transaction_code: transactionCode,
       journal_mode: journalMode,
+      type: journalType,
       date,
       memo,
       reference: reference || null,
@@ -230,6 +272,22 @@
 
     attachments = attachments.filter((_, i) => i !== attachmentToRemove);
     attachmentToRemove = null;
+  }
+
+  function openAttachmentPreview(file: File) {
+    closeAttachmentPreview();
+    attachmentPreviewUrl = URL.createObjectURL(file);
+    attachmentToPreview = file;
+  }
+
+  function closeAttachmentPreview() {
+    if (attachmentPreviewUrl) URL.revokeObjectURL(attachmentPreviewUrl);
+    attachmentPreviewUrl = null;
+    attachmentToPreview = null;
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && attachmentToPreview) closeAttachmentPreview();
   }
 
   function confirmModeChange(includeAttachments: boolean) {
@@ -271,55 +329,71 @@
   }
 </script>
 
+<svelte:window on:keydown={handleWindowKeydown} />
+
 <div class="ak-journal-shell">
   <header class="px-6 pt-4 pb-2">
     <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
     <div class="flex flex-wrap items-center justify-between gap-3 mt-1">
       <div>
         <p class="text-sm font-medium text-text-muted">{title}</p>
-        <h1
-          class="font-mono text-2xl font-bold leading-tight text-text-default"
-          data-testid="journal-number"
-        >
-          {displayedNumber}
-        </h1>
+      </div>
+      <div class="group relative">
         <div
-          class="mt-2 inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-sm {journalMode ===
-          'fiscal'
-            ? 'bg-warning-light text-warning'
-            : 'bg-primary-light text-primary'}"
-          data-testid="journal-mode-status"
+          class="inline-flex items-center gap-1 rounded-full border border-border-default bg-card-bg p-1 text-sm shadow-xs"
+          role="group"
+          aria-label="Mode input jurnal"
+          aria-describedby="journal-mode-tooltip"
+          data-testid="journal-mode-toggle"
         >
-          <span class="font-bold"
-            >Mode Jurnal: {journalMode === 'fiscal' ? 'Fiskal' : 'Intern'}</span
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-70 {journalMode ===
+            'internal'
+              ? 'bg-[#22c55e] text-white'
+              : 'text-text-muted'}"
+            onclick={() => requestJournalMode('internal')}
+            disabled={!!initial || saving}
+            aria-pressed={journalMode === 'internal'}>Intern</button
           >
-          <span class="text-text-muted">
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-70 {journalMode ===
+            'both'
+              ? 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'
+              : 'text-text-muted'}"
+            onclick={() => requestJournalMode('both')}
+            disabled={!!initial || saving}
+            aria-pressed={journalMode === 'both'}>Intern &amp; Fiskal</button
+          >
+          <button
+            type="button"
+            class="rounded-full px-3 py-1 font-medium disabled:cursor-not-allowed disabled:opacity-70 {journalMode ===
+            'fiscal'
+              ? 'bg-[#facc15] text-[#5a4300]'
+              : 'text-text-muted'}"
+            onclick={() => requestJournalMode('fiscal')}
+            disabled={!!initial || saving}
+            aria-pressed={journalMode === 'fiscal'}>Fiskal</button
+          >
+        </div>
+        <div
+          id="journal-mode-tooltip"
+          role="tooltip"
+          class="pointer-events-none absolute right-0 top-full z-10 mt-2 hidden w-72 rounded-md border border-border-default bg-card-bg px-3 py-2 text-left text-xs shadow-lg group-hover:block group-focus-within:block"
+        >
+          <strong class="block text-text-default">
+            Mode Jurnal: {modeLabel(journalMode)}
+          </strong>
+          <span class="mt-1 block text-text-muted">
             {journalMode === 'fiscal'
               ? 'Akun dan template untuk pelaporan pajak.'
-              : 'Akun dan template untuk pembukuan internal.'}
+              : journalMode === 'both'
+                ? 'Jurnal yang sama dibuat sebagai draft di buku Intern dan Fiskal.'
+                : 'Akun dan template untuk pembukuan internal.'}
           </span>
         </div>
       </div>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-full border border-border-default bg-card-bg p-1 text-sm shadow-xs disabled:cursor-not-allowed disabled:opacity-70"
-        onclick={toggleJournalMode}
-        disabled={!!initial || saving}
-        aria-label="Ubah mode jurnal"
-        aria-pressed={journalMode === 'fiscal'}
-        data-testid="journal-mode-toggle"
-      >
-        <span
-          class="rounded-full px-3 py-1 font-medium {journalMode === 'internal'
-            ? 'bg-primary text-white'
-            : 'text-text-muted'}">Intern</span
-        >
-        <span
-          class="rounded-full px-3 py-1 font-medium {journalMode === 'fiscal'
-            ? 'bg-warning text-white'
-            : 'text-text-muted'}">Fiskal</span
-        >
-      </button>
     </div>
   </header>
 
@@ -399,7 +473,18 @@
               <li
                 class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
               >
-                <span class="min-w-0 truncate">{file.name}</span>
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary"
+                  onclick={() => openAttachmentPreview(file)}
+                  title="Klik untuk melihat lampiran"
+                  data-testid="journal-attachment-preview-{index}"
+                >
+                  <span class="shrink-0 text-xs font-semibold uppercase text-text-muted">
+                    {file.type === 'application/pdf' ? 'PDF' : 'IMG'}
+                  </span>
+                  <span class="min-w-0 truncate">{file.name}</span>
+                </button>
                 <button
                   type="button"
                   class="shrink-0 text-xs font-medium text-danger hover:underline"
@@ -416,6 +501,51 @@
     <aside class="xl:col-span-3 flex flex-col gap-4 xl:sticky xl:top-4 xl:self-start">
       <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
         <div class="flex flex-col gap-3">
+          <label class="text-sm">
+            <span class="block font-medium mb-1"
+              >Kode Transaksi <span class="text-danger">*</span></span
+            >
+            <input
+              type="text"
+              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+              bind:value={transactionCode}
+              placeholder="Mis. TRX-2026-0001"
+              maxlength="80"
+              required
+              readonly
+              aria-readonly="true"
+              data-testid="journal-transaction-code"
+            />
+            {#if fieldError('transaction_code')}
+              <span class="block mt-1 text-xs text-danger">{fieldError('transaction_code')}</span>
+            {/if}
+          </label>
+          <label class="text-sm">
+            <span class="block font-medium mb-1">Kode Jurnal</span>
+            <input
+              type="text"
+              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 text-text-muted focus:outline-none"
+              value={displayedNumber}
+              readonly
+              aria-readonly="true"
+              data-testid="journal-number-input"
+            />
+          </label>
+          <label class="text-sm">
+            <span class="block font-medium mb-1">Tipe Jurnal</span>
+            <select
+              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary disabled:opacity-60"
+              bind:value={journalType}
+              disabled={!!initial || saving}
+              data-testid="journal-type"
+            >
+              <option value="general">Jurnal Umum</option>
+              <option value="adjustment">Jurnal Penyesuaian</option>
+              <option value="reversing">Jurnal Koreksi</option>
+              <option value="closing">Jurnal Penutup</option>
+              <option value="opening">Jurnal Pembukaan</option>
+            </select>
+          </label>
           <label class="text-sm">
             <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
             <DateInput
@@ -484,15 +614,17 @@
   >
     <BalancePill {debits} {credits} />
     <div class="flex items-center gap-3">
-      <button
-        type="button"
-        onclick={() => onSaveDraft(payload())}
-        disabled={saving}
-        class="rounded-md border border-border-default bg-card-bg px-4 py-2 text-sm font-semibold hover:bg-page-bg disabled:opacity-50"
-        data-testid="save-draft"
-      >
-        Simpan Draft
-      </button>
+      {#if allowPosting}
+        <button
+          type="button"
+          onclick={() => onSaveDraft(payload())}
+          disabled={saving}
+          class="rounded-md border border-border-default bg-card-bg px-4 py-2 text-sm font-semibold hover:bg-page-bg disabled:opacity-50"
+          data-testid="save-draft"
+        >
+          Simpan Draft
+        </button>
+      {/if}
       <button
         type="button"
         onclick={onCancel}
@@ -510,10 +642,68 @@
         class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
         data-testid="posting-jurnal"
       >
-        Posting Jurnal
+        {auth.user?.roles?.includes('operator') ? 'Ajukan Review' : 'Posting Jurnal'}
       </button>
     </div>
   </div>
+
+  {#if attachmentToPreview && attachmentPreviewUrl}
+    <div
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+      role="presentation"
+      onclick={closeAttachmentPreview}
+    >
+      <div
+        class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-card-bg shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="attachment-preview-title"
+        tabindex="-1"
+        onclick={(event) => event.stopPropagation()}
+        onkeydown={(event) => event.stopPropagation()}
+      >
+        <header
+          class="flex items-center justify-between gap-3 border-b border-border-default px-4 py-3"
+        >
+          <h2 id="attachment-preview-title" class="min-w-0 truncate text-sm font-bold">
+            {attachmentToPreview.name}
+          </h2>
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-border-default px-3 py-1.5 text-sm font-semibold hover:bg-page-bg"
+            onclick={closeAttachmentPreview}
+            aria-label="Tutup preview lampiran"
+          >
+            Tutup
+          </button>
+        </header>
+        <div class="flex min-h-[24rem] items-center justify-center overflow-auto bg-page-bg p-4">
+          {#if attachmentToPreview.type.startsWith('image/')}
+            <img
+              src={attachmentPreviewUrl}
+              alt={attachmentToPreview.name}
+              class="max-h-[72vh] max-w-full object-contain"
+            />
+          {:else if attachmentToPreview.type === 'application/pdf'}
+            <iframe
+              src={attachmentPreviewUrl}
+              title={`Preview ${attachmentToPreview.name}`}
+              class="h-[72vh] w-full rounded border border-border-default bg-white"
+            ></iframe>
+          {:else}
+            <a
+              href={attachmentPreviewUrl}
+              target="_blank"
+              rel="noreferrer"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white"
+            >
+              Buka lampiran
+            </a>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {/if}
 
   {#if attachmentToRemove !== null && attachments[attachmentToRemove]}
     <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4">
@@ -559,15 +749,11 @@
         data-testid="journal-mode-attachment-warning"
       >
         <h2 id="mode-attachment-warning-title" class="text-base font-bold text-text-default">
-          Sertakan lampiran ke mode {pendingJournalMode === 'fiscal' ? 'Fiskal' : 'Intern'}?
+          Sertakan lampiran ke mode {modeLabel(pendingJournalMode)}?
         </h2>
         <p class="mt-2 text-sm text-text-muted">
-          {attachments.length} lampiran yang dipilih pada mode {journalMode === 'fiscal'
-            ? 'Fiskal'
-            : 'Intern'} masih ada di formulir. Apakah lampiran ini ingin disertakan ke mode {pendingJournalMode ===
-          'fiscal'
-            ? 'Fiskal'
-            : 'Intern'}?
+          {attachments.length} lampiran yang dipilih pada mode {modeLabel(journalMode)} masih ada di formulir.
+          Apakah lampiran ini ingin disertakan ke mode {modeLabel(pendingJournalMode)}?
         </p>
         <div class="mt-5 flex flex-wrap justify-end gap-3">
           <button

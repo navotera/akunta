@@ -25,6 +25,10 @@
   --m-primary: #1b84ff;
   --m-primary-light: #eff6ff;
   --m-primary-active: #056ee9;
+  --m-sidebar-bg: #f7faff;
+  --m-sidebar-gradient: linear-gradient(180deg, #eef6ff 0%, #f8fbff 100%);
+  --m-sidebar-text: #252f4a;
+  --m-sidebar-muted: #78829d;
   --m-bg-page: #fafafb;
   --m-bg-card: #ffffff;
   --m-border: #dbdfe9;
@@ -84,9 +88,9 @@ table .tabnum.ak-dim,
 
 /* Section heading — small bold uppercase tracking-wider */
 .ak-section-title {
-  font-size: 0.6875rem;
+  font-size: 1rem;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.06em;
   color: var(--m-text-muted);
 }
@@ -149,8 +153,8 @@ table .tabnum.ak-dim,
   padding: 0.5rem 0.75rem;
   margin: 0 0.5rem;
   border-radius: 0.5rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 1.0625rem;
+  font-weight: 400;
   color: var(--m-text);
   transition:
     background-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -159,6 +163,18 @@ table .tabnum.ak-dim,
 .ak-nav-item:hover {
   background: var(--m-bg-page);
   color: var(--m-primary);
+}
+.ak-nav-item.ak-nav-subitem {
+  font-size: 0.9375rem;
+}
+.ak-sidebar .ak-nav-item.ak-nav-subitem:hover {
+  background: color-mix(in srgb, var(--m-primary) 15%, transparent);
+  color: #ffffff;
+}
+.ak-sidebar .ak-nav-item {
+  font-size: 0.9375rem;
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
 }
 .ak-nav-item.is-active {
   background: var(--m-primary-light);
@@ -319,12 +335,12 @@ table .tabnum.ak-dim,
 
 /* Ekosistem section dots — sister-app sync status */
 .ak-eco-item {
-  font-size: 0.78rem;
-  font-weight: 500;
+  font-size: 1.0625rem;
+  font-weight: 400;
   border: 1px solid transparent;
 }
 .ak-eco-count {
-  font-size: 0.65rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--m-text-muted);
   background: var(--m-bg-page);
@@ -485,6 +501,12 @@ table .tabnum.ak-dim,
 .ak-toggle--on {
   background: var(--m-text, #0f172a);
 }
+.ak-toggle--status.ak-toggle--on {
+  background: linear-gradient(135deg, #2563eb 0%, #0f2f82 100%);
+}
+.ak-toggle--primary.ak-toggle--on {
+  background: var(--m-primary, #1b84ff);
+}
 .ak-toggle--on::before {
   left: 0.95rem;
 }
@@ -571,4 +593,58 @@ table .tabnum.ak-dim,
   background: var(--m-bg-page);
   color: var(--m-text-muted);
   white-space: nowrap;
+}
+
+.bg-sidebar-bg {
+  background: var(--m-sidebar-gradient, var(--m-sidebar-bg));
+}
+.ak-sidebar-brand,
+.ak-sidebar-brand:hover {
+  background: transparent;
+}
+.ak-sidebar .text-text-default,
+.ak-sidebar .text-text-strong,
+.ak-sidebar .text-text-muted,
+.ak-sidebar .ak-section-title,
+.ak-sidebar .ak-nav-item {
+  color: var(--m-sidebar-text);
+}
+.ak-sidebar .text-text-muted,
+.ak-sidebar .ak-section-title {
+  color: var(--m-sidebar-muted);
+}
+.ak-sidebar .ak-nav-item:not(.is-active) {
+  color: color-mix(in srgb, var(--m-sidebar-text) 60%, transparent);
+}
+.ak-sidebar .ak-nav-item.is-active {
+  background: color-mix(in srgb, var(--m-primary) 24%, transparent);
+  color: #ffffff;
+}
+.ak-sidebar .ak-nav-item:hover {
+  background: color-mix(in srgb, var(--m-primary) 15%, transparent);
+  color: #ffffff;
+}
+.ak-sidebar .ak-nav-item.is-active:hover {
+  background: color-mix(in srgb, var(--m-primary) 24%, transparent);
+  color: #ffffff;
+}
+
+/* Settings uses a more readable default than the compact utility text sizes. */
+.ak-settings-page {
+  font-size: 1rem;
+}
+.ak-settings-page .text-sm {
+  font-size: 0.875rem;
+}
+.ak-settings-page .text-xs {
+  font-size: 0.8125rem;
+}
+.ak-settings-nav-item:hover {
+  background: transparent !important;
+  color: var(--m-primary-active) !important;
+}
+.ak-settings-nav-item[aria-current='page'],
+.ak-settings-nav-item[aria-current='page']:hover {
+  background: var(--m-primary-light) !important;
+  color: var(--m-primary-active) !important;
 }

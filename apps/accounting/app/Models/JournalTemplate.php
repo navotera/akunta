@@ -22,15 +22,18 @@ class JournalTemplate extends Model
         'default_memo',
         'default_reference',
         'is_active',
+        'is_bookmarked',
         'created_by',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_bookmarked' => 'boolean',
     ];
 
     protected $attributes = [
         'is_active' => true,
+        'is_bookmarked' => false,
         'journal_type' => 'general',
         'journal_mode' => Journal::MODE_INTERNAL,
     ];

@@ -6,7 +6,10 @@ namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Rbac\Models\Entity;
 use App\Actions\PostJournalAction;
+use App\Actions\RejectJournalAction;
 use App\Actions\ReverseJournalAction;
+use App\Actions\SubmitJournalAction;
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Journal;
@@ -23,8 +26,12 @@ use Throwable;
 
 class JournalController extends Controller
 {
+    use AuthorizesBookAccess;
+
     public function __construct(
         private readonly PostJournalAction $postJournal,
+        private readonly SubmitJournalAction $submitJournal,
+        private readonly RejectJournalAction $rejectJournal,
         private readonly ReverseJournalAction $reverseJournal,
         private readonly JournalNumberGenerator $numberGenerator,
     ) {}
@@ -32,6 +39,14 @@ class JournalController extends Controller
     public function index(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.read', $entity);
+        $mode = $request->query('journal_mode');
+        if ($this->isInspector($request)) {
+            $mode = Journal::MODE_FISCAL;
+        }
+        if ($mode !== null && ! in_array($mode, [Journal::MODE_INTERNAL, Journal::MODE_FISCAL], true)) {
+            throw ValidationException::withMessages(['journal_mode' => 'Invalid journal mode.']);
+        }
         $perPage = min(100, max(5, (int) ($request->query('per_page', 20))));
 
         $query = Journal::query()
@@ -40,12 +55,18 @@ class JournalController extends Controller
             ->latest('date')
             ->latest('created_at');
 
+        if ($mode !== null) {
+            $this->authorizeBookRead($request, $mode);
+            $query->where('journal_mode', $mode);
+        }
+
         if ($status = $request->query('status')) {
             $query->where('status', $status);
         }
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('transaction_code', 'like', "%{$search}%")
                     ->orWhere('reference', 'like', "%{$search}%")
                     ->orWhere('memo', 'like', "%{$search}%");
             });
@@ -67,9 +88,11 @@ class JournalController extends Controller
     public function show(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.read', $entity);
         $journal = Journal::with('entries.account')
             ->where('entity_id', $entity->id)
             ->findOrFail($id);
+        $this->authorizeBookRead($request, $journal->journal_mode);
 
         return response()->json(['data' => $this->detail($journal)]);
     }
@@ -79,49 +102,85 @@ class JournalController extends Controller
         $data = $request->validate([
             'date' => 'required|date_format:Y-m-d',
             'journal_mode' => 'nullable|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+            'type' => 'nullable|in:general,adjustment,reversing,closing,opening',
         ]);
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.read', $entity);
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $type = $data['type'] ?? Journal::TYPE_GENERAL;
 
         return response()->json([
             'data' => [
-                'number' => $this->numberGenerator->next($entity->id, $data['date'], $mode),
+                'number' => $this->numberGenerator->next($entity->id, $data['date'], $mode, $type),
             ],
+        ]);
+    }
+
+    public function nextTransactionCode(Request $request): JsonResponse
+    {
+        $data = $request->validate(['date' => 'required|date_format:Y-m-d']);
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.read', $entity);
+
+        return response()->json([
+            'data' => ['transaction_code' => $this->numberGenerator->nextTransactionCode($entity->id, $data['date'])],
         ]);
     }
 
     public function store(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.create', $entity);
         $data = $this->validatePayload($request);
+        $inputMode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->ensureModeEnabled($entity, $inputMode);
         $period = $this->resolvePeriod($entity, $data['date']);
 
-        $journal = DB::transaction(function () use ($data, $entity, $period) {
-            /** @var Journal $j */
-            $j = Journal::create([
-                'entity_id' => $entity->id,
-                'period_id' => $period->id,
-                'type' => $data['type'] ?? Journal::TYPE_GENERAL,
-                'journal_mode' => $data['journal_mode'] ?? Journal::MODE_INTERNAL,
-                'number' => ($data['number'] ?? null) ?: $this->numberGenerator->next(
-                    $entity->id,
-                    $data['date'],
-                    $data['journal_mode'] ?? Journal::MODE_INTERNAL,
-                ),
-                'date' => $data['date'],
-                'memo' => $data['memo'],
-                'reference' => $data['reference'] ?? null,
-                'source_app' => 'accounting',
-                'status' => Journal::STATUS_DRAFT,
-                'created_by' => Auth::id(),
-            ]);
+        $journals = DB::transaction(function () use ($data, $entity, $period, $inputMode): array {
+            $modes = $inputMode === 'both'
+                ? [Journal::MODE_INTERNAL, Journal::MODE_FISCAL]
+                : [$inputMode];
+            $groupId = count($modes) === 2 ? (string) Str::ulid() : null;
+            $transactionCode = ($data['transaction_code'] ?? null)
+                ?: $this->numberGenerator->nextTransactionCode($entity->id, $data['date']);
+            $created = [];
 
-            $this->writeEntries($j, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+            foreach ($modes as $mode) {
+                /** @var Journal $journal */
+                $journal = Journal::create([
+                    'entity_id' => $entity->id,
+                    'period_id' => $period->id,
+                    'type' => $data['type'] ?? Journal::TYPE_GENERAL,
+                    'journal_mode' => $mode,
+                    'input_group_id' => $groupId,
+                    'number' => ($mode === Journal::MODE_INTERNAL ? ($data['number'] ?? null) : null) ?: $this->numberGenerator->next(
+                        $entity->id,
+                        $data['date'],
+                        $mode,
+                        $data['type'] ?? Journal::TYPE_GENERAL,
+                    ),
+                    'transaction_code' => $transactionCode,
+                    'date' => $data['date'],
+                    'memo' => $data['memo'],
+                    'reference' => $data['reference'] ?? null,
+                    'source_app' => 'accounting',
+                    'status' => Journal::STATUS_DRAFT,
+                    'created_by' => Auth::id(),
+                ]);
 
-            return $j->fresh('entries');
+                $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+                $created[] = $journal->fresh('entries');
+            }
+
+            return $created;
         });
 
-        return response()->json(['data' => $this->detail($journal)], 201);
+        $payload = ['data' => $this->detail($journals[0])];
+        if (isset($journals[1])) {
+            $payload['data']['paired_journal'] = $this->detail($journals[1]);
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -130,8 +189,12 @@ class JournalController extends Controller
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
-        if ($journal->status !== Journal::STATUS_DRAFT) {
-            throw ValidationException::withMessages(['status' => 'Only draft journals can be edited.']);
+        $this->requirePermission('journal.update', $entity);
+        $storedEditableBySupervisor = $journal->status === Journal::STATUS_POSTED
+            && $this->isSupervisorLevel($request, $entity);
+        if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true)
+            && ! $storedEditableBySupervisor) {
+            abort(403, 'Jurnal Tersimpan terkunci dan hanya dapat diubah oleh Supervisor.');
         }
 
         $data = $this->validatePayload($request);
@@ -141,6 +204,7 @@ class JournalController extends Controller
             $journal->fill([
                 'period_id' => $period->id,
                 'date' => $data['date'],
+                'transaction_code' => $data['transaction_code'] ?? null,
                 'memo' => $data['memo'],
                 'reference' => $data['reference'] ?? null,
             ])->save();
@@ -158,6 +222,7 @@ class JournalController extends Controller
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
+        $this->requirePermission('journal.delete', $entity);
         if ($journal->status !== Journal::STATUS_DRAFT) {
             throw ValidationException::withMessages(['status' => 'Only draft journals can be deleted.']);
         }
@@ -170,6 +235,7 @@ class JournalController extends Controller
     public function post(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.post', $entity);
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
@@ -182,9 +248,39 @@ class JournalController extends Controller
         return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
     }
 
+    public function submit(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.submit', $entity);
+        $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+        try {
+            $this->submitJournal->execute($journal, Auth::user());
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages(['submit' => $e->getMessage()]);
+        }
+
+        return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
+    }
+
+    public function reject(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.review', $entity);
+        $data = $request->validate(['note' => 'required|string|max:500']);
+        $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+        try {
+            $this->rejectJournal->execute($journal, Auth::user(), $data['note']);
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages(['review' => $e->getMessage()]);
+        }
+
+        return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
+    }
+
     public function reverse(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.reverse', $entity);
         $data = $request->validate(['reason' => 'nullable|string|max:500']);
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
@@ -201,6 +297,7 @@ class JournalController extends Controller
     public function replicate(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.create', $entity);
         /** @var Journal $source */
         $source = Journal::with('entries')
             ->where('entity_id', $entity->id)
@@ -216,6 +313,9 @@ class JournalController extends Controller
                 'type' => $source->type,
                 'journal_mode' => $source->journal_mode,
                 'number' => $source->number.'-COPY-'.substr((string) Str::ulid(), -6),
+                'transaction_code' => $source->transaction_code
+                    ? $source->transaction_code.'-COPY-'.substr((string) Str::ulid(), -6)
+                    : null,
                 'date' => $source->date,
                 'memo' => $source->memo,
                 'reference' => $source->reference,
@@ -259,6 +359,29 @@ class JournalController extends Controller
         return $entity;
     }
 
+    private function requirePermission(string $permission, Entity $entity): void
+    {
+        abort_unless(Auth::user()?->hasPermission($permission, $entity->id), 403, 'Anda tidak memiliki izin untuk aksi ini.');
+    }
+
+    private function isSupervisorLevel(Request $request, Entity $entity): bool
+    {
+        $user = $request->user();
+        if ($user === null) {
+            return false;
+        }
+
+        if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
+            return true;
+        }
+
+        return $user->assignments()
+            ->whereNull('revoked_at')
+            ->where('entity_id', $entity->id)
+            ->whereHas('role', fn ($query) => $query->whereIn('code', ['supervisor', 'admin', 'super_admin']))
+            ->exists();
+    }
+
     private function resolvePeriod(Entity $entity, string $date): Period
     {
         $period = Period::query()
@@ -277,11 +400,22 @@ class JournalController extends Controller
         return $period;
     }
 
+    private function ensureModeEnabled(Entity $entity, string $mode): void
+    {
+        if (in_array($mode, [Journal::MODE_FISCAL, 'both'], true)
+            && data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') !== 'independent_books') {
+            throw ValidationException::withMessages([
+                'journal_mode' => 'Buku Fiskal tidak aktif untuk entitas ini.',
+            ]);
+        }
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([
             'number' => 'nullable|string|max:40',
-            'journal_mode' => 'sometimes|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+            'transaction_code' => 'nullable|string|max:80',
+            'journal_mode' => 'sometimes|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL.',both',
             'date' => 'required|date_format:Y-m-d',
             'memo' => 'required|string|max:400',
             'reference' => 'nullable|string|max:120',
@@ -376,11 +510,14 @@ class JournalController extends Controller
         return [
             'id' => $j->id,
             'number' => $j->number,
+            'transaction_code' => $j->transaction_code,
             'reference' => $j->reference,
             'journal_mode' => $j->journal_mode,
+            'input_group_id' => $j->input_group_id,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
             'status' => $j->status,
+            'review_note' => $j->review_note,
             'memo' => $j->memo,
             'total' => (string) ($j->total_debit ?? 0),
         ];
@@ -409,10 +546,14 @@ class JournalController extends Controller
         return [
             'id' => $j->id,
             'number' => $j->number,
+            'transaction_code' => $j->transaction_code,
             'journal_mode' => $j->journal_mode,
+            'input_group_id' => $j->input_group_id,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
             'status' => $j->status,
+            'review_note' => $j->review_note,
+            'reviewed_at' => optional($j->reviewed_at)?->toIso8601String(),
             'memo' => $j->memo,
             'reference' => $j->reference,
             'period_id' => $j->period_id,

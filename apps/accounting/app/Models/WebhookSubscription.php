@@ -15,15 +15,18 @@ class WebhookSubscription extends Model
     protected $fillable = [
         'entity_id',
         'app_code',
+        'description',
         'event',
         'url',
         'secret',
         'is_active',
+        'is_inbound',
         'created_by',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_inbound' => 'boolean',
     ];
 
     protected $attributes = [

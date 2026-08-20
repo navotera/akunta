@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
@@ -22,6 +23,10 @@ beforeEach(function () {
     $this->entity = Entity::create([
         'tenant_id' => $tenant->id,
         'name' => 'SPA Co',
+        'workspace_settings' => [
+            'bookkeeping_mode' => 'independent_books',
+            'journal_number_format' => 'JU-{thn}{bln}-{incremented_number}',
+        ],
     ]);
 
     $this->period = Period::create([
@@ -67,6 +72,20 @@ beforeEach(function () {
         'name' => 'Admin',
         'is_preset' => false,
     ]);
+    $permissionIds = collect([
+        'journal.read',
+        'journal.create',
+        'journal.update',
+        'journal.delete',
+        'journal.post',
+        'journal.submit',
+        'journal.review',
+        'journal.reverse',
+    ])->map(fn (string $code) => Permission::create([
+        'app_id' => $app->id,
+        'code' => $code,
+    ])->id);
+    $role->permissions()->attach($permissionIds);
 
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id,
@@ -106,7 +125,7 @@ it('previews the next journal number for the selected date and mode', function (
         'period_id' => $this->period->id,
         'type' => Journal::TYPE_GENERAL,
         'journal_mode' => Journal::MODE_INTERNAL,
-        'number' => 'JI-202605-0004',
+        'number' => 'JU-202605-4',
         'date' => '2026-05-04',
         'memo' => 'Existing journal',
         'status' => Journal::STATUS_DRAFT,
@@ -116,11 +135,33 @@ it('previews the next journal number for the selected date and mode', function (
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
         ->assertOk()
-        ->assertJsonPath('data.number', 'JI-202605-0005');
+        ->assertJsonPath('data.number', 'JU-202605-5');
+});
+
+it('uses the configured number formats for the workspace', function () {
+    $this->entity->update([
+        'workspace_settings' => [
+            'journal_number_format' => 'JP/{thn}{bln}/{incremented_number}',
+            'transaction_number_format' => 'JR-{thn}{bln}-{incremented_number}',
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.number', 'JP/202605/1');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-transaction-code?date=2026-05-04')
+        ->assertOk()
+        ->assertJsonPath('data.transaction_code', 'JR-202605-1');
 });
 
 it('creates a balanced draft journal via SPA endpoint', function () {
     $payload = [
+        'transaction_code' => 'TRX-2026-05-010',
         'reference' => 'INV-2026-05-010',
         'date' => '2026-05-04',
         'memo' => 'Pembelian persediaan',
@@ -137,14 +178,15 @@ it('creates a balanced draft journal via SPA endpoint', function () {
         ->postJson('/api/v1/spa/journals', $payload);
 
     $res->assertCreated()
-        ->assertJsonPath('data.number', 'JI-202605-0001')
+        ->assertJsonPath('data.number', 'JU-202605-1')
+        ->assertJsonPath('data.transaction_code', 'TRX-2026-05-010')
         ->assertJsonPath('data.reference', 'INV-2026-05-010')
         ->assertJsonPath('data.journal_mode', 'internal')
         ->assertJsonPath('data.status', 'draft')
         ->assertJsonCount(1, 'data.entries_debit')
         ->assertJsonCount(1, 'data.entries_credit');
 
-    expect(Journal::where('number', 'JI-202605-0001')
+    expect(Journal::where('number', 'JU-202605-1')
         ->where('reference', 'INV-2026-05-010')
         ->exists())->toBeTrue();
 });
@@ -153,6 +195,7 @@ it('generates a fiscal journal number with the fiscal prefix', function () {
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/journals', [
+            'transaction_code' => 'TRX-2026-05-011',
             'journal_mode' => Journal::MODE_FISCAL,
             'date' => '2026-05-05',
             'memo' => 'Jurnal fiskal',
@@ -165,10 +208,34 @@ it('generates a fiscal journal number with the fiscal prefix', function () {
         ]);
 
     $res->assertCreated()
-        ->assertJsonPath('data.number', 'JF-202605-0001')
+        ->assertJsonPath('data.number', 'JU-202605-1')
         ->assertJsonPath('data.journal_mode', 'fiscal');
-    expect(Journal::where('number', 'JF-202605-0001')->value('journal_mode'))
+    expect(Journal::where('number', 'JU-202605-1')->value('journal_mode'))
         ->toBe(Journal::MODE_FISCAL);
+});
+
+it('creates paired intern and fiscal drafts for the combined input mode', function () {
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'journal_mode' => 'both',
+            'date' => '2026-05-12',
+            'memo' => 'Pembelian dicatat untuk kedua buku',
+            'transaction_code' => 'TRX-DUAL-001',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.journal_mode', Journal::MODE_INTERNAL)
+        ->assertJsonPath('data.transaction_code', 'TRX-DUAL-001')
+        ->assertJsonPath('data.paired_journal.journal_mode', Journal::MODE_FISCAL)
+        ->assertJsonPath('data.paired_journal.transaction_code', 'TRX-DUAL-001');
+
+    $groupId = $res->json('data.input_group_id');
+    expect($groupId)->not->toBeNull()
+        ->and(Journal::where('input_group_id', $groupId)->count())->toBe(2)
+        ->and(Journal::where('input_group_id', $groupId)->pluck('journal_mode')->sort()->values()->all())
+        ->toBe([Journal::MODE_FISCAL, Journal::MODE_INTERNAL]);
 });
 
 it('rejects unbalanced journal create with 422', function () {

@@ -7,10 +7,14 @@
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import BalanceSheetTable from '$lib/components/reporting/BalanceSheetTable.svelte';
+  import { formatDate } from '$lib/utils/date.js';
 
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<BalanceSheetData | null>(null);
-  let showFiscal = $state(false);
+  let journalMode = $state<'internal' | 'fiscal'>('internal');
+  let isInspector = $derived(
+    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
+  );
   let loading = $state(false);
   let error = $state<string | null>(null);
 
@@ -18,7 +22,7 @@
     loading = true;
     error = null;
     try {
-      const res = await reportingApi.balanceSheet(asOf, undefined, showFiscal);
+      const res = await reportingApi.balanceSheet(asOf, undefined, false, journalMode);
       report = res.data;
     } catch (e) {
       error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
@@ -35,6 +39,7 @@
         return;
       }
     }
+    if (isInspector) journalMode = 'fiscal';
     await load();
   });
 </script>
@@ -42,9 +47,17 @@
 <ReportShell
   title="Neraca"
   breadcrumb="Laporan / Neraca"
-  subtitle={report ? `Per ${report.as_of}` : null}
+  subtitle={report ? `Per ${formatDate(report.as_of)}` : null}
 >
   {#snippet actions()}
+    <label class="text-sm"
+      ><span class="block font-medium mb-1">Buku</span><select
+        class="rounded-md border border-border-default px-3 py-2"
+        bind:value={journalMode}
+        disabled={isInspector}
+        ><option value="internal">Intern</option><option value="fiscal">Fiskal</option></select
+      ></label
+    >
     <label class="text-sm">
       <span class="block font-medium mb-1">Per Tanggal</span>
       <DateInput value={asOf} onChange={(iso) => (asOf = iso)} testId="report-as-of" />
@@ -58,10 +71,6 @@
     >
       {loading ? 'Memuat…' : 'Tampilkan'}
     </button>
-    <label class="flex min-h-10 items-center gap-2 text-sm font-medium">
-      <input type="checkbox" bind:checked={showFiscal} onchange={load} data-testid="show-fiscal" />
-      <span>Tampilkan Fiskal</span>
-    </label>
   {/snippet}
 
   {#if error}

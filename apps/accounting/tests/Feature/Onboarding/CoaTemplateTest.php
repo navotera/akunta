@@ -13,9 +13,32 @@ beforeEach(function () {
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Onb']);
 });
 
-it('registry exposes all 6 industry options', function () {
+it('registry exposes industry options including technology and IT', function () {
     $opts = app(CoaTemplateRegistry::class)->available();
-    expect($opts)->toHaveKeys(['generic', 'retail', 'fnb', 'jasa', 'manufaktur', 'konstruksi']);
+    expect($opts)->toHaveKeys(['generic', 'retail', 'fnb', 'jasa', 'teknologi', 'manufaktur', 'konstruksi']);
+});
+
+it('applies technology COA with explicit Intern, both, and Fiscal classifications', function () {
+    $this->entity->update(['workspace_settings' => ['bookkeeping_mode' => 'independent_books']]);
+
+    app(ApplyCoaTemplateAction::class)->execute($this->entity->id, 'teknologi');
+
+    expect(Account::where('entity_id', $this->entity->id)->where('code', '1102')->value('availability'))->toBe('both')
+        ->and(Account::where('entity_id', $this->entity->id)->where('code', '1202')->value('availability'))->toBe('intern')
+        ->and(Account::where('entity_id', $this->entity->id)->where('code', '1592')->value('availability'))->toBe('fiskal')
+        ->and(Account::where('entity_id', $this->entity->id)->whereNull('description')->exists())->toBeFalse()
+        ->and(Account::where('entity_id', $this->entity->id)->where('code', '4102')->value('description'))
+        ->not->toStartWith('Definisi:')
+        ->toContain('Digunakan', "\n\nContoh:");
+});
+
+it('omits Fiscal-only technology accounts in an Intern-only workspace', function () {
+    $this->entity->update(['workspace_settings' => ['bookkeeping_mode' => 'internal_only']]);
+
+    app(ApplyCoaTemplateAction::class)->execute($this->entity->id, 'teknologi');
+
+    expect(Account::where('entity_id', $this->entity->id)->where('code', '1102')->value('availability'))->toBe('intern')
+        ->and(Account::where('entity_id', $this->entity->id)->where('availability', 'fiskal')->exists())->toBeFalse();
 });
 
 it('loads the generic baseline template', function () {
@@ -27,7 +50,7 @@ it('loads the generic baseline template', function () {
 });
 
 it('industry templates extend the base — retail has marketplace accounts', function () {
-    $retail  = collect(app(CoaTemplateRegistry::class)->load('retail'))->pluck(0)->all();
+    $retail = collect(app(CoaTemplateRegistry::class)->load('retail'))->pluck(0)->all();
     $generic = collect(app(CoaTemplateRegistry::class)->load('generic'))->pluck(0)->all();
 
     expect(count($retail))->toBeGreaterThan(count($generic));

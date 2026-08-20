@@ -10,11 +10,11 @@ export default defineConfig({
     allowedHosts: ['accounting.akunta.local'],
     proxy: {
       // Forward API + Sanctum + SSO bounce endpoints to the Laravel app on :8000.
-      '/api': { target: 'http://localhost:8000', changeOrigin: false },
-      '/sanctum': { target: 'http://localhost:8000', changeOrigin: false },
-      '/auth': { target: 'http://localhost:8000', changeOrigin: false },
-      '/sso': { target: 'http://localhost:8000', changeOrigin: false },
-      '/oidc': { target: 'http://localhost:8000', changeOrigin: false },
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/sanctum': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/auth': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/sso': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/oidc': { target: 'http://127.0.0.1:8000', changeOrigin: false },
     },
   },
 });

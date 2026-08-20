@@ -8,6 +8,7 @@
   import { sourceRefApi, type SourceRefRegistryItem } from '$lib/api/source-ref.js';
   import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
+  import { formatDate } from '$lib/utils/date.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -24,6 +25,10 @@
   let report = $state<GeneralLedgerData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let journalMode = $state<'internal' | 'fiscal'>('internal');
+  let isInspector = $derived(
+    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
+  );
 
   // Source-ref filter — `source_app:ref_type` selector + ref autocomplete
   let sourcePair = $state(''); // e.g. "poso:customer"
@@ -79,7 +84,13 @@
         filters.source_ref_type = pair.ref_type;
         filters.source_ref_id = sourceRefId;
       }
-      const res = await reportingApi.generalLedger(accountId, periodStart, periodEnd, filters);
+      const res = await reportingApi.generalLedger(
+        accountId,
+        periodStart,
+        periodEnd,
+        filters,
+        journalMode,
+      );
       report = res.data;
     } catch (e) {
       error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
@@ -110,7 +121,8 @@
         return;
       }
     }
-    accounts = await accountApi.list();
+    if (isInspector) journalMode = 'fiscal';
+    accounts = await accountApi.list('', undefined, true, journalMode);
     const queryAccount = $page.url.searchParams.get('account_id');
     accountId = queryAccount ?? accounts[0]?.id ?? '';
     await deriveKnownPairs();
@@ -145,10 +157,27 @@
   subtitle={report ? `${report.account.code} — ${report.account.name}` : null}
 >
   {#snippet toolbar()}
+    <label class="text-sm"
+      ><span class="block font-medium mb-1">Buku</span><select
+        class="rounded-md border border-border-default px-3 py-2"
+        bind:value={journalMode}
+        disabled={isInspector}
+        onchange={async () => {
+          accounts = await accountApi.list('', undefined, true, journalMode);
+          accountId = accounts[0]?.id ?? '';
+          report = null;
+        }}><option value="internal">Intern</option><option value="fiscal">Fiskal</option></select
+      ></label
+    >
     <label class="text-sm">
       <span class="block font-medium mb-1">Akun</span>
       <div class="w-72">
-        <AccountCombobox {accounts} value={accountId} onSelect={(id) => (accountId = id)} testId="report-account" />
+        <AccountCombobox
+          {accounts}
+          value={accountId}
+          onSelect={(id) => (accountId = id)}
+          testId="report-account"
+        />
       </div>
     </label>
     <label class="text-sm">
@@ -166,7 +195,10 @@
         <select
           class="rounded-md border border-border-default px-3 py-2 text-sm"
           bind:value={sourcePair}
-          onchange={() => { clearSourceFilter(); reloadSuggestions(); }}
+          onchange={() => {
+            clearSourceFilter();
+            reloadSuggestions();
+          }}
         >
           <option value="">Semua</option>
           {#each knownPairs as p (p.value)}
@@ -190,7 +222,10 @@
             sourceRefMenuOpen = true;
             reloadSuggestions();
           }}
-          onfocus={() => { sourceRefMenuOpen = true; reloadSuggestions(); }}
+          onfocus={() => {
+            sourceRefMenuOpen = true;
+            reloadSuggestions();
+          }}
           onblur={() => setTimeout(() => (sourceRefMenuOpen = false), 150)}
         />
         {#if sourceRefMenuOpen && sourceRefSuggestions.length}
@@ -225,8 +260,8 @@
             type="button"
             class="absolute right-2 top-9 text-text-muted hover:text-danger"
             onclick={clearSourceFilter}
-            aria-label="Hapus filter sumber"
-          >×</button>
+            aria-label="Hapus filter sumber">×</button
+          >
         {/if}
       </label>
     {/if}
@@ -269,25 +304,38 @@
             class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
             onclick={() => goto(`/journals/${l.journal_id}`)}
           >
-            <td class="px-4 py-2">{l.date}</td>
+            <td class="px-4 py-2">{formatDate(l.date)}</td>
             <td class="px-4 py-2 font-mono">{l.number}</td>
             <td class="px-4 py-2">{l.line_memo ?? l.journal_memo ?? '—'}</td>
             <td class="px-4 py-2 text-text-muted">{fmtSourceCell(l)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{Number(l.debit) > 0 ? formatRupiah(l.debit) : '—'}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{Number(l.credit) > 0 ? formatRupiah(l.credit) : '—'}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{Number(l.debit) > 0 ? formatRupiah(l.debit) : '—'}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{Number(l.credit) > 0 ? formatRupiah(l.credit) : '—'}</td
+            >
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(l.balance)}</td>
           </tr>
         {:else}
-          <tr><td colspan="7" class="px-4 py-10 text-center text-text-muted">Tidak ada transaksi pada rentang ini.</td></tr>
+          <tr
+            ><td colspan="7" class="px-4 py-10 text-center text-text-muted"
+              >Tidak ada transaksi pada rentang ini.</td
+            ></tr
+          >
         {/each}
       </tbody>
       {#if report.lines.length > 0}
         <tfoot class="bg-page-bg font-semibold">
           <tr class="border-t-2 border-border-default">
             <td class="px-4 py-2" colspan="4">Total</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.total_debit)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.total_credit)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum text-base">{formatRupiah(report.ending)}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.total_debit)}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(report.total_credit)}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum text-base"
+              >{formatRupiah(report.ending)}</td
+            >
           </tr>
         </tfoot>
       {/if}

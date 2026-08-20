@@ -7,7 +7,9 @@ export interface JournalDraftRow {
 export interface JournalDraft {
   date: string;
   number: string;
-  journal_mode: 'internal' | 'fiscal';
+  transaction_code: string;
+  journal_mode: 'internal' | 'fiscal' | 'both';
+  type: 'general' | 'adjustment' | 'reversing' | 'closing' | 'opening';
   memo: string;
   reference: string;
   entries_debit: JournalDraftRow[];

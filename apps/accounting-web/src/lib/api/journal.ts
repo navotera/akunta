@@ -1,15 +1,19 @@
 import { api } from './client.js';
 
-export type JournalMode = 'internal' | 'fiscal';
+export type JournalMode = 'internal' | 'fiscal' | 'both';
+export type JournalType = 'general' | 'adjustment' | 'reversing' | 'closing' | 'opening';
+export type JournalStatus = 'draft' | 'submitted' | 'rejected' | 'posted' | 'reversed';
 
 export interface JournalSummary {
   id: string;
   number: string;
+  transaction_code: string | null;
   reference: string | null;
   journal_mode: JournalMode;
+  input_group_id?: string | null;
   date: string;
   type: string;
-  status: 'draft' | 'posted' | 'reversed';
+  status: JournalStatus;
   memo: string | null;
   total: string;
 }
@@ -26,10 +30,13 @@ export interface JournalEntry {
 export interface JournalDetail {
   id: string;
   number: string;
+  transaction_code: string | null;
   journal_mode: JournalMode;
+  input_group_id?: string | null;
   date: string;
   type: string;
-  status: 'draft' | 'posted' | 'reversed';
+  status: JournalStatus;
+  review_note: string | null;
   memo: string;
   reference: string | null;
   period_id: string | null;
@@ -46,6 +53,7 @@ export interface JournalListResponse {
 
 export interface JournalPayload {
   number?: string;
+  transaction_code?: string | null;
   journal_mode: JournalMode;
   date: string;
   memo: string;
@@ -53,6 +61,10 @@ export interface JournalPayload {
   type?: string;
   entries_debit: Array<{ account_id: string; amount: string; memo: string | null }>;
   entries_credit: Array<{ account_id: string; amount: string; memo: string | null }>;
+}
+
+export interface JournalCreateResult extends JournalDetail {
+  paired_journal?: JournalDetail;
 }
 
 export const journalApi = {
@@ -63,9 +75,20 @@ export const journalApi = {
     return api<JournalListResponse>(`/api/v1/spa/journals${suffix}`, { tenantSlug });
   },
 
-  nextNumber: (date: string, journalMode: JournalMode, tenantSlug?: string | null) =>
+  nextNumber: (
+    date: string,
+    journalMode: JournalMode,
+    type: JournalType = 'general',
+    tenantSlug?: string | null,
+  ) =>
     api<{ data: { number: string } }>(
-      `/api/v1/spa/journals/next-number?date=${encodeURIComponent(date)}&journal_mode=${journalMode}`,
+      `/api/v1/spa/journals/next-number?date=${encodeURIComponent(date)}&journal_mode=${journalMode}&type=${type}`,
+      { tenantSlug },
+    ).then((r) => r.data),
+
+  nextTransactionCode: (date: string, tenantSlug?: string | null) =>
+    api<{ data: { transaction_code: string } }>(
+      `/api/v1/spa/journals/next-transaction-code?date=${encodeURIComponent(date)}`,
       { tenantSlug },
     ).then((r) => r.data),
 
@@ -73,7 +96,7 @@ export const journalApi = {
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}`, { tenantSlug }).then((r) => r.data),
 
   create: (payload: JournalPayload, tenantSlug?: string | null) =>
-    api<{ data: JournalDetail }>('/api/v1/spa/journals', { json: payload, tenantSlug }).then(
+    api<{ data: JournalCreateResult }>('/api/v1/spa/journals', { json: payload, tenantSlug }).then(
       (r) => r.data,
     ),
 
@@ -91,6 +114,20 @@ export const journalApi = {
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/post`, {
       method: 'POST',
       json: {},
+      tenantSlug,
+    }).then((r) => r.data),
+
+  submit: (id: string, tenantSlug?: string | null) =>
+    api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/submit`, {
+      method: 'POST',
+      json: {},
+      tenantSlug,
+    }).then((r) => r.data),
+
+  reject: (id: string, note: string, tenantSlug?: string | null) =>
+    api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/reject`, {
+      method: 'POST',
+      json: { note },
       tenantSlug,
     }).then((r) => r.data),
 

@@ -41,6 +41,7 @@
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
+  let bookmarking = $state<string | null>(null);
   const visibleAccounts = $derived(
     accounts.filter(
       (account) =>
@@ -185,6 +186,23 @@
     }
   }
 
+  async function toggleBookmark(event: MouseEvent, template: JournalTemplateSummary) {
+    event.stopPropagation();
+    if (bookmarking) return;
+    const isBookmarked = !template.is_bookmarked;
+    bookmarking = template.id;
+    items = items.map((item) => (item.id === template.id ? { ...item, is_bookmarked: isBookmarked } : item));
+    try {
+      const updated = await templateApi.bookmark(template.id, isBookmarked);
+      items = items.map((item) => (item.id === updated.id ? updated : item));
+    } catch (e) {
+      items = items.map((item) => (item.id === template.id ? { ...item, is_bookmarked: !isBookmarked } : item));
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      bookmarking = null;
+    }
+  }
+
   function fieldErr(name: string): string | null {
     return formErrors?.[name]?.[0] ?? null;
   }
@@ -217,6 +235,7 @@
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
+            <th class="w-12 px-4 py-3 text-center">#</th>
             <th class="px-4 py-3 text-left">Kode</th>
             <th class="px-4 py-3 text-left">Nama</th>
             <th class="px-4 py-3 text-center">Mode</th>
@@ -226,13 +245,33 @@
           </tr>
         </thead>
         <tbody>
-          {#each items as t (t.id)}
+          {#each items as t, i (t.id)}
             <tr
               class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
               onclick={() => openEdit(t)}
             >
+              <td class="px-4 py-2 text-center text-text-muted">{i + 1}</td>
               <td class="px-4 py-2 font-mono">{t.code}</td>
-              <td class="px-4 py-2 font-medium">{t.name}</td>
+              <td class="px-4 py-2 font-medium">
+                <span class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="shrink-0 rounded p-1 transition-colors {t.is_bookmarked
+                      ? 'text-primary'
+                      : 'text-text-muted hover:text-primary'}"
+                    aria-label={t.is_bookmarked ? `Hapus bookmark ${t.name}` : `Bookmark ${t.name}`}
+                    aria-pressed={t.is_bookmarked === true}
+                    title={t.is_bookmarked ? 'Hapus bookmark' : 'Bookmark template'}
+                    onclick={(event) => toggleBookmark(event, t)}
+                    disabled={bookmarking === t.id}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill={t.is_bookmarked ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.5L6 21V4.75Z" stroke-linejoin="round" />
+                    </svg>
+                  </button>
+                  <span>{t.name}</span>
+                </span>
+              </td>
               <td class="px-4 py-2 text-center">
                 <span
                   class="rounded-full px-2 py-1 text-xs font-semibold {t.journal_mode === 'fiscal'
@@ -248,7 +287,7 @@
             </tr>
           {:else}
             <tr
-              ><td colspan="6" class="px-4 py-10 text-center text-text-muted"
+                ><td colspan="7" class="px-4 py-10 text-center text-text-muted"
                 >Belum ada template.</td
               ></tr
             >

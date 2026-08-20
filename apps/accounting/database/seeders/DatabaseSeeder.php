@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
             PresetRolesSeeder::class,
             SuperAdminSeeder::class,
             SettingsPermissionsSeeder::class,
+            JournalWorkflowPermissionsSeeder::class,
             EcosystemBootstrapSeeder::class,
         ]);
     }

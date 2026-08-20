@@ -20,6 +20,7 @@ class WebhookDispatcher
     {
         $candidates = WebhookSubscription::query()
             ->where('is_active', true)
+            ->where('is_inbound', false)
             ->where(function ($q) use ($entityId) {
                 $q->whereNull('entity_id');
                 if ($entityId !== null) {
@@ -38,9 +39,9 @@ class WebhookDispatcher
             $delivery = DB::transaction(function () use ($sub, $event, $payload) {
                 return WebhookDelivery::create([
                     'subscription_id' => $sub->id,
-                    'event'           => $event,
-                    'payload'         => $payload,
-                    'status'          => WebhookDelivery::STATUS_PENDING,
+                    'event' => $event,
+                    'payload' => $payload,
+                    'status' => WebhookDelivery::STATUS_PENDING,
                 ]);
             });
 

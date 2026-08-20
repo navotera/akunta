@@ -9,7 +9,7 @@ const services = [
         name: 'accounting-api',
         cwd: 'apps/accounting',
         command: 'php',
-        args: ['artisan', 'serve', '--port=8000'],
+        args: ['-S', '127.0.0.1:8000', '-t', 'public'],
     },
     {
         name: 'accounting-web',

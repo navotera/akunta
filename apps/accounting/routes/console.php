@@ -35,6 +35,13 @@ Schedule::command('accounting:prune-cron-logs')
     ->onOneServer()
     ->name('accounting:prune-cron-logs');
 
+// Daily â€” retain webhook delivery history for 12 months.
+Schedule::command('accounting:prune-webhook-logs')
+    ->dailyAt('00:20')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->name('accounting:prune-webhook-logs');
+
 // Daily 02:30 — reconcile entities + assignments mirror against Ecopa.
 // Catches any webhook drops (cf. docs/cross-app-rbac.md §4).
 Schedule::command('ecopa:reconcile')
