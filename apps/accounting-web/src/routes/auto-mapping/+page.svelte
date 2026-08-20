@@ -95,8 +95,9 @@
         <button
           type="button"
           class="inline-flex h-10 items-center gap-2 rounded-md border border-[#dbdfe9] bg-white px-4 text-[13px] font-semibold text-[#4b5675] shadow-[0_1px_2px_rgba(15,23,42,.04)] hover:border-[#1b84ff] hover:text-[#1b84ff]"
+          onclick={() => goto('/integrasi')}
         >
-          <span aria-hidden="true">⚙</span> Integrasi &amp; Source
+          <span aria-hidden="true">⚙</span> Integrasi
         </button>
         <button
           type="button"
@@ -104,7 +105,7 @@
           onclick={syncRows}
           disabled={loading}
         >
-          <span aria-hidden="true">↻</span> Sinkronisasi Sekarang
+          <span aria-hidden="true">↻</span> Sinkronisasi sekarang
         </button>
       </div>
     </div>

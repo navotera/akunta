@@ -51,7 +51,7 @@ it('lists webhooks scoped to active entity', function () {
     $res->assertOk()->assertJsonCount(2, 'data');
 });
 
-it('creates webhook with auto-generated secret returned once', function () {
+it('creates webhook URL without exposing its embedded secret separately', function () {
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/webhooks', [
@@ -63,7 +63,8 @@ it('creates webhook with auto-generated secret returned once', function () {
         ->assertJsonPath('event', 'journal.posted')
         ->assertJsonPath('entity_id', $this->entity->id)
         ->assertJsonPath('is_active', true);
-    expect(strlen($res->json('secret')))->toBe(48);
+    expect($res->json())->not->toHaveKey('secret');
+    expect($res->json('url'))->toStartWith(rtrim((string) config('app.url'), '/').'/api/webhooks/incoming/');
 
     // Subsequent reads must not include the secret
     $listed = $this->actingAs($this->user)
@@ -93,20 +94,23 @@ it('updates and deletes webhook', function () {
     expect(WebhookSubscription::find($sub->id))->toBeNull();
 });
 
-it('rotates secret', function () {
+it('regenerates an inbound webhook URL and invalidates the old URL', function () {
     $sub = WebhookSubscription::create([
         'entity_id' => $this->entity->id, 'event' => 'journal.posted',
-        'url' => 'https://example.test/x', 'secret' => str_repeat('a', 48),
+        'url' => 'https://example.test/api/webhooks/incoming/'.str_repeat('a', 48),
+        'secret' => str_repeat('a', 48), 'is_inbound' => true,
     ]);
+    $oldUrl = $sub->url;
     $oldSecret = $sub->secret;
 
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/webhooks/{$sub->id}/rotate-secret");
+        ->postJson("/api/v1/spa/webhooks/{$sub->id}/regenerate-url");
 
     $res->assertOk();
-    expect($res->json('secret'))->not->toBe($oldSecret);
-    expect(strlen($res->json('secret')))->toBe(48);
+    expect($res->json())->not->toHaveKey('secret');
+    expect($res->json('url'))->not->toBe($oldUrl);
+    expect($sub->fresh()->secret)->not->toBe($oldSecret);
 });
 
 it('rejects updating webhook from a different entity', function () {

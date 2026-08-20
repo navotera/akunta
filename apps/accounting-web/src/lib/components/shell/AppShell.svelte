@@ -38,7 +38,6 @@
       items: [
         { href: '/akun', label: 'Bagan Akun', icon: '⊞' },
         { href: '/periode', label: 'Periode', icon: '⌚' },
-        { href: '/integrasi', label: 'Integrasi', icon: '⌘' },
         { href: '/settings', label: 'Setting', icon: '⚙' },
       ],
     },

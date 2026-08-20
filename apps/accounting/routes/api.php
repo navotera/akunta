@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\InboundWebhookController;
 use App\Http\Controllers\Api\Spa\AccountController;
 use App\Http\Controllers\Api\Spa\AttachmentController;
 use App\Http\Controllers\Api\Spa\AutoMappingController;
@@ -41,6 +42,9 @@ Route::middleware(['web', 'auth:sanctum'])
     ->group(function () {
         Route::get('me', [AuthController::class, 'me']);
     });
+
+Route::post('webhooks/incoming/{secret}', InboundWebhookController::class)
+    ->middleware('throttle:120,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -140,10 +144,12 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::post('workspaces/{id}/logo', [WorkspaceController::class, 'logo']);
 
         Route::get('webhooks', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'index']);
+        Route::get('webhooks/logs', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'logs']);
+        Route::get('webhooks/{id}/logs', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'subscriptionLogs']);
         Route::post('webhooks', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'store']);
         Route::patch('webhooks/{id}', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'update']);
         Route::delete('webhooks/{id}', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'destroy']);
-        Route::post('webhooks/{id}/rotate-secret', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'rotateSecret']);
+        Route::post('webhooks/{id}/regenerate-url', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'regenerateUrl']);
     });
 
 Route::prefix('v1')

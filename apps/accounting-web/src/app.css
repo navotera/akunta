@@ -501,6 +501,9 @@ table .tabnum.ak-dim,
 .ak-toggle--on {
   background: var(--m-text, #0f172a);
 }
+.ak-toggle--status.ak-toggle--on {
+  background: linear-gradient(135deg, #2563eb 0%, #0f2f82 100%);
+}
 .ak-toggle--primary.ak-toggle--on {
   background: var(--m-primary, #1b84ff);
 }
