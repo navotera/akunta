@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Akunta\Audit\Models\AuditLog;
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Permission;
@@ -68,7 +69,7 @@ beforeEach(function () {
         'enabled' => true,
     ]);
     $role = Role::create([
-        'code' => 'admin-'.uniqid(),
+        'code' => 'admin',
         'name' => 'Admin',
         'is_preset' => false,
     ]);
@@ -238,6 +239,53 @@ it('creates paired intern and fiscal drafts for the combined input mode', functi
         ->toBe([Journal::MODE_FISCAL, Journal::MODE_INTERNAL]);
 });
 
+it('allows an admin to edit a submitted journal mode and send it for revision', function () {
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-050',
+        'date' => '2026-05-14',
+        'memo' => 'Review journal',
+        'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 1,
+        'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 2,
+        'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100,
+    ]);
+
+    $payload = [
+        'journal_mode' => 'both',
+        'type' => Journal::TYPE_GENERAL,
+        'date' => '2026-05-14',
+        'memo' => 'Review journal diperbarui',
+        'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+        'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+    ];
+
+    $updated = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/journals/{$journal->id}", $payload)
+        ->assertOk()
+        ->assertJsonPath('data.journal_mode', Journal::MODE_INTERNAL)
+        ->assertJsonPath('data.paired_journal.journal_mode', Journal::MODE_FISCAL);
+
+    expect($updated->json('data.paired_journal.status'))->toBe(Journal::STATUS_SUBMITTED)
+        ->and(Journal::where('input_group_id', $updated->json('data.input_group_id'))->count())->toBe(2);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/journals/{$journal->id}/reject", ['note' => 'Lengkapi bukti transaksi.'])
+        ->assertOk()
+        ->assertJsonPath('data.status', Journal::STATUS_REJECTED)
+        ->assertJsonPath('data.review_note', 'Lengkapi bukti transaksi.');
+});
+
 it('rejects unbalanced journal create with 422', function () {
     $payload = [
         'number' => 'JU-X',
@@ -380,4 +428,34 @@ it('updates and posts a draft journal', function () {
         ->postJson("/api/v1/spa/journals/{$journal->id}/post", [])
         ->assertOk()
         ->assertJsonPath('data.status', 'posted');
+
+    expect(AuditLog::query()
+        ->where('action', 'journal.updated')
+        ->where('resource_id', $journal->id)
+        ->first()?->metadata['snapshot']['memo'])->toBe('Updated');
+});
+
+it('allows an admin to update a posted journal and exposes its snapshot trail', function () {
+    $this->user->assignments()->first()->role->update(['code' => 'admin']);
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL, 'number' => 'JU-ADMIN-1', 'date' => '2026-05-04',
+        'memo' => 'Before admin edit', 'status' => Journal::STATUS_POSTED,
+        'posted_at' => now(), 'posted_by' => $this->user->id,
+    ]);
+    JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 1, 'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0]);
+    JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/journals/{$journal->id}", [
+            'date' => '2026-05-04', 'memo' => 'After admin edit',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.status', Journal::STATUS_POSTED)
+        ->assertJsonPath('data.audit_trail.0.snapshot.memo', 'After admin edit');
+    expect(AuditLog::where('action', 'journal.updated')->where('resource_id', $journal->id)->exists())->toBeTrue();
 });

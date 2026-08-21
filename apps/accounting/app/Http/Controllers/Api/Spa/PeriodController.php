@@ -11,6 +11,7 @@ use App\Models\Period;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PeriodController extends Controller
@@ -49,10 +50,17 @@ class PeriodController extends Controller
 
         $this->assertNoOverlap($entity->id, $data['start_date'], $data['end_date'], null);
 
+        $hasOpenPeriod = Period::query()
+            ->where('entity_id', $entity->id)
+            ->where('status', Period::STATUS_OPEN)
+            ->exists();
+
         $period = Period::create([
             ...$data,
             'entity_id' => $entity->id,
-            'status' => Period::STATUS_OPEN,
+            'status' => $hasOpenPeriod ? Period::STATUS_CLOSED : Period::STATUS_OPEN,
+            'closed_at' => $hasOpenPeriod ? now() : null,
+            'closed_by' => $hasOpenPeriod ? Auth::id() : null,
         ]);
 
         return response()->json(['data' => $this->serialize($period)], 201);
@@ -125,11 +133,32 @@ class PeriodController extends Controller
         $entity = $this->resolveEntity($request);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
-        $period->forceFill([
-            'status' => Period::STATUS_OPEN,
-            'closed_at' => null,
-            'closed_by' => null,
-        ])->save();
+        $this->assertAdminCanActivate();
+
+        DB::transaction(function () use ($entity, $period): void {
+            $current = Period::query()
+                ->where('entity_id', $entity->id)
+                ->where('status', Period::STATUS_OPEN)
+                ->where('id', '!=', $period->id)
+                ->first();
+
+            if ($current) {
+                // An explicit admin period switch may close the current
+                // period with drafts; the drafts remain attached to that
+                // period and can be handled when it is active again.
+                $current->forceFill([
+                    'status' => Period::STATUS_CLOSED,
+                    'closed_at' => now(),
+                    'closed_by' => Auth::id(),
+                ])->save();
+            }
+
+            $period->forceFill([
+                'status' => Period::STATUS_OPEN,
+                'closed_at' => null,
+                'closed_by' => null,
+            ])->save();
+        });
 
         return response()->json(['data' => $this->serialize($period->refresh())]);
     }
@@ -161,6 +190,22 @@ class PeriodController extends Controller
             throw ValidationException::withMessages([
                 'start_date' => 'Period overlaps an existing period.',
             ]);
+        }
+    }
+
+    private function assertAdminCanActivate(): void
+    {
+        $user = Auth::user();
+        $isAdmin = $user !== null
+            && ((method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
+                || session('ecopa.app_role') === 'admin'
+                || $user->assignments()
+                    ->whereNull('revoked_at')
+                    ->whereHas('role', fn ($query) => $query->whereIn('code', ['admin', 'super_admin']))
+                    ->exists());
+
+        if (! $isAdmin) {
+            abort(403, 'Hanya admin yang dapat mengaktifkan periode.');
         }
     }
 

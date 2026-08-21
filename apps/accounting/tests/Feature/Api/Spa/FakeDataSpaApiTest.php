@@ -69,3 +69,19 @@ it('rejects a period belonging to another entity', function () {
         ->assertUnprocessable()
         ->assertJsonValidationErrors('period_id');
 });
+
+it('protects the built-in native fake entity from import and clear operations', function () {
+    $this->entity->update(['is_fake_data' => true]);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/fake-data/import-all', ['period_id' => str_repeat('0', 26)])
+        ->assertConflict();
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson('/api/v1/spa/fake-data/accounts')
+        ->assertConflict();
+});

@@ -8,10 +8,11 @@
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import BalanceSheetTable from '$lib/components/reporting/BalanceSheetTable.svelte';
   import { formatDate } from '$lib/utils/date.js';
+  import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
 
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<BalanceSheetData | null>(null);
-  let journalMode = $state<'internal' | 'fiscal'>('internal');
+  let journalMode = $state<BookToggleValue>('internal');
   let isInspector = $derived(
     auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
   );
@@ -50,14 +51,17 @@
   subtitle={report ? `Per ${formatDate(report.as_of)}` : null}
 >
   {#snippet actions()}
-    <label class="text-sm"
-      ><span class="block font-medium mb-1">Buku</span><select
-        class="rounded-md border border-border-default px-3 py-2"
-        bind:value={journalMode}
-        disabled={isInspector}
-        ><option value="internal">Intern</option><option value="fiscal">Fiskal</option></select
-      ></label
-    >
+    <BookToggle
+      value={journalMode}
+      includeBoth
+      disabled={isInspector || loading}
+      onChange={async (value: BookToggleValue) => {
+        journalMode = value;
+        await load();
+      }}
+    />
+  {/snippet}
+  {#snippet toolbar()}
     <label class="text-sm">
       <span class="block font-medium mb-1">Per Tanggal</span>
       <DateInput value={asOf} onChange={(iso) => (asOf = iso)} testId="report-as-of" />
@@ -79,7 +83,11 @@
     <div class="p-6 text-center text-text-muted">Memuat…</div>
   {:else}
     <div class="p-5">
-      <BalanceSheetTable {report} fiscal={report.fiscal} />
+      <BalanceSheetTable
+        {report}
+        fiscal={journalMode === 'both' ? report.fiscal : undefined}
+        primaryBook={journalMode === 'fiscal' ? 'fiscal' : 'internal'}
+      />
     </div>
   {/if}
 </ReportShell>

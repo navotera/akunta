@@ -5,6 +5,8 @@
   import ReportTabs from '$lib/components/reporting/ReportTabs.svelte';
   import {
     ensureWorkspaceTab,
+    getPersistedWorkspaceHref,
+    getWorkspaceTab,
     initializeWorkspace,
     persistWorkspace,
     workspace,
@@ -20,13 +22,36 @@
     if (currentHref() !== '/dashboard') void goto('/dashboard');
   }
 
-  onMount(() => initializeWorkspace(currentHref()));
+  let restoringWorkspace = $state(false);
+
+  onMount(() => {
+    const href = currentHref();
+    initializeWorkspace(href);
+    const persistedHref = getPersistedWorkspaceHref();
+    if (
+      href === '/dashboard' &&
+      persistedHref &&
+      persistedHref !== href &&
+      workspace.tabs.some((tab) => tab.href === persistedHref)
+    ) {
+      restoringWorkspace = true;
+      void goto(persistedHref, { replaceState: true }).finally(() => {
+        restoringWorkspace = false;
+        persistWorkspace(currentHref());
+      });
+      return;
+    }
+    persistWorkspace(href);
+  });
 
   $effect(() => {
+    // Read the URL fields directly so Svelte tracks navigation as a dependency.
+    $page.url.pathname;
+    $page.url.search;
     const href = currentHref();
-    if (!workspace.initialized) return;
+    if (!workspace.initialized || restoringWorkspace) return;
     ensureWorkspaceTab(href);
-    persistWorkspace();
+    persistWorkspace(href);
   });
 </script>
 
@@ -44,14 +69,11 @@
     </div>
   </div>
 {:else}
-  {#each workspace.tabs as tab (tab.href)}
-    {@const Page = tab.component}
-    <div
-      class="ak-workspace-page"
-      class:is-active={tab.href === currentHref()}
-      aria-hidden={tab.href !== currentHref()}
-    >
+  {@const activeTab = getWorkspaceTab(currentHref())}
+  {#if activeTab}
+    {@const Page = activeTab.component}
+    <div class="ak-workspace-page is-active" aria-hidden="false">
       <Page />
     </div>
-  {/each}
+  {/if}
 {/if}

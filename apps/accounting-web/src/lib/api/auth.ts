@@ -13,7 +13,9 @@ export interface AuthUser {
     theme_color: string;
     logo_url: string | null;
     is_active: boolean;
+    is_fake_data: boolean;
     bookkeeping_mode: 'independent_books' | 'internal_only';
+    issue_report_url: string | null;
   }>;
   is_sso_admin: boolean;
   is_admin: boolean;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Audit\Models\AuditLog;
+use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\Entity;
 use App\Actions\PostJournalAction;
 use App\Actions\RejectJournalAction;
@@ -34,6 +36,7 @@ class JournalController extends Controller
         private readonly RejectJournalAction $rejectJournal,
         private readonly ReverseJournalAction $reverseJournal,
         private readonly JournalNumberGenerator $numberGenerator,
+        private readonly AuditLoggerContract $auditLogger,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -62,6 +65,9 @@ class JournalController extends Controller
 
         if ($status = $request->query('status')) {
             $query->where('status', $status);
+        }
+        if ($periodId = $request->query('period_id')) {
+            $query->where('period_id', $periodId);
         }
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
@@ -94,7 +100,9 @@ class JournalController extends Controller
             ->findOrFail($id);
         $this->authorizeBookRead($request, $journal->journal_mode);
 
-        return response()->json(['data' => $this->detail($journal)]);
+        return response()->json(['data' => array_merge($this->detail($journal), [
+            'audit_trail' => $this->auditTrail($journal),
+        ])]);
     }
 
     public function nextNumber(Request $request): JsonResponse
@@ -190,19 +198,85 @@ class JournalController extends Controller
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
         $this->requirePermission('journal.update', $entity);
+        $reviewEditable = $journal->status === Journal::STATUS_SUBMITTED
+            && $this->isSupervisorLevel($request, $entity);
         $storedEditableBySupervisor = $journal->status === Journal::STATUS_POSTED
             && $this->isSupervisorLevel($request, $entity);
         if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true)
+            && ! $reviewEditable
             && ! $storedEditableBySupervisor) {
             abort(403, 'Jurnal Tersimpan terkunci dan hanya dapat diubah oleh Supervisor.');
         }
 
         $data = $this->validatePayload($request);
+        $inputMode = $data['journal_mode'] ?? $journal->journal_mode;
+        $this->ensureModeEnabled($entity, $inputMode);
         $period = $this->resolvePeriod($entity, $data['date']);
+        $before = $this->snapshot($journal->load('entries.account'));
+        $paired = null;
 
-        DB::transaction(function () use ($journal, $data, $entity, $period) {
+        DB::transaction(function () use (&$paired, $journal, $data, $entity, $period, $inputMode) {
+            if ($inputMode === 'both') {
+                $groupId = $journal->input_group_id ?: (string) Str::ulid();
+                $journal->fill([
+                    'period_id' => $period->id,
+                    'type' => $data['type'] ?? $journal->type,
+                    'journal_mode' => Journal::MODE_INTERNAL,
+                    'input_group_id' => $groupId,
+                    'date' => $data['date'],
+                    'transaction_code' => $data['transaction_code'] ?? null,
+                    'memo' => $data['memo'],
+                    'reference' => $data['reference'] ?? null,
+                ])->save();
+                $journal->entries()->delete();
+                $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+
+                $paired = Journal::query()
+                    ->where('entity_id', $entity->id)
+                    ->where('input_group_id', $groupId)
+                    ->where('id', '!=', $journal->id)
+                    ->where('journal_mode', Journal::MODE_FISCAL)
+                    ->first();
+                $paired ??= Journal::create([
+                    'entity_id' => $entity->id,
+                    'period_id' => $period->id,
+                    'type' => $data['type'] ?? $journal->type,
+                    'journal_mode' => Journal::MODE_FISCAL,
+                    'input_group_id' => $groupId,
+                    'number' => $this->numberGenerator->next(
+                        $entity->id,
+                        $data['date'],
+                        Journal::MODE_FISCAL,
+                        $data['type'] ?? $journal->type,
+                    ),
+                    'transaction_code' => $data['transaction_code'] ?? null,
+                    'date' => $data['date'],
+                    'memo' => $data['memo'],
+                    'reference' => $data['reference'] ?? null,
+                    'source_app' => 'accounting',
+                    'status' => $journal->status,
+                    'created_by' => $journal->created_by,
+                ]);
+                $paired->fill([
+                    'period_id' => $period->id,
+                    'type' => $data['type'] ?? $journal->type,
+                    'date' => $data['date'],
+                    'transaction_code' => $data['transaction_code'] ?? null,
+                    'memo' => $data['memo'],
+                    'reference' => $data['reference'] ?? null,
+                    'status' => $journal->status,
+                ])->save();
+                $paired->entries()->delete();
+                $this->writeEntries($paired, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+                $paired = $paired->fresh('entries.account');
+
+                return;
+            }
+
             $journal->fill([
                 'period_id' => $period->id,
+                'type' => $data['type'] ?? $journal->type,
+                'journal_mode' => $inputMode,
                 'date' => $data['date'],
                 'transaction_code' => $data['transaction_code'] ?? null,
                 'memo' => $data['memo'],
@@ -213,7 +287,16 @@ class JournalController extends Controller
             $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
         });
 
-        return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
+        $updated = $journal->fresh('entries.account');
+        $this->auditLogger->record(
+            'journal.updated', Journal::class, $journal->id, $entity->id,
+            ['snapshot' => $this->snapshot($updated), 'previous_snapshot' => $before], Auth::id(),
+        );
+
+        return response()->json(['data' => array_merge($this->detail($updated), [
+            'audit_trail' => $this->auditTrail($updated),
+            ...($paired ? ['paired_journal' => $this->detail($paired)] : []),
+        ])]);
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -393,7 +476,7 @@ class JournalController extends Controller
 
         if (! $period) {
             throw ValidationException::withMessages([
-                'date' => "No open period covers date {$date}.",
+                'date' => 'Tanggal dipilih harus dalam koridor periode yang aktif.',
             ]);
         }
 
@@ -449,7 +532,7 @@ class JournalController extends Controller
         }
         if ($sumDebit <= 0 || abs($sumDebit - $sumCredit) >= 0.005) {
             throw ValidationException::withMessages([
-                'entries' => 'Debit must equal credit and be greater than zero.',
+                'entries' => 'Bagian Debit / Credit belum balance. Pastikan total Debit sama dengan total Credit dan lebih dari nol.',
             ]);
         }
 
@@ -562,5 +645,30 @@ class JournalController extends Controller
             'created_at' => optional($j->created_at)?->toIso8601String(),
             'posted_at' => optional($j->posted_at)?->toIso8601String(),
         ];
+    }
+
+    private function snapshot(Journal $j): array
+    {
+        return array_intersect_key($this->detail($j), array_flip([
+            'id', 'number', 'transaction_code', 'journal_mode', 'input_group_id', 'date', 'type',
+            'memo', 'reference', 'period_id', 'entries_debit', 'entries_credit',
+        ]));
+    }
+
+    private function auditTrail(Journal $j): array
+    {
+        return AuditLog::query()->with('actor:id,name')
+            ->where('resource_type', Journal::class)
+            ->where('resource_id', $j->id)
+            ->whereIn('action', ['journal.updated', 'journal.attachment_changed', 'journal.reject'])
+            ->latest('created_at')->get()->map(fn (AuditLog $log): array => [
+                'id' => $log->id,
+                'action' => $log->action,
+                'created_at' => optional($log->created_at)?->toIso8601String(),
+                'actor_name' => $log->actor?->name ?? 'System',
+                'snapshot' => data_get($log->metadata, 'snapshot'),
+                'attachment_change' => data_get($log->metadata, 'attachment_change'),
+                'review_note' => data_get($log->metadata, 'note'),
+            ])->values()->all();
     }
 }

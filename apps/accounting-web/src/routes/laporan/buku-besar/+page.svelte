@@ -10,6 +10,7 @@
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
+  import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
@@ -25,7 +26,7 @@
   let report = $state<GeneralLedgerData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
-  let journalMode = $state<'internal' | 'fiscal'>('internal');
+  let journalMode = $state<BookToggleValue>('internal');
   let isInspector = $derived(
     auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
   );
@@ -99,6 +100,24 @@
     }
   }
 
+  async function loadAccounts(mode: BookToggleValue): Promise<AccountOption[]> {
+    if (mode !== 'both') return accountApi.list('', undefined, true, mode);
+
+    const [internal, fiscal] = await Promise.all([
+      accountApi.list('', undefined, true, 'internal'),
+      accountApi.list('', undefined, true, 'fiscal'),
+    ]);
+    return [...new Map([...internal, ...fiscal].map((account) => [account.id, account])).values()]
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }
+
+  function comparisonLines(internal: GeneralLedgerData, fiscal: GeneralLedgerData) {
+    return [
+      ...internal.lines.map((line) => ({ key: `internal-${line.line_id}`, book: 'internal' as const, line })),
+      ...fiscal.lines.map((line) => ({ key: `fiscal-${line.line_id}`, book: 'fiscal' as const, line })),
+    ].sort((a, b) => a.line.date.localeCompare(b.line.date) || a.line.number.localeCompare(b.line.number));
+  }
+
   async function deriveKnownPairs(): Promise<void> {
     // One unfiltered list — small (max 200 rows). Distinct on the fly.
     const all = await sourceRefApi.list();
@@ -122,7 +141,7 @@
       }
     }
     if (isInspector) journalMode = 'fiscal';
-    accounts = await accountApi.list('', undefined, true, journalMode);
+    accounts = await loadAccounts(journalMode);
     const queryAccount = $page.url.searchParams.get('account_id');
     accountId = queryAccount ?? accounts[0]?.id ?? '';
     await deriveKnownPairs();
@@ -156,19 +175,24 @@
   breadcrumb="Laporan / Buku Besar"
   subtitle={report ? `${report.account.code} — ${report.account.name}` : null}
 >
+  {#snippet actions()}
+    <BookToggle
+      value={journalMode}
+      includeBoth
+      disabled={isInspector || loading}
+      onChange={async (value) => {
+        journalMode = value;
+        const previousAccount = accountId;
+        accounts = await loadAccounts(journalMode);
+        accountId = accounts.some((account) => account.id === previousAccount)
+          ? previousAccount
+          : (accounts[0]?.id ?? '');
+        if (accountId) await load();
+        else report = null;
+      }}
+    />
+  {/snippet}
   {#snippet toolbar()}
-    <label class="text-sm"
-      ><span class="block font-medium mb-1">Buku</span><select
-        class="rounded-md border border-border-default px-3 py-2"
-        bind:value={journalMode}
-        disabled={isInspector}
-        onchange={async () => {
-          accounts = await accountApi.list('', undefined, true, journalMode);
-          accountId = accounts[0]?.id ?? '';
-          report = null;
-        }}><option value="internal">Intern</option><option value="fiscal">Fiskal</option></select
-      ></label
-    >
     <label class="text-sm">
       <span class="block font-medium mb-1">Akun</span>
       <div class="w-72">
@@ -281,6 +305,61 @@
     <div class="p-4 text-sm text-danger">{error}</div>
   {:else if !report}
     <div class="p-6 text-center text-text-muted">Pilih akun dan rentang tanggal.</div>
+  {:else if journalMode === 'both' && report.fiscal}
+    {@const fiscal = report.fiscal}
+    <table class="w-full text-sm">
+      <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
+        <tr>
+          <th class="px-4 py-3 text-left" rowspan="2">Tanggal</th>
+          <th class="px-4 py-3 text-left" rowspan="2">No. Jurnal</th>
+          <th class="px-4 py-3 text-left" rowspan="2">Keterangan</th>
+          <th class="px-4 py-3 text-left" rowspan="2">Sumber</th>
+          <th class="px-4 py-2 text-center text-[#16a34a]" colspan="2">Debit</th>
+          <th class="px-4 py-2 text-center text-[#f87171]" colspan="2">Kredit</th>
+          <th class="px-4 py-2 text-center" colspan="2">Saldo</th>
+        </tr>
+        <tr>
+          {#each ['Debit', 'Kredit', 'Saldo'] as group (group)}
+            <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
+            <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="bg-page-bg/60 italic">
+          <td class="px-4 py-2" colspan="8">Saldo Awal ({report.period_start})</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.opening)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.opening)}</td>
+        </tr>
+        {#each comparisonLines(report, fiscal) as item (item.key)}
+          <tr class="cursor-pointer border-t border-border-soft hover:bg-page-bg" onclick={() => goto(`/journals/${item.line.journal_id}`)}>
+            <td class="px-4 py-2">{formatDate(item.line.date)}</td>
+            <td class="px-4 py-2 font-mono">{item.line.number}</td>
+            <td class="px-4 py-2">{item.line.line_memo ?? item.line.journal_memo ?? '—'}</td>
+            <td class="px-4 py-2 text-text-muted">{fmtSourceCell(item.line)}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.debit : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.debit : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.credit : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.credit : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.balance : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.balance : '0')}</td>
+          </tr>
+        {:else}
+          <tr><td colspan="10" class="px-4 py-10 text-center text-text-muted">Tidak ada transaksi pada rentang ini.</td></tr>
+        {/each}
+      </tbody>
+      <tfoot class="bg-page-bg font-semibold">
+        <tr class="border-t-2 border-border-default">
+          <td class="px-4 py-2" colspan="4">Total</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.total_debit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.total_debit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.total_credit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.total_credit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.ending)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.ending)}</td>
+        </tr>
+      </tfoot>
+    </table>
   {:else}
     <table class="w-full text-sm">
       <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
@@ -289,8 +368,8 @@
           <th class="px-4 py-3 text-left">No. Jurnal</th>
           <th class="px-4 py-3 text-left">Keterangan</th>
           <th class="px-4 py-3 text-left">Sumber</th>
-          <th class="px-4 py-3 text-right">Debit</th>
-          <th class="px-4 py-3 text-right">Kredit</th>
+          <th class="px-4 py-3 text-right text-[#16a34a]">Debit</th>
+          <th class="px-4 py-3 text-right text-[#f87171]">Kredit</th>
           <th class="px-4 py-3 text-right">Saldo</th>
         </tr>
       </thead>

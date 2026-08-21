@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Attachment;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -20,6 +21,8 @@ class AttachmentController extends Controller
     use ResolvesTenant;
 
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+
+    public function __construct(private readonly AuditLoggerContract $auditLogger) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -77,6 +80,10 @@ class AttachmentController extends Controller
             'uploaded_by' => Auth::id(),
         ]);
 
+        if ($attachment->attachable_type === Journal::class) {
+            $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
+        }
+
         return response()->json(['data' => $this->serialize($attachment)], 201);
     }
 
@@ -102,8 +109,11 @@ class AttachmentController extends Controller
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
         $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true);
 
-        Storage::disk($attachment->disk)->delete($attachment->path);
         $attachment->delete();
+
+        if ($attachment->attachable_type === Journal::class) {
+            $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
+        }
 
         return response()->json(null, 204);
     }
@@ -120,7 +130,30 @@ class AttachmentController extends Controller
             'description' => $a->description,
             'created_at' => optional($a->created_at)?->toIso8601String(),
             'uploaded_by' => $a->uploaded_by,
+            'deleted_at' => optional($a->deleted_at)?->toIso8601String(),
         ];
+    }
+
+    private function auditAttachment(string $journalId, string $entityId, string $change): void
+    {
+        $journal = Journal::with('entries.account')->where('entity_id', $entityId)->find($journalId);
+        if (! $journal) return;
+
+        $this->auditLogger->record('journal.attachment_changed', Journal::class, $journal->id, $entityId, [
+            'snapshot' => [
+                'id' => $journal->id, 'number' => $journal->number, 'transaction_code' => $journal->transaction_code,
+                'journal_mode' => $journal->journal_mode, 'date' => optional($journal->date)?->toDateString(),
+                'type' => $journal->type, 'memo' => $journal->memo, 'reference' => $journal->reference,
+                'period_id' => $journal->period_id,
+                'entries_debit' => $journal->entries->filter(fn ($e) => (float) $e->debit > 0)->map(fn ($e) => [
+                    'account_id' => $e->account_id, 'amount' => (string) $e->debit, 'memo' => $e->memo,
+                ])->values()->all(),
+                'entries_credit' => $journal->entries->filter(fn ($e) => (float) $e->credit > 0)->map(fn ($e) => [
+                    'account_id' => $e->account_id, 'amount' => (string) $e->credit, 'memo' => $e->memo,
+                ])->values()->all(),
+            ],
+            'attachment_change' => $change,
+        ], Auth::id());
     }
 
     private function authorizeParent(Request $request, string $entityId, string $type, string $id, bool $write): void

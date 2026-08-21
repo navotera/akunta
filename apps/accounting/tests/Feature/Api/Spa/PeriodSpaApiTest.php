@@ -63,10 +63,54 @@ it('closes a period without drafts and reopens it', function () {
         ->assertJsonPath('data.status', 'closed');
 
     $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson("/api/v1/spa/periods/{$period->id}/reopen", [])
         ->assertOk()
         ->assertJsonPath('data.status', 'open');
+});
+
+it('creates a new period as closed while another period is active', function () {
+    Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Aktif',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/periods', [
+            'name' => 'Periode Berikutnya',
+            'start_date' => '2026-02-01',
+            'end_date' => '2026-02-28',
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.status', 'closed');
+});
+
+it('allows an admin to switch active period while the previous period has drafts', function () {
+    $current = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Lama',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+    $next = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Baru',
+        'start_date' => '2026-02-01', 'end_date' => '2026-02-28',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+    Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $current->id,
+        'type' => Journal::TYPE_GENERAL, 'number' => 'J-SWITCH-DRAFT',
+        'date' => '2026-01-10', 'status' => Journal::STATUS_DRAFT,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'open');
+
+    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
 });
 
 it('blocks closing when drafts exist', function () {

@@ -7,6 +7,7 @@ use Akunta\Rbac\Models\Tenant;
 use App\Actions\ApplyCoaTemplateAction;
 use App\Models\Account;
 use App\Services\Onboarding\CoaTemplateRegistry;
+use App\Services\RequiredAccountService;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'PT Onb', 'slug' => 'onb-'.uniqid()]);
@@ -29,7 +30,11 @@ it('applies technology COA with explicit Intern, both, and Fiscal classification
         ->and(Account::where('entity_id', $this->entity->id)->whereNull('description')->exists())->toBeFalse()
         ->and(Account::where('entity_id', $this->entity->id)->where('code', '4102')->value('description'))
         ->not->toStartWith('Definisi:')
-        ->toContain('Digunakan', "\n\nContoh:");
+        ->toContain('Digunakan', "\n\nContoh:")
+        ->and(Account::where('entity_id', $this->entity->id)->where('system_key', RequiredAccountService::PREPAID_TAX)->value('availability'))->toBe('both')
+        ->and(Account::where('entity_id', $this->entity->id)->where('system_key', RequiredAccountService::CURRENT_TAX_PAYABLE_PROVISION)->value('availability'))->toBe('intern')
+        ->and(Account::where('entity_id', $this->entity->id)->where('system_key', RequiredAccountService::CURRENT_TAX_PAYABLE_DEFINITIVE)->value('availability'))->toBe('both')
+        ->and(Account::where('entity_id', $this->entity->id)->where('system_key', RequiredAccountService::CURRENT_TAX_EXPENSE)->value('availability'))->toBe('intern');
 });
 
 it('omits Fiscal-only technology accounts in an Intern-only workspace', function () {

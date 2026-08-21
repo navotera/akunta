@@ -20,10 +20,10 @@
   type JournalStatusTab = 'draft' | 'submitted' | 'posted' | 'rejected';
   let statusTab = $state<JournalStatusTab>('draft');
   const statusTabs: { value: JournalStatusTab; label: string }[] = [
-    { value: 'draft', label: 'Diajukan' },
-    { value: 'submitted', label: 'Di review' },
-    { value: 'posted', label: 'Tersimpan' },
-    { value: 'rejected', label: 'Perlu Revisi' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'submitted', label: 'In Review' },
+    { value: 'posted', label: 'Saved' },
+    { value: 'rejected', label: 'Need Revision' },
   ];
   let isInspector = $derived(
     auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
@@ -86,11 +86,15 @@
     </div>
     <div class="flex items-center gap-3">
       {#if !isInspector}
-        <div class="rounded-md border border-border-default bg-card-bg p-1">
+        <div
+          class="inline-flex items-center gap-1 rounded-full border border-border-default bg-card-bg p-1 text-sm shadow-xs"
+          role="group"
+          aria-label="Mode jurnal"
+        >
           <button
             type="button"
-            class="rounded px-3 py-1.5 text-sm {journalMode === 'internal'
-              ? 'bg-primary text-white'
+            class="rounded-full px-3 py-1 font-medium {journalMode === 'internal'
+              ? 'bg-[#22c55e] text-white'
               : 'text-text-muted'}"
             onclick={() => {
               journalMode = 'internal';
@@ -99,8 +103,8 @@
           >
           <button
             type="button"
-            class="rounded px-3 py-1.5 text-sm {journalMode === 'fiscal'
-              ? 'bg-warning text-white'
+            class="rounded-full px-3 py-1 font-medium {journalMode === 'fiscal'
+              ? 'bg-[#facc15] text-[#5a4300]'
               : 'text-text-muted'}"
             onclick={() => {
               journalMode = 'fiscal';
@@ -134,7 +138,9 @@
       >
         {tab.label}
         {#if statusCounts[tab.value] > 0}
-          <span class="ml-1 text-xs opacity-75">{statusCounts[tab.value]}</span>
+          <span
+            class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border-soft bg-page-bg px-1.5 text-[11px] font-semibold leading-none text-text-muted"
+          >{statusCounts[tab.value]}</span>
         {/if}
       </button>
     {/each}
@@ -172,8 +178,8 @@
                 <span
                   class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {j.journal_mode ===
                   'fiscal'
-                    ? 'bg-warning-light text-warning'
-                    : 'bg-info-light text-info'}"
+                    ? 'bg-[#fff0b8] text-[#8a5a00]'
+                    : 'bg-paid-light text-paid'}"
                 >
                   {j.journal_mode === 'fiscal' ? 'Fiskal' : 'Intern'}
                 </span>

@@ -2,7 +2,9 @@
 
 namespace Database\Seeders;
 
+use Akunta\Rbac\Models\Entity;
 use App\Models\Account;
+use App\Services\RequiredAccountService;
 use Illuminate\Database\Seeder;
 
 class CoaTemplateSeeder extends Seeder
@@ -100,6 +102,10 @@ class CoaTemplateSeeder extends Seeder
 
             $idByCode[$code] = $account->id;
         }
+
+        app(RequiredAccountService::class)->ensure(
+            Entity::query()->findOrFail($entityId),
+        );
 
         $this->command?->info(sprintf('Seeded %d accounts for entity %s.', count(self::TEMPLATE), $entityId));
     }

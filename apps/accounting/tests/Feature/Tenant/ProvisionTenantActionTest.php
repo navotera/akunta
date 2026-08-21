@@ -5,7 +5,6 @@ declare(strict_types=1);
 use Akunta\Audit\Models\AuditLog;
 use Akunta\Core\Hooks as HookCatalog;
 use Akunta\Rbac\Models\App as RbacApp;
-use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
@@ -15,6 +14,7 @@ use App\DTO\ProvisionResult;
 use App\Exceptions\ProvisionException;
 use App\Models\Account;
 use App\Models\ApiToken;
+use App\Models\Period;
 use Database\Seeders\PresetRolesSeeder;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
@@ -47,7 +47,8 @@ it('provisions tenant + entity + COA + preset roles + admin user + API token in 
 
     $entity = $result->entity;
     expect($entity->tenant_id)->toBe($tenant->id)
-        ->and(Account::where('entity_id', $entity->id)->count())->toBe(46);
+        ->and(Account::where('entity_id', $entity->id)->count())->toBe(50)
+        ->and(Account::where('entity_id', $entity->id)->whereNotNull('system_key')->count())->toBe(4);
 
     expect(Role::whereNull('tenant_id')->where('is_preset', true)->count())
         ->toBe(count(PresetRolesSeeder::ROLES));
@@ -148,7 +149,7 @@ it('bootstrap token posts a valid journal to /api/v1/journals end-to-end', funct
         'admin_email' => 'e2e@test.test',
     ]));
 
-    $period = App\Models\Period::create([
+    $period = Period::create([
         'entity_id' => $result->entity->id,
         'name' => 'Apr 2026',
         'start_date' => '2026-04-01',

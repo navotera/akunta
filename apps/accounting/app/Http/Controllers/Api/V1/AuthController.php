@@ -100,7 +100,7 @@ class AuthController extends Controller
                 ->unique()
                 ->values())
             ->orderBy('name')
-            ->get(['id', 'name', 'is_active', 'workspace_settings'])
+            ->get(['id', 'tenant_id', 'name', 'is_active', 'is_fake_data', 'workspace_settings', 'theme_color', 'logo_path'])
             ->map(fn (Entity $e) => [
                 'id' => $e->id,
                 'tenant_id' => $e->tenant_id,
@@ -109,7 +109,9 @@ class AuthController extends Controller
                 'theme_color' => $e->theme_color,
                 'logo_url' => $e->logo_path ? Storage::disk('public')->url($e->logo_path) : null,
                 'is_active' => (bool) $e->is_active,
+                'is_fake_data' => (bool) $e->is_fake_data,
                 'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
+                'issue_report_url' => data_get($e->workspace_settings, 'issue_report_url'),
             ])
             ->all();
 

@@ -25,7 +25,7 @@ $rows = [
     ['1400', 'Aset Lancar Lainnya', 'asset', 'debit', '1000', false, 'both'],
     ['1401', 'Biaya Cloud dan Software Dibayar di Muka', 'asset', 'debit', '1400', true, 'both'],
     ['1402', 'PPN Masukan', 'asset', 'debit', '1400', true, 'both'],
-    ['1403', 'Pajak Dibayar di Muka', 'asset', 'debit', '1400', true, 'both'],
+    ['1498', 'Pajak Dibayar di Muka', 'asset', 'debit', '1400', true, 'both'],
     ['1404', 'Uang Muka Vendor', 'asset', 'debit', '1400', true, 'both'],
     ['1405', 'Jaminan dan Deposit', 'asset', 'debit', '1400', true, 'both'],
     ['1500', 'Aset Tetap', 'asset', 'debit', '1000', false, 'both'],
@@ -49,7 +49,9 @@ $rows = [
     ['2110', 'PPN Keluaran', 'liability', 'credit', '2100', true, 'both'],
     ['2111', 'Utang PPh 21', 'liability', 'credit', '2100', true, 'both'],
     ['2112', 'Utang PPh 23', 'liability', 'credit', '2100', true, 'both'],
-    ['2113', 'Utang PPh Badan', 'liability', 'credit', '2100', true, 'fiskal'],
+    ['2115', 'Utang PPh Final', 'liability', 'credit', '2100', true, 'both'],
+    ['2197', 'Utang PPh Badan - Provisi', 'liability', 'credit', '2100', true, 'intern'],
+    ['2198', 'Utang PPh Badan Definitif', 'liability', 'credit', '2100', true, 'both'],
     ['2114', 'Utang Gaji dan Benefit', 'liability', 'credit', '2100', true, 'both'],
     ['2200', 'Liabilitas Jangka Panjang', 'liability', 'credit', '2000', false, 'both'],
     ['2201', 'Pinjaman Bank', 'liability', 'credit', '2200', true, 'both'],
@@ -111,11 +113,11 @@ $rows = [
     ['6703', 'Beban Legal dan Perizinan', 'expense', 'debit', '6000', true, 'both'],
     ['6704', 'Beban Rekrutmen', 'expense', 'debit', '6000', true, 'both'],
     ['6801', 'Denda dan Sanksi Pajak', 'expense', 'debit', '6000', true, 'intern'],
+    ['6998', 'Beban Pajak Penghasilan Kini', 'expense', 'debit', '6000', true, 'intern'],
 
     ['8000', 'Penyesuaian Fiskal', 'other', 'credit', null, false, 'fiskal'],
     ['8101', 'Koreksi Fiskal Positif', 'revenue', 'credit', '8000', true, 'fiskal'],
     ['8102', 'Koreksi Fiskal Negatif', 'expense', 'debit', '8000', true, 'fiskal'],
-    ['8103', 'Beban PPh Badan Fiskal', 'expense', 'debit', '8000', true, 'fiskal'],
 ];
 
 $descriptions = require dirname(__DIR__).'/coa-descriptions/teknologi.php';

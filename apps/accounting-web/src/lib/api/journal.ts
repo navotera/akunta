@@ -44,6 +44,32 @@ export interface JournalDetail {
   entries_credit: JournalEntry[];
   created_at: string | null;
   posted_at: string | null;
+  audit_trail?: JournalAuditTrailItem[];
+  paired_journal?: JournalDetail;
+}
+
+export interface JournalAuditSnapshot {
+  id: string;
+  number: string;
+  transaction_code: string | null;
+  journal_mode: JournalMode;
+  date: string;
+  type: JournalType;
+  memo: string;
+  reference: string | null;
+  period_id: string | null;
+  entries_debit: JournalEntry[];
+  entries_credit: JournalEntry[];
+}
+
+export interface JournalAuditTrailItem {
+  id: string;
+  action: string;
+  created_at: string | null;
+  actor_name: string;
+  snapshot: JournalAuditSnapshot | null;
+  attachment_change: string | null;
+  review_note?: string | null;
 }
 
 export interface JournalListResponse {
@@ -72,7 +98,10 @@ export const journalApi = {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => v !== undefined && qs.set(k, String(v)));
     const suffix = qs.toString() ? `?${qs}` : '';
-    return api<JournalListResponse>(`/api/v1/spa/journals${suffix}`, { tenantSlug });
+    return api<JournalListResponse>(`/api/v1/spa/journals${suffix}`, {
+      tenantSlug,
+      cache: 'no-store',
+    });
   },
 
   nextNumber: (

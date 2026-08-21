@@ -12,6 +12,8 @@ export interface Account {
   is_active: boolean;
   availability: 'intern' | 'fiskal' | 'both';
   legal_basis: string | null;
+  system_key: string | null;
+  is_system: boolean;
   is_fake: boolean;
 }
 

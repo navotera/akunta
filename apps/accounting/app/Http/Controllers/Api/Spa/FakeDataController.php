@@ -31,6 +31,7 @@ class FakeDataController extends Controller
     {
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
+        $this->ensureImportableEntity($entity);
         $period = $this->periodForImport($request, $entity, $this->service->groupRequiresPeriod($group));
 
         return response()->json(['data' => ['created' => $this->service->import($entity, $group, $period), 'groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
@@ -40,6 +41,7 @@ class FakeDataController extends Controller
     {
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
+        $this->ensureImportableEntity($entity);
         $period = $this->periodForImport($request, $entity, true);
         $created = collect(FakeDataService::GROUPS)->keys()->sum(fn (string $group) => $this->service->import($entity, $group, $period));
 
@@ -50,6 +52,7 @@ class FakeDataController extends Controller
     {
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
+        $this->ensureImportableEntity($entity);
 
         return response()->json(['data' => ['deleted' => $this->service->delete($entity, $group), 'groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
     }
@@ -95,6 +98,15 @@ class FakeDataController extends Controller
             ),
             403,
             'Hanya admin yang dapat mengelola fake data.',
+        );
+    }
+
+    private function ensureImportableEntity(Entity $entity): void
+    {
+        abort_if(
+            $entity->is_fake_data,
+            409,
+            'PT. Fake Data memakai dataset demo bawaan. Import dan Clear Fake Data tidak tersedia untuk entitas ini.',
         );
     }
 

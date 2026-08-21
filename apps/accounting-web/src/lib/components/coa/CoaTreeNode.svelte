@@ -59,6 +59,11 @@
       ></span>
     {/if}
     <span class="font-mono text-xs text-text-muted">{node.account.code}</span>
+    {#if node.account.is_system}
+      <span class="text-xs text-info" title="Akun wajib sistem" aria-label="Akun wajib sistem"
+        >🔒</span
+      >
+    {/if}
     <span class="relative inline-block max-w-full">
       <span class="block truncate {isParent ? 'font-semibold text-text-strong' : ''}">
         {node.account.name}
@@ -83,7 +88,8 @@
   <span class="text-center text-xs">{node.account.is_active ? '✓' : '—'}</span>
   <span class="text-center text-xs">
     <span
-      class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold {node.account.availability === 'both'
+      class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold {node
+        .account.availability === 'both'
         ? 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'
         : node.account.availability === 'intern'
           ? 'bg-paid-light text-paid'

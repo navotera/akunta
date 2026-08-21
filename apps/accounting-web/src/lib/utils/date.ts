@@ -1,6 +1,15 @@
 export const DEFAULT_DATE_FORMAT = 'DD MMM YYYY';
 const DATE_FORMAT_KEY = 'akunta.date.format';
 
+export function getTodayIso(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 export function getDateFormat(): string {
   if (typeof localStorage === 'undefined') return DEFAULT_DATE_FORMAT;
   return localStorage.getItem(DATE_FORMAT_KEY) ?? DEFAULT_DATE_FORMAT;
@@ -39,4 +48,9 @@ export function formatDateTime(iso: string, format = getDateFormat()): string {
   }).format(date);
 
   return `${datePart} ${timePart}`;
+}
+
+/** Format ISO dates embedded in API validation messages using workspace preference. */
+export function formatMessageDates(message: string): string {
+  return message.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (iso) => formatDate(iso));
 }

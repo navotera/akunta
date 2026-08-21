@@ -62,10 +62,10 @@ class AccountController extends Controller
 
         $accounts = $query->limit(500)->get([
             'id', 'code', 'name', 'description', 'type', 'normal_balance',
-            'parent_account_id', 'is_postable', 'is_active', 'availability', 'legal_basis',
+            'parent_account_id', 'is_postable', 'is_active', 'availability', 'legal_basis', 'system_key',
         ]);
 
-        return response()->json(['data' => $accounts]);
+        return response()->json(['data' => $accounts->map(fn (Account $account): array => $this->serialize($account))]);
     }
 
     public function show(Request $request, string $id): JsonResponse
@@ -97,6 +97,9 @@ class AccountController extends Controller
         $account = Account::where('entity_id', $entity->id)->findOrFail($id);
 
         $data = $this->validatePayload($request, $entity->id, $account->id);
+        if ($account->isSystemAccount()) {
+            $this->assertSystemFieldsUnchanged($account, $data);
+        }
         if ($account->children()->exists()) {
             $data['is_postable'] = false;
         }
@@ -109,6 +112,12 @@ class AccountController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $account = Account::where('entity_id', $entity->id)->findOrFail($id);
+
+        if ($account->isSystemAccount()) {
+            throw ValidationException::withMessages([
+                'account' => 'Akun wajib sistem tidak dapat dihapus.',
+            ]);
+        }
 
         if (JournalEntry::where('account_id', $account->id)->exists()) {
             throw ValidationException::withMessages([
@@ -179,7 +188,42 @@ class AccountController extends Controller
             'is_active' => (bool) $a->is_active,
             'availability' => $a->availability,
             'legal_basis' => $a->legal_basis,
+            'system_key' => $a->system_key,
+            'is_system' => $a->isSystemAccount(),
             'is_fake' => $isFake,
         ];
+    }
+
+    private function assertSystemFieldsUnchanged(Account $account, array $data): void
+    {
+        $protectedFields = [
+            'code',
+            'name',
+            'type',
+            'normal_balance',
+            'parent_account_id',
+            'is_postable',
+            'is_active',
+            'availability',
+        ];
+
+        foreach ($protectedFields as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $current = $account->getAttribute($field);
+            $incoming = $data[$field];
+            if (in_array($field, ['is_postable', 'is_active'], true)) {
+                $current = (bool) $current;
+                $incoming = (bool) $incoming;
+            }
+
+            if ($current !== $incoming) {
+                throw ValidationException::withMessages([
+                    $field => 'Struktur akun wajib sistem tidak dapat diubah.',
+                ]);
+            }
+        }
     }
 }

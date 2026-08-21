@@ -1,17 +1,26 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import PanelHeader from './PanelHeader.svelte';
   import EntryRow from './EntryRow.svelte';
   import AddLineButton from './AddLineButton.svelte';
   import BalancePill from './BalancePill.svelte';
   import TemplateSidebar from './TemplateSidebar.svelte';
+  import AuditTrailSidebar from './AuditTrailSidebar.svelte';
   import type { AccountOption } from '$lib/api/account.js';
   import {
     journalApi,
     type JournalMode,
     type JournalType,
     type JournalDetail,
+    type JournalAuditTrailItem,
   } from '$lib/api/journal.js';
-  import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
+  import {
+    templateApi,
+    type JournalTemplateSummary,
+    type JournalTemplateDetail,
+  } from '$lib/api/template.js';
+  import { period } from '$lib/stores/period.svelte.js';
+  import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import { auth } from '$lib/stores/auth.svelte.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { page } from '$app/stores';
@@ -37,8 +46,20 @@
     serverErrors?: Record<string, string[]> | null;
     serverMessage?: string | null;
     allowPosting?: boolean;
+    reviewMode?: boolean;
+    allowSaveAsTemplate?: boolean;
+    templateMode?: boolean;
+    template?: JournalTemplateDetail | null;
+    auditTrail?: JournalAuditTrailItem[];
     onSaveDraft: (payload: FormPayload) => Promise<void> | void;
     onPosting: (payload: FormPayload) => Promise<void> | void;
+    onApprove?: (payload: FormPayload) => Promise<void> | void;
+    onRevise?: (payload: FormPayload) => Promise<void> | void;
+    onSaveAsTemplate?: (payload: FormPayload) => Promise<void> | void;
+    onUpdateTemplate?: (
+      payload: FormPayload,
+      template: JournalTemplateDetail,
+    ) => Promise<void> | void;
     onCancel: () => void;
   }
 
@@ -65,64 +86,153 @@
     serverErrors = null,
     serverMessage = null,
     allowPosting = true,
+    reviewMode = false,
+    allowSaveAsTemplate = false,
+    templateMode = false,
+    template = null,
+    auditTrail = [],
     onSaveDraft,
     onPosting,
+    onApprove,
+    onRevise,
+    onSaveAsTemplate,
+    onUpdateTemplate,
     onCancel,
   }: Props = $props();
 
+  const canChangeMode = $derived(
+    reviewMode || !initial || ['draft', 'rejected'].includes(initial.status ?? ''),
+  );
+
   const draftPath = $page.url.pathname;
-  const restoredDraft = initial ? null : loadJournalDraft(draftPath);
+  const restoredDraft = initial || templateMode ? null : loadJournalDraft(draftPath);
 
   function fieldError(name: string): string | null {
     return serverErrors?.[name]?.[0] ?? null;
   }
 
   const blankRow = (): Row => ({ account_id: '', amount: '0', memo: null });
+  const templateDebits = (template?.lines ?? [])
+    .filter((line) => line.side === 'debit')
+    .map((line) => ({ account_id: line.account_id, amount: line.amount, memo: line.memo }));
+  const templateCredits = (template?.lines ?? [])
+    .filter((line) => line.side === 'credit')
+    .map((line) => ({ account_id: line.account_id, amount: line.amount, memo: line.memo }));
 
-  let date = $state(restoredDraft?.date ?? initial?.date ?? new Date().toISOString().slice(0, 10));
-  let number = $state(restoredDraft?.number ?? initial?.number ?? '');
-  let transactionCode = $state(restoredDraft?.transaction_code ?? initial?.transaction_code ?? '');
+  let date = $state(
+    templateMode
+      ? ''
+      : (restoredDraft?.date || initial?.date || getTodayIso()),
+  );
+  let number = $state(templateMode ? '' : (restoredDraft?.number ?? initial?.number ?? ''));
+  let transactionCode = $state(
+    templateMode ? '' : (restoredDraft?.transaction_code ?? initial?.transaction_code ?? ''),
+  );
   let previewNumber = $state<string | null>(null);
   let journalMode = $state<JournalMode>(
-    restoredDraft?.journal_mode ?? initial?.journal_mode ?? 'internal',
+    restoredDraft?.journal_mode ?? initial?.journal_mode ?? template?.journal_mode ?? 'internal',
   );
   let journalType = $state<JournalType>(
     restoredDraft?.type ?? (initial?.type as JournalType | undefined) ?? 'general',
   );
-  let memo = $state(restoredDraft?.memo ?? initial?.memo ?? '');
-  let reference = $state(restoredDraft?.reference ?? initial?.reference ?? '');
+  let memo = $state(
+    templateMode ? (template?.description ?? '') : (restoredDraft?.memo ?? initial?.memo ?? ''),
+  );
+  let reference = $state(
+    templateMode ? '' : (restoredDraft?.reference ?? initial?.reference ?? ''),
+  );
   let attachments = $state<File[]>([]);
   let attachmentInput = $state<HTMLInputElement>();
   let attachmentToRemove = $state<number | null>(null);
   let attachmentToPreview = $state<File | null>(null);
   let attachmentPreviewUrl = $state<string | null>(null);
   let pendingJournalMode = $state<JournalMode | null>(null);
+  let periodError = $state<string | null>(null);
+
+  onMount(async () => {
+    try {
+      await period.refresh();
+    } catch {
+      // The backend remains the final authority when saving.
+    }
+  });
+
+  $effect(() => {
+    const selectedDate = date;
+    const activePeriod = period.active;
+    if (!selectedDate) {
+      periodError = null;
+      return;
+    }
+
+    if (!activePeriod || activePeriod.status !== 'open') {
+      periodError = 'Belum ada periode aktif yang dipilih.';
+      return;
+    }
+
+    const isCovered =
+      selectedDate >= activePeriod.start_date && selectedDate <= activePeriod.end_date;
+    periodError = isCovered ? null : 'Tanggal dipilih harus dalam koridor periode yang aktif.';
+  });
 
   function modeLabel(mode: JournalMode): string {
     return mode === 'both' ? 'Intern & Fiskal' : mode === 'fiscal' ? 'Fiskal' : 'Intern';
   }
 
   let debits = $state<Row[]>(
-    (restoredDraft?.entries_debit ?? initial?.entries_debit ?? []).map((e) => ({
+    (templateDebits.length > 0
+      ? templateDebits
+      : (restoredDraft?.entries_debit ?? initial?.entries_debit ?? [])
+    ).map((e) => ({
       account_id: e.account_id,
       amount: e.amount,
       memo: e.memo,
     })),
   );
   let credits = $state<Row[]>(
-    (restoredDraft?.entries_credit ?? initial?.entries_credit ?? []).map((e) => ({
+    (templateCredits.length > 0
+      ? templateCredits
+      : (restoredDraft?.entries_credit ?? initial?.entries_credit ?? [])
+    ).map((e) => ({
       account_id: e.account_id,
       amount: e.amount,
       memo: e.memo,
     })),
   );
+  let appliedTemplateId = $state<string | null>(null);
 
   // ensure starting rows
   if (debits.length === 0) debits = [blankRow(), blankRow()];
   if (credits.length === 0) credits = [blankRow()];
 
   $effect(() => {
-    if (initial) return;
+    const currentTemplate = template;
+    if (!templateMode || !currentTemplate || appliedTemplateId === currentTemplate.id) return;
+
+    journalMode = currentTemplate.journal_mode;
+    memo = currentTemplate.description ?? '';
+    debits = currentTemplate.lines
+      .filter((line) => line.side === 'debit')
+      .map((line) => ({
+        account_id: line.account_id,
+        amount: line.amount,
+        memo: line.memo,
+      }));
+    credits = currentTemplate.lines
+      .filter((line) => line.side === 'credit')
+      .map((line) => ({
+        account_id: line.account_id,
+        amount: line.amount,
+        memo: line.memo,
+      }));
+
+    if (debits.length === 0) debits = [blankRow(), blankRow()];
+    if (credits.length === 0) credits = [blankRow()];
+    appliedTemplateId = currentTemplate.id;
+  });
+
+  $effect(() => {
+    if (initial || templateMode) return;
 
     const draft: JournalDraft = {
       date,
@@ -139,7 +249,7 @@
   });
 
   $effect(() => {
-    if (initial || transactionCode) return;
+    if (templateMode || initial || transactionCode) return;
     void journalApi
       .nextTransactionCode(date)
       .then(({ transaction_code }) => {
@@ -152,7 +262,25 @@
 
   const debitTotal = $derived(debits.reduce((s, r) => s + Number(r.amount || 0), 0));
   const creditTotal = $derived(credits.reduce((s, r) => s + Number(r.amount || 0), 0));
-  const balanced = $derived(debitTotal > 0 && Math.abs(debitTotal - creditTotal) < 0.005);
+  const balanced = $derived(
+    Math.abs(debitTotal - creditTotal) < 0.005 && (templateMode || debitTotal > 0),
+  );
+  const validationAlerts = $derived.by(() => {
+    const alerts: string[] = [];
+    const hasDebit = debits.some((row) => row.account_id && Number(row.amount) > 0);
+    const hasCredit = credits.some((row) => row.account_id && Number(row.amount) > 0);
+
+    if (!templateMode) {
+      if (!date) alerts.push('Tanggal wajib diisi.');
+      if (periodError) alerts.push(periodError);
+      if (!memo.trim()) alerts.push('Keterangan wajib diisi.');
+    }
+    if (templateMode ? !balanced : !hasDebit || !hasCredit || !balanced) {
+      alerts.push('Bagian Debit / Credit belum balance.');
+    }
+
+    return alerts;
+  });
   const visibleAccounts = $derived(
     accounts.filter((account) =>
       journalMode === 'both'
@@ -168,14 +296,15 @@
       ? []
       : templates.filter(
           (template) =>
-            (template.journal_mode ?? 'internal') === journalMode && template.is_bookmarked === true,
+            (template.journal_mode ?? 'internal') === journalMode &&
+            template.is_bookmarked === true,
         ),
   );
   const displayedNumber = $derived(number || previewNumber || 'Memuat nomor jurnal…');
 
   let previewRequest = 0;
   $effect(() => {
-    if (number) return;
+    if (templateMode || number) return;
 
     const request = ++previewRequest;
     previewNumber = null;
@@ -190,7 +319,7 @@
   });
 
   function requestJournalMode(nextMode: JournalMode) {
-    if (initial || saving) return;
+    if (!canChangeMode || saving) return;
     if (nextMode === journalMode) return;
     if (attachments.length > 0) {
       pendingJournalMode = nextMode;
@@ -222,11 +351,23 @@
     );
   }
 
+  function focusNewAccount(side: 'debit' | 'credit', index: number) {
+    setTimeout(() => {
+      document
+        .querySelector<HTMLButtonElement>(`[data-testid="entry-account-${side}-${index}"]`)
+        ?.click();
+    }, 0);
+  }
+
   function addDebit() {
+    const index = debits.length;
     debits = [...debits, blankRow()];
+    focusNewAccount('debit', index);
   }
   function addCredit() {
+    const index = credits.length;
     credits = [...credits, blankRow()];
+    focusNewAccount('credit', index);
   }
   function updateDebit(i: number, next: Row) {
     debits = debits.map((r, idx) => (idx === i ? next : r));
@@ -242,7 +383,8 @@
   }
 
   function payload(): FormPayload {
-    const clean = (rows: Row[]) => rows.filter((r) => r.account_id && Number(r.amount) > 0);
+    const clean = (rows: Row[]) =>
+      rows.filter((r) => r.account_id && (templateMode || Number(r.amount) > 0));
     return {
       number,
       transaction_code: transactionCode,
@@ -288,6 +430,27 @@
 
   function handleWindowKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape' && attachmentToPreview) closeAttachmentPreview();
+  }
+
+  function restoreAuditSnapshot(item: JournalAuditTrailItem) {
+    const snapshot = item.snapshot;
+    if (!snapshot) return;
+    date = snapshot.date;
+    transactionCode = snapshot.transaction_code ?? '';
+    journalMode = snapshot.journal_mode;
+    journalType = snapshot.type;
+    memo = snapshot.memo;
+    reference = snapshot.reference ?? '';
+    debits = snapshot.entries_debit.map((row) => ({
+      account_id: row.account_id,
+      amount: row.amount,
+      memo: row.memo,
+    }));
+    credits = snapshot.entries_credit.map((row) => ({
+      account_id: row.account_id,
+      amount: row.amount,
+      memo: row.memo,
+    }));
   }
 
   function confirmModeChange(includeAttachments: boolean) {
@@ -353,7 +516,7 @@
               ? 'bg-[#22c55e] text-white'
               : 'text-text-muted'}"
             onclick={() => requestJournalMode('internal')}
-            disabled={!!initial || saving}
+            disabled={!canChangeMode || saving}
             aria-pressed={journalMode === 'internal'}>Intern</button
           >
           <button
@@ -363,7 +526,7 @@
               ? 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'
               : 'text-text-muted'}"
             onclick={() => requestJournalMode('both')}
-            disabled={!!initial || saving}
+            disabled={!canChangeMode || saving}
             aria-pressed={journalMode === 'both'}>Intern &amp; Fiskal</button
           >
           <button
@@ -373,7 +536,7 @@
               ? 'bg-[#facc15] text-[#5a4300]'
               : 'text-text-muted'}"
             onclick={() => requestJournalMode('fiscal')}
-            disabled={!!initial || saving}
+            disabled={!canChangeMode || saving}
             aria-pressed={journalMode === 'fiscal'}>Fiskal</button
           >
         </div>
@@ -406,6 +569,15 @@
         {fieldError('number') ?? fieldError('entries') ?? fieldError('tenant') ?? serverMessage}
       </div>
     {/if}
+    {#if initial?.review_note}
+      <div
+        class="xl:col-span-12 rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm text-text-default"
+        data-testid="review-note"
+      >
+        <span class="font-semibold">Catatan review:</span>
+        {initial.review_note}
+      </div>
+    {/if}
 
     <!-- Main: debit + credit panels + lampiran -->
     <div class="xl:col-span-9 flex flex-col gap-4">
@@ -418,6 +590,7 @@
           {#each debits as row, i (i)}
             <EntryRow
               {row}
+              side="debit"
               index={i}
               accounts={visibleAccounts}
               onChange={(n) => updateDebit(i, n)}
@@ -437,6 +610,7 @@
           {#each credits as row, i (i)}
             <EntryRow
               {row}
+              side="credit"
               index={i}
               accounts={visibleAccounts}
               onChange={(n) => updateCredit(i, n)}
@@ -501,42 +675,45 @@
     <aside class="xl:col-span-3 flex flex-col gap-4 xl:sticky xl:top-4 xl:self-start">
       <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
         <div class="flex flex-col gap-3">
-          <label class="text-sm">
-            <span class="block font-medium mb-1"
-              >Kode Transaksi <span class="text-danger">*</span></span
-            >
-            <input
-              type="text"
-              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
-              bind:value={transactionCode}
-              placeholder="Mis. TRX-2026-0001"
-              maxlength="80"
-              required
-              readonly
-              aria-readonly="true"
-              data-testid="journal-transaction-code"
-            />
-            {#if fieldError('transaction_code')}
-              <span class="block mt-1 text-xs text-danger">{fieldError('transaction_code')}</span>
-            {/if}
-          </label>
-          <label class="text-sm">
-            <span class="block font-medium mb-1">Kode Jurnal</span>
-            <input
-              type="text"
-              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 text-text-muted focus:outline-none"
-              value={displayedNumber}
-              readonly
-              aria-readonly="true"
-              data-testid="journal-number-input"
-            />
-          </label>
+          {#if !templateMode}
+            <label class="text-sm">
+              <span class="block font-medium mb-1"
+                >Kode Transaksi <span class="text-danger">*</span></span
+              >
+              <input
+                type="text"
+                class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+                bind:value={transactionCode}
+                placeholder="Mis. TRX-2026-0001"
+                maxlength="80"
+                required
+                readonly
+                aria-readonly="true"
+                data-testid="journal-transaction-code"
+              />
+              {#if fieldError('transaction_code')}
+                <span class="block mt-1 text-xs text-danger">{fieldError('transaction_code')}</span>
+              {/if}
+            </label>
+            <label class="text-sm">
+              <span class="block font-medium mb-1">Kode Jurnal</span>
+              <input
+                type="text"
+                class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 text-text-muted focus:outline-none"
+                value={displayedNumber}
+                readonly
+                aria-readonly="true"
+                data-testid="journal-number-input"
+              />
+            </label>
+          {/if}
           <label class="text-sm">
             <span class="block font-medium mb-1">Tipe Jurnal</span>
             <select
               class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary disabled:opacity-60"
               bind:value={journalType}
-              disabled={!!initial || saving}
+              disabled={(!!initial && !['draft', 'rejected'].includes(initial.status ?? '')) ||
+                saving}
               data-testid="journal-type"
             >
               <option value="general">Jurnal Umum</option>
@@ -546,38 +723,48 @@
               <option value="opening">Jurnal Pembukaan</option>
             </select>
           </label>
+          {#if !templateMode}
+            <label class="text-sm">
+              <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
+              <DateInput
+                value={date}
+                onChange={(iso) => (date = iso)}
+                testId="journal-date"
+                class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
+              />
+              {#if periodError}
+                <span class="block mt-1 text-xs text-danger" data-testid="error-open-period">
+                  {periodError}
+                </span>
+              {/if}
+              {#if fieldError('date')}
+                <span class="block mt-1 text-xs text-danger" data-testid="error-date"
+                  >{fieldError('date')}</span
+                >
+              {/if}
+            </label>
+            <label class="text-sm">
+              <span class="block font-medium mb-1">No. Bukti</span>
+              <input
+                type="text"
+                class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+                bind:value={reference}
+                placeholder="Mis. INV-2026-001"
+                maxlength="120"
+                data-testid="journal-reference"
+              />
+              {#if fieldError('reference')}
+                <span class="block mt-1 text-xs text-danger" data-testid="error-reference"
+                  >{fieldError('reference')}</span
+                >
+              {/if}
+            </label>
+          {/if}
           <label class="text-sm">
-            <span class="block font-medium mb-1">Tanggal <span class="text-danger">*</span></span>
-            <DateInput
-              value={date}
-              onChange={(iso) => (date = iso)}
-              testId="journal-date"
-              class={fieldError('date') ? 'ring-1 ring-danger rounded-md' : ''}
-            />
-            {#if fieldError('date')}
-              <span class="block mt-1 text-xs text-danger" data-testid="error-date"
-                >{fieldError('date')}</span
-              >
-            {/if}
-          </label>
-          <label class="text-sm">
-            <span class="block font-medium mb-1">No. Bukti</span>
-            <input
-              type="text"
-              class="w-full rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
-              bind:value={reference}
-              placeholder="Mis. INV-2026-001"
-              maxlength="120"
-              data-testid="journal-reference"
-            />
-            {#if fieldError('reference')}
-              <span class="block mt-1 text-xs text-danger" data-testid="error-reference"
-                >{fieldError('reference')}</span
-              >
-            {/if}
-          </label>
-          <label class="text-sm">
-            <span class="block font-medium mb-1">Keterangan <span class="text-danger">*</span></span
+            <span class="block font-medium mb-1"
+              >{templateMode ? 'Deskripsi Template' : 'Keterangan'}{#if !templateMode}
+                <span class="text-danger">*</span>
+              {/if}</span
             >
             <textarea
               class="w-full resize-y rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
@@ -588,7 +775,7 @@
               placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
               bind:value={memo}
               rows="3"
-              required
+              required={!templateMode}
               data-testid="journal-memo"
             ></textarea>
             {#if fieldError('memo')}
@@ -604,25 +791,79 @@
           Template gagal diterapkan: {templateError}
         </p>
       {/if}
-      <TemplateSidebar templates={visibleTemplates} onPick={handlePickTemplate} />
+      {#if !templateMode}
+        <TemplateSidebar templates={visibleTemplates} onPick={handlePickTemplate} />
+      {/if}
+      {#if initial}
+        <AuditTrailSidebar items={auditTrail} onRestore={restoreAuditSnapshot} />
+      {/if}
     </aside>
   </div>
 
   <!-- Sticky footer -->
   <div
-    class="fixed bottom-0 left-0 right-0 z-20 flex items-center justify-between gap-3 border-t border-border-default bg-card-bg px-6 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]"
+    class="fixed bottom-0 left-0 right-0 md:left-60 z-20 flex h-16 items-center justify-between gap-3 border-t border-border-default bg-card-bg px-6 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]"
   >
     <BalancePill {debits} {credits} />
     <div class="flex items-center gap-3">
-      {#if allowPosting}
+      {#if !templateMode && (allowPosting || initial)}
         <button
           type="button"
           onclick={() => onSaveDraft(payload())}
-          disabled={saving}
+          disabled={saving || !!periodError}
           class="rounded-md border border-border-default bg-card-bg px-4 py-2 text-sm font-semibold hover:bg-page-bg disabled:opacity-50"
           data-testid="save-draft"
         >
-          Simpan Draft
+          {initial?.status === 'posted' || reviewMode ? 'Simpan Perubahan' : 'Simpan Draft'}
+        </button>
+      {/if}
+      {#if templateMode && allowSaveAsTemplate}
+        <button
+          type="button"
+          onclick={() =>
+            template && onUpdateTemplate
+              ? onUpdateTemplate(payload(), template)
+              : onSaveAsTemplate?.(payload())}
+          disabled={saving || journalMode === 'both'}
+          title={journalMode === 'both'
+            ? 'Template hanya dapat dibuat untuk satu buku.'
+            : undefined}
+          class="rounded-md border border-primary/40 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="save-as-template"
+        >
+          Simpan sebagai Template
+        </button>
+      {/if}
+      {#if !templateMode && reviewMode}
+        <button
+          type="button"
+          onclick={() => onApprove?.(payload())}
+          disabled={saving || !balanced || !!periodError}
+          title={!balanced ? 'Total debit harus sama dengan kredit dan lebih dari nol.' : undefined}
+          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="approve-and-post"
+        >
+          Setujui dan Posting
+        </button>
+        <button
+          type="button"
+          onclick={() => onRevise?.(payload())}
+          disabled={saving}
+          class="rounded-md border border-warning/50 bg-warning-light px-4 py-2 text-sm font-semibold text-black hover:bg-warning hover:text-black disabled:opacity-50"
+          data-testid="request-revision"
+        >
+          Revisi
+        </button>
+      {:else if !templateMode && allowPosting}
+        <button
+          type="button"
+          onclick={() => onPosting(payload())}
+          disabled={saving || !balanced || !!periodError}
+          title={!balanced ? 'Total debit harus sama dengan kredit dan lebih dari nol.' : undefined}
+          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
+          data-testid="posting-jurnal"
+        >
+          {auth.user?.roles?.includes('operator') ? 'Ajukan Review' : 'Posting Jurnal'}
         </button>
       {/if}
       <button
@@ -634,18 +875,25 @@
       >
         Batal
       </button>
-      <button
-        type="button"
-        onclick={() => onPosting(payload())}
-        disabled={saving || !balanced}
-        title={!balanced ? 'Total debit harus sama dengan kredit dan lebih dari nol.' : undefined}
-        class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
-        data-testid="posting-jurnal"
-      >
-        {auth.user?.roles?.includes('operator') ? 'Ajukan Review' : 'Posting Jurnal'}
-      </button>
     </div>
   </div>
+
+  {#if validationAlerts.length > 0}
+    <div
+      class="fixed bottom-16 left-0 right-0 md:left-60 z-20 flex min-h-12 flex-wrap items-center justify-end gap-2 bg-warning-light/70 px-6 py-2"
+      role="status"
+      data-testid="form-validation-alert"
+    >
+      <span class="text-xs font-normal text-black">Periksa:</span>
+      {#each validationAlerts as alert}
+        <span
+          class="rounded-full border border-warning bg-[#facc15] px-3 py-1 text-xs font-medium text-black"
+        >
+          {alert}
+        </span>
+      {/each}
+    </div>
+  {/if}
 
   {#if attachmentToPreview && attachmentPreviewUrl}
     <div

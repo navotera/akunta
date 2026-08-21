@@ -57,6 +57,7 @@ export const sourceRefApi = {
     periodStart: string,
     periodEnd: string,
     accountId?: string | null,
+    journalMode: 'internal' | 'fiscal' = 'internal',
     tenantSlug?: string | null,
   ) => {
     const params = new URLSearchParams({
@@ -66,6 +67,7 @@ export const sourceRefApi = {
       period_end: periodEnd,
     });
     if (accountId) params.set('account_id', accountId);
+    params.set('journal_mode', journalMode);
     return api<{ data: SourceRefAggregateRow[]; meta: SourceRefAggregateMeta }>(
       `/api/v1/spa/reports/by-source-ref?${params.toString()}`,
       { tenantSlug },

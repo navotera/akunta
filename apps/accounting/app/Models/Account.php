@@ -38,6 +38,11 @@ class Account extends Model
         'is_active' => 'boolean',
     ];
 
+    public function isSystemAccount(): bool
+    {
+        return filled($this->system_key);
+    }
+
     public function isAvailableFor(string $journalMode): bool
     {
         return $this->availability === self::AVAILABILITY_BOTH

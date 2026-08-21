@@ -12,6 +12,7 @@ use App\Models\FakeDataRecord;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
+use App\Services\RequiredAccountService;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'Acc T', 'slug' => 'acc-'.uniqid()]);
@@ -160,6 +161,68 @@ it('blocks delete when account has journal entries', function () {
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->deleteJson("/api/v1/spa/accounts/{$account->id}")
         ->assertStatus(422);
+});
+
+it('exposes and protects required system accounts', function () {
+    $account = Account::create([
+        'entity_id' => $this->entity->id,
+        'code' => '6998',
+        'name' => 'Beban Pajak Penghasilan Kini',
+        'type' => 'expense',
+        'normal_balance' => 'debit',
+        'is_postable' => true,
+        'is_active' => true,
+        'availability' => Account::AVAILABILITY_INTERN,
+    ]);
+    $account->forceFill(['system_key' => RequiredAccountService::CURRENT_TAX_EXPENSE])->save();
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/accounts?postable_only=0')
+        ->assertOk()
+        ->assertJsonPath('data.0.system_key', RequiredAccountService::CURRENT_TAX_EXPENSE)
+        ->assertJsonPath('data.0.is_system', true);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/accounts/{$account->id}", [
+            'code' => '6998',
+            'name' => 'Beban Pajak Penghasilan Kini',
+            'description' => 'Deskripsi yang boleh diperbarui.',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+            'is_postable' => true,
+            'is_active' => true,
+            'availability' => Account::AVAILABILITY_BOTH,
+            'legal_basis' => 'UU Pajak Penghasilan',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('availability');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/accounts/{$account->id}", [
+            'code' => '6998',
+            'name' => 'Beban Pajak Penghasilan Kini',
+            'description' => 'Deskripsi yang boleh diperbarui.',
+            'type' => 'expense',
+            'normal_balance' => 'debit',
+            'is_postable' => true,
+            'is_active' => true,
+            'availability' => Account::AVAILABILITY_INTERN,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.description', 'Deskripsi yang boleh diperbarui.');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson("/api/v1/spa/accounts/{$account->id}")
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('account');
+
+    expect($account->refresh()->exists)->toBeTrue()
+        ->and($account->availability)->toBe(Account::AVAILABILITY_INTERN)
+        ->and($account->description)->toBe('Deskripsi yang boleh diperbarui.');
 });
 
 it('rejects duplicate code in same tenant', function () {

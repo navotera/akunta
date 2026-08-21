@@ -22,6 +22,22 @@ class TrialBalanceService
      */
     public function compute(string $entityId, string $asOfDate, string $journalMode = Journal::MODE_INTERNAL): array
     {
+        if ($journalMode === 'both') {
+            $internal = $this->computeSingle($entityId, $asOfDate, Journal::MODE_INTERNAL);
+            $fiscal = $this->computeSingle($entityId, $asOfDate, Journal::MODE_FISCAL);
+
+            return [
+                'comparison' => ['internal' => $internal, 'fiscal' => $fiscal],
+                'as_of' => $asOfDate,
+                'entity_id' => $entityId,
+            ];
+        }
+
+        return $this->computeSingle($entityId, $asOfDate, $journalMode);
+    }
+
+    private function computeSingle(string $entityId, string $asOfDate, string $journalMode): array
+    {
         $rows = Account::query()
             ->where('accounts.entity_id', $entityId)
             ->where('accounts.is_postable', true)

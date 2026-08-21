@@ -17,11 +17,14 @@ export const attachmentApi = {
   listFor: (attachableType: string, attachableId: string, tenantSlug?: string | null) =>
     api<{ data: Attachment[] }>(
       `/api/v1/spa/attachments?attachable_type=${encodeURIComponent(attachableType)}&attachable_id=${attachableId}`,
-      { tenantSlug },
+      { tenantSlug, cache: 'no-store' },
     ).then((r) => r.data),
 
   show: (id: string, tenantSlug?: string | null) =>
-    api<{ data: Attachment }>(`/api/v1/spa/attachments/${id}`, { tenantSlug }).then((r) => r.data),
+    api<{ data: Attachment }>(`/api/v1/spa/attachments/${id}`, {
+      tenantSlug,
+      cache: 'no-store',
+    }).then((r) => r.data),
 
   upload: async (
     attachableType: string,
@@ -36,29 +39,11 @@ export const attachmentApi = {
     fd.set('file', file);
     if (description) fd.set('description', description);
 
-    const headers = new Headers();
-    headers.set('Accept', 'application/json');
-    headers.set('X-Requested-With', 'XMLHttpRequest');
-    if (tenantSlug) headers.set('X-Tenant-Slug', tenantSlug);
-    // CSRF cookie + XSRF header are set by `api()` for cookied calls; replicate here.
-    const xsrf = document.cookie
-      .split('; ')
-      .find((c) => c.startsWith('XSRF-TOKEN='))
-      ?.split('=')[1];
-    if (xsrf) headers.set('X-XSRF-TOKEN', decodeURIComponent(xsrf));
-
-    const res = await fetch('/api/v1/spa/attachments', {
+    return api<{ data: Attachment }>('/api/v1/spa/attachments', {
       method: 'POST',
       body: fd,
-      headers,
-      credentials: 'include',
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      throw Object.assign(new Error('Upload failed'), { status: res.status, body });
-    }
-    const json = (await res.json()) as { data: Attachment };
-    return json.data;
+      tenantSlug,
+    }).then((response) => response.data);
   },
 
   destroy: (id: string, tenantSlug?: string | null) =>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class SourceRefController extends Controller
 {
-    use ResolvesTenant;
+    use AuthorizesBookAccess, ResolvesTenant;
 
     public function index(Request $request): JsonResponse
     {
@@ -72,13 +73,16 @@ class SourceRefController extends Controller
             'period_start' => 'required|date_format:Y-m-d',
             'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
             'account_id' => 'nullable|string|size:26',
+            'journal_mode' => 'nullable|in:internal,fiscal',
         ]);
+        $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
+        $this->authorizeBookRead($request, $mode);
 
         $q = DB::table('journal_entries as je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->where('j.entity_id', $entity->id)
             ->where('j.status', Journal::STATUS_POSTED)
-            ->where('j.journal_mode', Journal::MODE_INTERNAL)
+            ->where('j.journal_mode', $mode)
             ->whereBetween('j.date', [$data['period_start'], $data['period_end']])
             ->where('je.source_app', $data['source_app'])
             ->where('je.source_ref_type', $data['ref_type'])

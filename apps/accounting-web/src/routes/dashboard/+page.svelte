@@ -3,9 +3,10 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
+  import { period } from '$lib/stores/period.svelte.js';
   import { widgetsApi, type FinancialPulse, type RecentJournal } from '$lib/api/widgets.js';
   import { reportingApi, type FiscalReconciliationData } from '$lib/api/reporting.js';
-  import { onboardingApi, type OnboardingStatus } from '$lib/api/onboarding.js';
+  import { onboardingApi } from '$lib/api/onboarding.js';
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
   import Spark from '$lib/components/dashboard/Spark.svelte';
@@ -14,31 +15,40 @@
 
   let pulse = $state<FinancialPulse | null>(null);
   let recent = $state<RecentJournal[]>([]);
-  let status = $state<OnboardingStatus | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let cashflowTab = $state(1); // 0:7H 1:30H 2:90H 3:YTD
   let dashboardMode = $state<'internal' | 'fiscal'>('internal');
   let fiscalReport = $state<FiscalReconciliationData | null>(null);
   let fiscalLoading = $state(false);
   let fiscalError = $state<string | null>(null);
   let taxRate = $state(22);
+
+  const colors = ['#1B84FF', '#7239EA', '#17C653', '#F6C000', '#F8285A', '#7AA2FF'];
   let hasFiscalBook = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.bookkeeping_mode ===
       'independent_books',
   );
   let estimatedTaxableIncome = $derived(Math.max(0, Number(fiscalReport?.final_net_income ?? 0)));
   let estimatedIncomeTax = $derived((estimatedTaxableIncome * taxRate) / 100);
+  let trendIncome = $derived(pulse?.trend.map((item) => Number(item.income)) ?? []);
+  let trendExpense = $derived(pulse?.trend.map((item) => Number(item.expense)) ?? []);
+  let trendLabels = $derived(pulse?.trend.map((item) => item.label) ?? []);
+  let revenueTotal = $derived(
+    pulse?.revenue_composition.reduce((total, item) => total + Number(item.amount), 0) ?? 0,
+  );
+  let donutSlices = $derived(
+    (pulse?.revenue_composition ?? []).map((item, index) => ({
+      value: Number(item.amount),
+      color: colors[index % colors.length],
+    })),
+  );
 
   onMount(async () => {
     if (!auth.user) {
-      const u = await auth.refresh();
-      if (!u) {
-        // Only an actual 401 means the SSO session is missing. Keep backend
-        // failures on the dashboard so they do not create an auth redirect loop.
-        if (!auth.error) {
-          goto('/login', { replaceState: true });
-        } else {
+      const user = await auth.refresh();
+      if (!user) {
+        if (!auth.error) goto('/login', { replaceState: true });
+        else {
           error = auth.error;
           loading = false;
         }
@@ -49,18 +59,23 @@
       await goto('/journals', { replaceState: true });
       return;
     }
+
     try {
-      status = await onboardingApi.status();
-      if (!status.completed) {
+      const onboarding = await onboardingApi.status(tenant.id);
+      if (!onboarding.completed) {
         goto('/onboarding', { replaceState: true });
         return;
       }
+      if (!period.activeId) await period.refresh();
+      if (!period.activeId || !tenant.id) {
+        throw new Error('Pilih entitas dan periode aktif untuk membuka dashboard.');
+      }
       [pulse, recent] = await Promise.all([
-        widgetsApi.financialPulse(),
-        widgetsApi.recentJournals(8),
+        widgetsApi.financialPulse(period.activeId, tenant.id),
+        widgetsApi.recentJournals(8, period.activeId, tenant.id, 'internal'),
       ]);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+    } catch (exception) {
+      error = exception instanceof Error ? exception.message : String(exception);
     } finally {
       loading = false;
     }
@@ -68,18 +83,21 @@
 
   async function switchDashboardMode(mode: 'internal' | 'fiscal') {
     dashboardMode = mode;
-    if (mode !== 'fiscal' || fiscalReport || fiscalLoading) return;
+    if (mode !== 'fiscal' || fiscalReport || fiscalLoading || !pulse || !tenant.id) return;
 
     fiscalLoading = true;
     fiscalError = null;
     try {
-      const year = new Date().getFullYear();
-      const response = await reportingApi.fiscalReconciliation(`${year}-01-01`, `${year}-12-31`);
+      const response = await reportingApi.fiscalReconciliation(
+        pulse.period.start_date,
+        pulse.period.end_date,
+        tenant.id,
+      );
       fiscalReport = response.data;
       const storedRate = Number(localStorage.getItem(`akunta.tax-rate.${tenant.id}`));
       if (Number.isFinite(storedRate) && storedRate >= 0 && storedRate <= 100) taxRate = storedRate;
-    } catch (e) {
-      fiscalError = e instanceof Error ? e.message : String(e);
+    } catch (exception) {
+      fiscalError = exception instanceof Error ? exception.message : String(exception);
     } finally {
       fiscalLoading = false;
     }
@@ -91,162 +109,37 @@
     localStorage.setItem(`akunta.tax-rate.${tenant.id}`, String(taxRate));
   }
 
-  function compact(n: number | string): string {
-    const v = typeof n === 'string' ? Number(n) : n;
-    const a = Math.abs(v);
-    if (a >= 1e9) return (v / 1e9).toFixed(1) + ' M';
-    if (a >= 1e6) return (v / 1e6).toFixed(1) + ' jt';
-    if (a >= 1e3) return (v / 1e3).toFixed(0) + ' rb';
-    return Math.round(v).toLocaleString('id-ID');
+  function compact(value: number | string): string {
+    const number = typeof value === 'string' ? Number(value) : value;
+    const absolute = Math.abs(number);
+    if (absolute >= 1e9) return (number / 1e9).toFixed(1) + ' M';
+    if (absolute >= 1e6) return (number / 1e6).toFixed(1) + ' jt';
+    if (absolute >= 1e3) return (number / 1e3).toFixed(0) + ' rb';
+    return Math.round(number).toLocaleString('id-ID');
   }
 
-  function pctDelta(curr: string, prev: string): { value: string; positive: boolean } | null {
-    const c = Number(curr);
-    const p = Number(prev);
-    if (p === 0) return null;
-    const diff = ((c - p) / p) * 100;
-    return { value: `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%`, positive: diff >= 0 };
+  function pctDelta(
+    current: string,
+    previous: string,
+  ): { value: string; positive: boolean } | null {
+    const currentValue = Number(current);
+    const previousValue = Number(previous);
+    if (previousValue === 0) return null;
+    const difference = ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
+    return {
+      value: `${difference >= 0 ? '+' : ''}${difference.toFixed(1)}%`,
+      positive: difference >= 0,
+    };
   }
 
-  // Static demo series for cashflow + donut + tables (no backend yet).
-  const cashflowIncome = [120, 140, 165, 150, 178, 195, 210, 198, 220, 245, 260, 285].map(
-    (v) => v * 1e6,
-  );
-  const cashflowExpense = [80, 92, 100, 95, 110, 105, 115, 108, 120, 118, 125, 130].map(
-    (v) => v * 1e6,
-  );
-  const cashflowLabels = Array.from({ length: 12 }, (_, i) => `W${i + 1}`);
-  const cashflowNet =
-    cashflowIncome.reduce((a, b) => a + b, 0) - cashflowExpense.reduce((a, b) => a + b, 0);
-
-  const donutSlices = [
-    {
-      value: 58,
-      color: '#1B84FF',
-      label: 'Penjualan POS',
-      amount: 108180000,
-      src: 'App Penjualan',
-    },
-    { value: 22, color: '#7239EA', label: 'Invoice B2B', amount: 41010000, src: 'App Invoice' },
-    { value: 12, color: '#7AA2FF', label: 'Layanan / Jasa', amount: 22370000, src: 'Manual' },
-    { value: 8, color: '#C4CADA', label: 'Lain-lain', amount: 14860000, src: 'Manual' },
-  ];
-
-  const aging = [
-    {
-      label: 'Piutang Usaha',
-      sub: '42 invoice',
-      cells: [68420000, 24180000, 8420000, 3120000],
-      accent: '#1B84FF',
-    },
-    {
-      label: 'Utang Usaha',
-      sub: '18 tagihan',
-      cells: [42100000, 18650000, 0, 0],
-      accent: '#F6C000',
-    },
-    { label: 'Pajak Terutang', sub: 'PPN Mei', cells: [12480000, 0, 0, 0], accent: '#0284C7' },
-  ];
-
-  const approvals = [
-    {
-      icon: '🧾',
-      title: 'Invoice INV-2056',
-      sub: 'Toko Sumber Rejeki · Rp 18.420.000',
-      tag: 'App Invoice',
-      warn: false,
-    },
-    {
-      icon: '🛒',
-      title: 'PO #PO-1183',
-      sub: 'CV Anugerah Sentosa · Rp 7.250.000',
-      tag: 'App Pembelian',
-      warn: false,
-    },
-    {
-      icon: '👥',
-      title: 'Penyesuaian Gaji Mei',
-      sub: '3 karyawan · Rp 2.850.000',
-      tag: 'App Payroll',
-      warn: true,
-    },
-    {
-      icon: '🧾',
-      title: 'Refund INV-2031',
-      sub: 'Bunga Mawar Cake · Rp 480.000',
-      tag: 'App Invoice',
-      warn: false,
-    },
-    {
-      icon: '📒',
-      title: 'Jurnal Penyesuaian',
-      sub: 'Reklas biaya sewa Q2',
-      tag: 'Manual',
-      warn: false,
-    },
-  ];
-
-  const quickActions = [
-    { icon: '🧾', label: 'Buat Invoice', href: '#' },
-    { icon: '📒', label: 'Jurnal Manual', href: '/journals/new' },
-    { icon: '🏦', label: 'Rekonsiliasi', href: '#' },
-    { icon: '📑', label: 'Lapor PPN', href: '#' },
-    { icon: '👥', label: 'Run Payroll', href: '#' },
-    { icon: '📊', label: 'Laporan P&L', href: '/laporan/laba-rugi' },
-    { icon: '🛒', label: 'Tagihan Vendor', href: '#' },
-    { icon: '⤓', label: 'Export', href: '#' },
-  ];
-
-  const ecoSync = [
-    {
-      icon: '📈',
-      name: 'App Penjualan',
-      last: '2 menit lalu',
-      status: 'ok' as const,
-      count: '142 transaksi',
-    },
-    {
-      icon: '🛒',
-      name: 'App Pembelian',
-      last: '6 menit lalu',
-      status: 'ok' as const,
-      count: '38 dokumen',
-    },
-    {
-      icon: '📦',
-      name: 'App Inventory',
-      last: '14 menit lalu',
-      status: 'ok' as const,
-      count: '11 mutasi',
-    },
-    {
-      icon: '🧾',
-      name: 'App Invoice',
-      last: '3 menit lalu',
-      status: 'ok' as const,
-      count: '27 invoice',
-    },
-    {
-      icon: '👥',
-      name: 'App Payroll',
-      last: 'kemarin 17:02',
-      status: 'warn' as const,
-      count: '1 selisih',
-    },
-    {
-      icon: '📑',
-      name: 'App e-Faktur',
-      last: 'sedang sinkron',
-      status: 'syncing' as const,
-      count: '—',
-    },
-  ];
-
-  function statusPill(s: 'ok' | 'warn' | 'syncing' | 'err') {
-    if (s === 'ok') return { bg: '#DFFFEA', fg: '#17C653', dot: '#17C653', label: 'OK' };
-    if (s === 'warn') return { bg: '#FFF8DD', fg: '#F6C000', dot: '#F6C000', label: 'Periksa' };
-    if (s === 'syncing') return { bg: '#E6F4FB', fg: '#0284C7', dot: '#0284C7', label: 'Syncing' };
-    return { bg: '#FFEEF3', fg: '#F8285A', dot: '#F8285A', label: 'Error' };
+  function statusLabel(status: RecentJournal['status']): string {
+    return {
+      draft: 'Diajukan',
+      submitted: 'Di review',
+      posted: 'Tersimpan',
+      rejected: 'Perlu Revisi',
+      reversed: 'Dibalik',
+    }[status];
   }
 </script>
 
@@ -262,9 +155,9 @@
       <div>
         <h1 class="text-2xl font-bold">Dashboard</h1>
         <p class="text-sm text-text-muted">
-          {dashboardMode === 'internal'
-            ? 'Analisis manajemen berdasarkan buku Intern.'
-            : 'Analisis potensi pajak berdasarkan buku dan koreksi Fiskal.'}
+          {tenant.name} · {pulse.period.name} · {formatDate(pulse.period.start_date)}–{formatDate(
+            pulse.period.end_date,
+          )}
         </p>
       </div>
       {#if hasFiscalBook}
@@ -296,7 +189,7 @@
         </div>
       {:else if fiscalReport}
         <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {#each [{ label: 'Laba Buku Fiskal', value: Number(fiscalReport.book_net_income), tone: 'primary' }, { label: 'Koreksi Positif', value: Number(fiscalReport.positive_adjustments), tone: 'warning' }, { label: 'Koreksi Negatif', value: Number(fiscalReport.negative_adjustments), tone: 'paid' }, { label: 'Estimasi Penghasilan Kena Pajak', value: estimatedTaxableIncome, tone: 'primary' }] as item (item.label)}
+          {#each [{ label: 'Laba Buku Fiskal', value: Number(fiscalReport.book_net_income) }, { label: 'Koreksi Positif', value: Number(fiscalReport.positive_adjustments) }, { label: 'Koreksi Negatif', value: Number(fiscalReport.negative_adjustments) }, { label: 'Estimasi Penghasilan Kena Pajak', value: estimatedTaxableIncome }] as item (item.label)}
             <article class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
               <div class="text-xs font-medium text-text-muted">{item.label}</div>
               <div class="mt-2 text-xl font-bold tabnum">{formatRupiah(item.value)}</div>
@@ -317,7 +210,7 @@
                 Tarif simulasi
                 <span class="mt-1 flex items-center gap-1">
                   <input
-                    class="w-20 rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-right text-sm text-text-default"
+                    class="w-20 rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-right text-sm"
                     type="number"
                     min="0"
                     max="100"
@@ -330,70 +223,60 @@
               </label>
             </div>
             <p class="mt-4 text-xs leading-5 text-text-muted">
-              Simulasi dihitung dari laba Fiskal setelah koreksi dikalikan tarif di atas. Kredit
-              pajak, kompensasi rugi, fasilitas tarif, dan pajak final belum diperhitungkan.
+              Simulasi periode aktif. Kredit pajak, kompensasi rugi, fasilitas tarif, dan pajak
+              final belum diperhitungkan.
             </p>
             <a
               href="/fiskal/koreksi"
               class="mt-4 inline-flex rounded-md bg-warning px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
-              >Buka Koreksi &amp; Pajak Final</a
+              >Buka Koreksi &amp; Provisi Pajak</a
             >
           </article>
 
           <article
             class="overflow-hidden rounded-lg border border-border-default bg-card-bg shadow-xs"
           >
-            <header class="flex items-center justify-between border-b border-border-soft px-4 py-3">
-              <div>
-                <h2 class="text-sm font-bold">Akun dengan Dampak Koreksi Terbesar</h2>
-                <p class="text-xs text-text-muted">Tahun {new Date().getFullYear()}</p>
-              </div>
-              <span class="ak-pill bg-warning-light text-warning">
-                {fiscalReport.rows.filter(
-                  (row) => Number(row.positive_adjustment) || Number(row.negative_adjustment),
-                ).length} akun
-              </span>
+            <header class="border-b border-border-soft px-4 py-3">
+              <h2 class="text-sm font-bold">Dampak Koreksi Fiskal</h2>
+              <p class="text-xs text-text-muted">{pulse.period.name}</p>
             </header>
             <div class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
-                  <tr>
-                    <th class="px-4 py-2 text-left">Akun</th>
-                    <th class="px-4 py-2 text-right">Buku</th>
-                    <th class="px-4 py-2 text-right">Koreksi +</th>
-                    <th class="px-4 py-2 text-right">Koreksi −</th>
-                    <th class="px-4 py-2 text-right">Final</th>
-                  </tr>
+                  <tr
+                    ><th class="px-4 py-2 text-left">Akun</th><th class="px-4 py-2 text-right"
+                      >Buku</th
+                    ><th class="px-4 py-2 text-right">Koreksi +</th><th class="px-4 py-2 text-right"
+                      >Koreksi −</th
+                    ><th class="px-4 py-2 text-right">Final</th></tr
+                  >
                 </thead>
                 <tbody>
                   {#each fiscalReport.rows
                     .filter((row) => Number(row.positive_adjustment) || Number(row.negative_adjustment))
-                    .sort((a, b) => Number(b.positive_adjustment) + Number(b.negative_adjustment) - Number(a.positive_adjustment) - Number(a.negative_adjustment))
                     .slice(0, 8) as row (row.account_id)}
                     <tr class="border-t border-border-soft">
-                      <td class="px-4 py-3">
-                        <div class="font-mono text-xs">{row.code}</div>
-                        <div class="text-xs text-text-muted">{row.name}</div>
-                      </td>
-                      <td class="px-4 py-3 text-right font-mono text-xs"
-                        >{formatRupiah(row.book_amount)}</td
+                      <td class="px-4 py-3"
+                        ><div class="font-mono text-xs">{row.code}</div>
+                        <div class="text-xs text-text-muted">{row.name}</div></td
                       >
-                      <td class="px-4 py-3 text-right font-mono text-xs text-warning"
+                      <td class="px-4 py-3 text-right text-xs">{formatRupiah(row.book_amount)}</td>
+                      <td class="px-4 py-3 text-right text-xs text-warning"
                         >{formatRupiah(row.positive_adjustment)}</td
                       >
-                      <td class="px-4 py-3 text-right font-mono text-xs text-paid"
+                      <td class="px-4 py-3 text-right text-xs text-paid"
                         >{formatRupiah(row.negative_adjustment)}</td
                       >
-                      <td class="px-4 py-3 text-right font-mono text-xs font-semibold"
+                      <td class="px-4 py-3 text-right text-xs font-semibold"
                         >{formatRupiah(row.final_amount)}</td
                       >
                     </tr>
                   {:else}
-                    <tr>
-                      <td colspan="5" class="px-4 py-10 text-center text-text-muted">
-                        Belum ada koreksi Fiskal yang disetujui tahun ini.
-                      </td>
-                    </tr>
+                    <tr
+                      ><td colspan="5" class="px-4 py-10 text-center text-text-muted"
+                        >Belum ada koreksi Fiskal approved pada periode aktif.</td
+                      ></tr
+                    >
                   {/each}
                 </tbody>
               </table>
@@ -402,345 +285,201 @@
         </section>
       {/if}
     {:else}
-      <!-- KPI ROW -->
-      <section class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-4">
-        {#each [{ label: 'Saldo Kas & Bank', value: 428750000, delta: '+8,4%', pos: true, data: [40, 42, 44, 41, 46, 48, 52, 54, 57, 60, 63, 68], hint: '6 rekening' }, { label: 'Pendapatan (MTD)', value: Number(pulse.revenue.current), delta: pctDelta(pulse.revenue.current, pulse.revenue.previous)?.value ?? '—', pos: pctDelta(pulse.revenue.current, pulse.revenue.previous)?.positive ?? true, data: [20, 22, 24, 28, 30, 33, 38, 42, 46, 50, 55, 60], hint: 'vs bulan lalu' }, { label: 'Beban (MTD)', value: Number(pulse.expenses.current), delta: pctDelta(pulse.expenses.current, pulse.expenses.previous)?.value ?? '—', pos: pctDelta(pulse.expenses.current, pulse.expenses.previous)?.positive ?? true, data: [35, 38, 40, 42, 44, 42, 40, 38, 36, 35, 33, 32], hint: 'vs bulan lalu' }, { label: 'Laba Bersih (MTD)', value: Number(pulse.net_income.current), delta: pctDelta(pulse.net_income.current, pulse.net_income.previous)?.value ?? '—', pos: Number(pulse.net_income.current) >= 0, data: [10, 12, 14, 18, 20, 24, 28, 32, 36, 40, 44, 48], hint: pulse.period_label }] as kpi (kpi.label)}
+      <section class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {#each [{ label: 'Saldo Kas & Bank', current: pulse.cash_balance.current, previous: pulse.cash_balance.previous, hint: `${pulse.cash_balance.account_count} akun` }, { label: 'Pendapatan', current: pulse.revenue.current, previous: pulse.revenue.previous, hint: `vs ${pulse.previous_period?.name ?? 'periode sebelumnya'}` }, { label: 'Beban', current: pulse.expenses.current, previous: pulse.expenses.previous, hint: `vs ${pulse.previous_period?.name ?? 'periode sebelumnya'}` }, { label: 'Laba Bersih', current: pulse.net_income.current, previous: pulse.net_income.previous, hint: pulse.period_label }] as kpi (kpi.label)}
+          {@const delta = pctDelta(kpi.current, kpi.previous)}
           <article class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-            <div class="flex items-start justify-between mb-2">
+            <div class="mb-2 flex items-start justify-between">
               <span class="text-[0.7rem] font-medium text-text-muted">{kpi.label}</span>
-              <span class="text-[0.7rem] font-medium {kpi.pos ? 'text-paid' : 'text-danger'}">
-                {kpi.pos ? '↑' : '↓'}
-                {kpi.delta}
-              </span>
+              <span
+                class="text-[0.7rem] font-medium {delta?.positive === false
+                  ? 'text-danger'
+                  : 'text-paid'}">{delta?.value ?? '—'}</span
+              >
             </div>
             <div class="flex items-end justify-between gap-2">
               <div>
-                <div class="text-[1.4rem] font-bold tabnum leading-none tracking-tight">
-                  <span class="text-xs text-text-muted font-medium mr-1">Rp</span>{compact(
-                    kpi.value,
+                <div class="text-[1.4rem] font-bold tabnum leading-none">
+                  <span class="mr-1 text-xs font-medium text-text-muted">Rp</span>{compact(
+                    kpi.current,
                   )}
                 </div>
-                <div class="text-[0.65rem] text-text-muted mt-1">{kpi.hint}</div>
+                <div class="mt-1 text-[0.65rem] text-text-muted">{kpi.hint}</div>
               </div>
-              <Spark data={kpi.data} />
+              <Spark data={trendIncome.length ? trendIncome : [0]} />
             </div>
           </article>
         {/each}
       </section>
 
-      <!-- CASHFLOW + DONUT -->
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-[1.65fr_1fr] mb-4">
-        <div class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <div class="flex items-baseline justify-between mb-3">
+      <section class="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1.65fr_1fr]">
+        <article class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
+          <div class="mb-3 flex items-baseline justify-between">
             <div>
-              <h3 class="text-sm font-bold tracking-tight">Arus Kas</h3>
-              <div class="text-[0.7rem] text-text-muted mt-0.5">
-                {pulse.period_label} · per minggu
-              </div>
-            </div>
-            <div
-              class="inline-flex gap-0.5 bg-page-bg p-0.5 rounded-md border border-border-default text-xs"
-            >
-              {#each ['7H', '30H', '90H', 'YTD'] as t, i (t)}
-                <button
-                  type="button"
-                  class="px-3 py-1 rounded font-medium {cashflowTab === i
-                    ? 'bg-card-bg text-text-default shadow-xs'
-                    : 'text-text-muted hover:text-text-default'}"
-                  onclick={() => (cashflowTab = i)}
-                >
-                  {t}
-                </button>
-              {/each}
+              <h2 class="text-sm font-bold">Tren Pendapatan &amp; Beban</h2>
+              <p class="text-[0.7rem] text-text-muted">
+                Jurnal Intern posted · {pulse.period.name}
+              </p>
             </div>
           </div>
-          <div class="flex flex-wrap items-center gap-4 mb-2 text-xs">
-            <span class="inline-flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-primary"></span>
-              <span>Pemasukan</span>
-              <span class="tabnum text-text-muted"
-                >· Rp {compact(cashflowIncome.reduce((a, b) => a + b, 0))}</span
-              >
-            </span>
-            <span class="inline-flex items-center gap-1.5">
-              <svg width="14" height="6"
-                ><line
-                  x1="0"
-                  y1="3"
-                  x2="14"
-                  y2="3"
-                  stroke="currentColor"
-                  class="text-text-muted"
-                  stroke-width="1.6"
-                  stroke-dasharray="3 3"
-                /></svg
-              >
-              <span>Pengeluaran</span>
-              <span class="tabnum text-text-muted"
-                >· Rp {compact(cashflowExpense.reduce((a, b) => a + b, 0))}</span
-              >
-            </span>
-            <span class="ml-auto text-text-muted">
-              Net <strong class="tabnum text-paid font-semibold">+ Rp {compact(cashflowNet)}</strong
-              >
-            </span>
-          </div>
-          <CashflowChart
-            income={cashflowIncome}
-            expense={cashflowExpense}
-            labels={cashflowLabels}
-          />
-        </div>
+          <CashflowChart income={trendIncome} expense={trendExpense} labels={trendLabels} />
+        </article>
 
-        <div class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <div class="flex items-baseline justify-between mb-3">
-            <h3 class="text-sm font-bold tracking-tight">Komposisi Pendapatan</h3>
-            <span class="ak-pill bg-primary-light text-primary">Mei</span>
-          </div>
-          <div class="flex items-center gap-4">
-            <div class="relative shrink-0">
-              <Donut data={donutSlices} size={148} />
-              <div class="absolute inset-0 grid place-items-center text-center">
-                <div>
-                  <div class="text-[0.65rem] text-text-muted">Total</div>
-                  <div class="tabnum text-[0.95rem] font-semibold">
-                    Rp {compact(donutSlices.reduce((s, d) => s + d.amount, 0))}
+        <article class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
+          <h2 class="mb-3 text-sm font-bold">Komposisi Pendapatan</h2>
+          {#if pulse.revenue_composition.length}
+            <div class="flex items-center gap-4">
+              <div class="relative shrink-0">
+                <Donut data={donutSlices} size={140} />
+                <div class="absolute inset-0 grid place-items-center text-center">
+                  <div>
+                    <div class="text-[0.65rem] text-text-muted">Total</div>
+                    <div class="text-sm font-semibold">Rp {compact(revenueTotal)}</div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div class="flex-1 flex flex-col gap-2 min-w-0">
-              {#each donutSlices as s (s.label)}
-                <div class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-sm shrink-0" style="background: {s.color}"></span>
-                  <div class="flex-1 min-w-0">
-                    <div class="text-xs font-medium leading-tight truncate">{s.label}</div>
-                    <div class="text-[0.65rem] text-text-muted">{s.src}</div>
-                  </div>
-                  <div class="text-right">
-                    <div class="tabnum text-xs font-semibold">Rp {compact(s.amount)}</div>
-                    <div class="text-[0.65rem] text-text-muted">{s.value}%</div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- AGING + APPROVALS -->
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr] mb-4">
-        <div class="rounded-lg border border-border-default bg-card-bg shadow-xs overflow-hidden">
-          <div class="flex items-center justify-between border-b border-border-default px-4 py-3">
-            <div>
-              <h3 class="text-sm font-bold tracking-tight">Aging Piutang &amp; Utang</h3>
-              <div class="text-[0.7rem] text-text-muted mt-0.5">Klik baris untuk drill-down</div>
-            </div>
-            <div
-              class="inline-flex gap-0.5 bg-page-bg p-0.5 rounded-md border border-border-default text-xs"
-            >
-              <button class="px-3 py-1 rounded font-medium bg-card-bg text-text-default shadow-xs"
-                >Ringkasan</button
-              >
-              <button class="px-3 py-1 rounded font-medium text-text-muted">Piutang</button>
-              <button class="px-3 py-1 rounded font-medium text-text-muted">Utang</button>
-            </div>
-          </div>
-          <table class="w-full text-sm">
-            <thead class="bg-page-bg">
-              <tr class="text-[0.65rem] uppercase tracking-wider text-text-muted">
-                <th class="px-4 py-2 text-left font-medium">Kategori</th>
-                <th class="px-4 py-2 text-left font-medium">Belum JT</th>
-                <th class="px-4 py-2 text-left font-medium">1–30 hari</th>
-                <th class="px-4 py-2 text-left font-medium">31–60 hari</th>
-                <th class="px-4 py-2 text-left font-medium">&gt;60 hari</th>
-                <th class="px-4 py-2 text-right font-medium">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each aging as r (r.label)}
-                {@const total = r.cells.reduce((s, n) => s + n, 0)}
-                <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer">
-                  <td class="px-4 py-2.5">
-                    <div class="flex items-center gap-2.5">
-                      <span class="w-[3px] h-6 rounded-sm shrink-0" style="background: {r.accent}"
-                      ></span>
-                      <div>
-                        <div class="font-semibold text-xs">{r.label}</div>
-                        <div class="text-[0.65rem] text-text-muted">{r.sub}</div>
-                      </div>
+              <div class="min-w-0 flex-1 space-y-2">
+                {#each pulse.revenue_composition as item, index (item.account_id)}
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="h-2 w-2 shrink-0 rounded-sm"
+                      style={`background:${colors[index % colors.length]}`}
+                    ></span>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-xs font-medium">{item.label}</div>
+                      <div class="text-[0.65rem] text-text-muted">{item.code}</div>
                     </div>
-                  </td>
-                  {#each r.cells as c, i (i)}
-                    <td
-                      class="px-4 py-2.5 tabnum text-xs {c === 0
-                        ? 'text-text-muted/60'
-                        : i >= 2
-                          ? 'text-danger'
-                          : ''}"
-                    >
-                      {c === 0 ? '—' : 'Rp ' + compact(c)}
-                    </td>
-                  {/each}
-                  <td class="px-4 py-2.5 text-right tabnum text-xs font-semibold"
-                    >Rp {compact(total)}</td
-                  >
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <div class="flex items-baseline justify-between mb-3">
-            <h3 class="text-sm font-bold tracking-tight">Perlu Persetujuan</h3>
-            <span class="ak-pill bg-warning-light text-warning">5 baru</span>
-          </div>
-          <div class="flex flex-col gap-2">
-            {#each approvals as a (a.title)}
-              <div
-                class="flex items-center gap-2.5 p-2 border border-border-default rounded-md bg-card-bg"
-              >
-                <div
-                  class="w-7 h-7 rounded-md grid place-items-center text-sm shrink-0"
-                  style="background: {a.warn
-                    ? 'var(--m-warning-light, #FFF8DD)'
-                    : 'var(--m-primary-light)'}; color: {a.warn ? '#F6C000' : 'var(--m-primary)'};"
-                >
-                  {a.icon}
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-xs font-semibold truncate">{a.title}</div>
-                  <div class="text-[0.65rem] text-text-muted truncate">
-                    {a.sub} · <span>{a.tag}</span>
+                    <div class="text-right text-xs font-semibold">Rp {compact(item.amount)}</div>
                   </div>
-                </div>
-                <button
-                  class="w-6 h-6 grid place-items-center rounded text-text-muted hover:text-danger hover:bg-danger-light"
-                  title="Tolak">×</button
-                >
-                <button
-                  class="w-6 h-6 grid place-items-center rounded bg-primary text-white text-xs hover:bg-primary-active"
-                  title="Setujui">✓</button
-                >
+                {/each}
               </div>
-            {/each}
-          </div>
-          <button
-            class="w-full mt-2.5 py-2 text-xs font-medium text-text-muted hover:text-text-default rounded border border-border-default hover:bg-page-bg"
-          >
-            Lihat semua (12) ›
-          </button>
-        </div>
+            </div>
+          {:else}
+            <div class="py-12 text-center text-sm text-text-muted">
+              Belum ada pendapatan posted pada periode aktif.
+            </div>
+          {/if}
+        </article>
       </section>
 
-      <!-- QUICK ACTIONS + SYNC -->
-      <section class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <div class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <div class="flex items-baseline justify-between mb-3">
-            <h3 class="text-sm font-bold tracking-tight">Aksi Cepat</h3>
-            <span class="text-[0.7rem] text-text-muted">Pintasan ke modul</span>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {#each quickActions as q (q.label)}
-              <a
-                href={q.href}
-                class="flex flex-col items-start gap-2 p-3 border border-border-default rounded-md bg-card-bg hover:bg-page-bg transition-colors text-left"
-              >
-                <div
-                  class="w-7 h-7 rounded-md grid place-items-center bg-primary-light text-primary text-sm"
-                >
-                  {q.icon}
-                </div>
-                <div class="text-xs font-semibold">{q.label}</div>
-              </a>
-            {/each}
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <div class="flex items-baseline justify-between mb-3">
-            <h3 class="text-sm font-bold tracking-tight">Status Sinkronisasi Ekosistem</h3>
-            <button class="text-[0.7rem] font-medium text-text-muted hover:text-primary"
-              >↻ Sync sekarang</button
-            >
-          </div>
-          <div class="flex flex-col">
-            {#each ecoSync as e (e.name)}
-              {@const p = statusPill(e.status)}
-              <div
-                class="flex items-center gap-2.5 py-2 border-b border-border-soft last:border-b-0"
-              >
-                <div class="w-7 h-7 rounded-md grid place-items-center bg-page-bg text-sm shrink-0">
-                  {e.icon}
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-xs font-semibold truncate">{e.name}</div>
-                  <div class="text-[0.65rem] text-text-muted truncate">{e.count} · {e.last}</div>
-                </div>
-                <span class="ak-pill" style="background: {p.bg}; color: {p.fg}; gap: 4px;">
-                  <span
-                    class="w-1.5 h-1.5 rounded-full"
-                    style="background: {p.dot}; box-shadow: {e.status === 'syncing'
-                      ? '0 0 0 3px ' + p.bg
-                      : 'none'}"
-                  ></span>
-                  {p.label}
-                </span>
-              </div>
-            {/each}
-          </div>
-        </div>
-      </section>
-
-      <!-- Recent journals (kept from v1 for real-data link) -->
-      {#if recent.length}
-        <section class="mt-3 rounded-lg border border-border-default bg-card-bg shadow-xs">
-          <header class="flex items-center justify-between border-b border-border-soft px-4 py-3">
-            <strong class="text-[0.7rem] font-bold uppercase tracking-wider text-text-muted"
-              >Jurnal Terakhir</strong
-            >
-            <a class="text-xs text-primary hover:underline" href="/journals">Lihat semua →</a>
+      <section class="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1.4fr_1fr]">
+        <article
+          class="overflow-hidden rounded-lg border border-border-default bg-card-bg shadow-xs"
+        >
+          <header class="border-b border-border-soft px-4 py-3">
+            <h2 class="text-sm font-bold">Saldo Aset &amp; Liabilitas Terbesar</h2>
+            <p class="text-xs text-text-muted">
+              Saldo buku Intern sampai akhir {pulse.period.name}
+            </p>
           </header>
           <table class="w-full text-sm">
-            <thead class="bg-page-bg text-[0.65rem] uppercase tracking-wider text-text-muted">
-              <tr>
-                <th class="px-4 py-2 text-left font-medium">No.</th>
-                <th class="px-4 py-2 text-left font-medium">Tanggal</th>
-                <th class="px-4 py-2 text-left font-medium">Keterangan</th>
-                <th class="px-4 py-2 text-right font-medium">Total</th>
-                <th class="px-4 py-2 text-left font-medium">Status</th>
-              </tr>
-            </thead>
+            <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted"
+              ><tr
+                ><th class="px-4 py-2 text-left">Akun</th><th class="px-4 py-2 text-left"
+                  >Kelompok</th
+                ><th class="px-4 py-2 text-right">Saldo</th></tr
+              ></thead
+            >
             <tbody>
-              {#each recent as j (j.id)}
-                <tr
-                  class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-                  onclick={() => goto(`/journals/${j.id}`)}
+              {#each pulse.balance_accounts as account (account.account_id)}
+                <tr class="border-t border-border-soft"
+                  ><td class="px-4 py-2.5"
+                    ><span class="mr-2 font-mono text-xs text-text-muted">{account.code}</span
+                    >{account.label}</td
+                  ><td class="px-4 py-2.5 text-xs capitalize text-text-muted"
+                    >{account.type === 'asset' ? 'Aset' : 'Liabilitas'}</td
+                  ><td class="px-4 py-2.5 text-right font-mono text-xs"
+                    >{formatRupiah(account.amount)}</td
+                  ></tr
                 >
-                  <td class="px-4 py-2 font-mono text-xs">{j.number}</td>
-                  <td class="px-4 py-2 text-xs">{formatDate(j.date)}</td>
-                  <td class="px-4 py-2 text-xs">{j.memo ?? '—'}</td>
-                  <td class="px-4 py-2 text-right font-mono tabnum text-xs"
-                    >{formatRupiah(j.total)}</td
-                  >
-                  <td class="px-4 py-2">
-                    <span
-                      class="ak-pill {j.status === 'posted'
-                        ? 'bg-paid-light text-paid'
-                        : j.status === 'reversed'
-                          ? 'bg-warning-light text-warning'
-                          : 'bg-page-bg text-text-muted'}"
-                    >
-                      {j.status}
-                    </span>
-                  </td>
-                </tr>
+              {:else}
+                <tr
+                  ><td colspan="3" class="px-4 py-10 text-center text-text-muted"
+                    >Belum ada saldo posted.</td
+                  ></tr
+                >
               {/each}
             </tbody>
           </table>
-        </section>
-      {/if}
+        </article>
+
+        <article class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-bold">Perlu Review</h2>
+            <span class="ak-pill bg-warning-light text-warning"
+              >{pulse.journals.submitted_count}</span
+            >
+          </div>
+          <div class="space-y-2">
+            {#each pulse.pending_journals as journal (journal.id)}
+              <button
+                class="flex w-full items-center gap-3 rounded-md border border-border-default p-3 text-left hover:bg-page-bg"
+                onclick={() => goto(`/journals/${journal.id}`)}
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-xs font-semibold">{journal.number}</div>
+                  <div class="truncate text-[0.65rem] text-text-muted">
+                    {journal.memo ?? 'Tanpa keterangan'} · {formatDate(journal.date)}
+                  </div>
+                </div>
+                <span class="text-xs font-semibold">{formatRupiah(journal.total)}</span>
+              </button>
+            {:else}
+              <div class="py-10 text-center text-sm text-text-muted">
+                Tidak ada jurnal menunggu review.
+              </div>
+            {/each}
+          </div>
+        </article>
+      </section>
+
+      <section class="rounded-lg border border-border-default bg-card-bg shadow-xs">
+        <header class="flex items-center justify-between border-b border-border-soft px-4 py-3">
+          <div>
+            <strong class="text-sm font-bold">Jurnal Periode Aktif</strong>
+            <p class="text-xs text-text-muted">
+              {pulse.journals.posted_count} posted · {pulse.journals.draft_count} diajukan · {pulse
+                .journals.rejected_count} perlu revisi
+            </p>
+          </div>
+          <a class="text-xs text-primary hover:underline" href="/journals">Lihat semua →</a>
+        </header>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-page-bg text-[0.65rem] uppercase tracking-wider text-text-muted"
+              ><tr
+                ><th class="px-4 py-2 text-left">No.</th><th class="px-4 py-2 text-left">Tanggal</th
+                ><th class="px-4 py-2 text-left">Keterangan</th><th class="px-4 py-2 text-right"
+                  >Total</th
+                ><th class="px-4 py-2 text-left">Status</th></tr
+              ></thead
+            >
+            <tbody>
+              {#each recent as journal (journal.id)}
+                <tr
+                  class="cursor-pointer border-t border-border-soft hover:bg-page-bg"
+                  onclick={() => goto(`/journals/${journal.id}`)}
+                  ><td class="px-4 py-2 font-mono text-xs">{journal.number}</td><td
+                    class="px-4 py-2 text-xs">{formatDate(journal.date)}</td
+                  ><td class="px-4 py-2 text-xs">{journal.memo ?? '—'}</td><td
+                    class="px-4 py-2 text-right font-mono text-xs">{formatRupiah(journal.total)}</td
+                  ><td class="px-4 py-2"
+                    ><span class="ak-pill bg-page-bg text-text-muted"
+                      >{statusLabel(journal.status)}</span
+                    ></td
+                  ></tr
+                >
+              {:else}
+                <tr
+                  ><td colspan="5" class="px-4 py-10 text-center text-text-muted"
+                    >Belum ada jurnal pada periode aktif.</td
+                  ></tr
+                >
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </section>
     {/if}
   {/if}
 </div>

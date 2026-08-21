@@ -16,8 +16,20 @@ export interface FiscalAdjustment {
   legal_basis: string | null;
   status: 'draft' | 'approved';
   attachments_count: number;
+  created_by: string | null;
+  created_by_name: string | null;
+  approved_by: string | null;
+  approved_by_name: string | null;
   approved_at: string | null;
   created_at: string | null;
+}
+
+export interface FiscalAdjustmentListResponse {
+  data: FiscalAdjustment[];
+  meta: {
+    can_manage: boolean;
+    can_approve: boolean;
+  };
 }
 
 export interface FiscalAdjustmentInput {
@@ -35,10 +47,10 @@ export const fiscalAdjustmentApi = {
     const params = new URLSearchParams();
     if (periodStart) params.set('period_start', periodStart);
     if (periodEnd) params.set('period_end', periodEnd);
-    return api<{ data: FiscalAdjustment[] }>(
+    return api<FiscalAdjustmentListResponse>(
       `/api/v1/spa/fiscal-adjustments${params.size ? `?${params.toString()}` : ''}`,
-      { tenantSlug },
-    ).then((response) => response.data);
+      { tenantSlug, cache: 'no-store' },
+    );
   },
   create: (input: FiscalAdjustmentInput, tenantSlug?: string | null) =>
     api<{ data: FiscalAdjustment }>('/api/v1/spa/fiscal-adjustments', {

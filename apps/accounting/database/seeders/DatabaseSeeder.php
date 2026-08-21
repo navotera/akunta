@@ -14,6 +14,8 @@ class DatabaseSeeder extends Seeder
             SettingsPermissionsSeeder::class,
             JournalWorkflowPermissionsSeeder::class,
             EcosystemBootstrapSeeder::class,
+            RequiredAccountsSeeder::class,
+            FakeDataEntitySeeder::class,
         ]);
     }
 }

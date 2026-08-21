@@ -8,14 +8,18 @@ use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Controller;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Services\RequiredAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class WorkspaceController extends Controller
 {
+    public function __construct(private readonly RequiredAccountService $requiredAccounts) {}
+
     public function index(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
@@ -46,12 +50,18 @@ class WorkspaceController extends Controller
             'journal_number_formats' => ['nullable', 'array'],
             'journal_number_formats.*' => ['string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
+            'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
         $data = $this->normalizeNumberFormats($data);
         $data['id'] = (string) Str::ulid();
 
-        $workspace = Entity::query()->create($data);
+        $workspace = DB::transaction(function () use ($data): Entity {
+            $workspace = Entity::query()->create($data);
+            $this->requiredAccounts->ensure($workspace);
+
+            return $workspace;
+        });
 
         return response()->json(['data' => $this->payload($workspace)], 201);
     }
@@ -77,10 +87,19 @@ class WorkspaceController extends Controller
             'journal_number_formats' => ['nullable', 'array'],
             'journal_number_formats.*' => ['string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
+            'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
         $data = $this->normalizeNumberFormats($data);
         $workspace = Entity::query()->findOrFail($id);
+        if (array_key_exists('is_active', $data) && $data['is_active'] === false) {
+            $hasOtherActiveWorkspace = Entity::query()
+                ->where('tenant_id', $workspace->tenant_id)
+                ->whereKeyNot($workspace->id)
+                ->where('is_active', true)
+                ->exists();
+            abort_unless($hasOtherActiveWorkspace, 422, 'Minimal satu workspace harus tetap aktif.');
+        }
         if (($data['bookkeeping_mode'] ?? null) === 'internal_only') {
             $hasFiscalData = Journal::query()
                 ->where('entity_id', $workspace->id)
@@ -98,6 +117,7 @@ class WorkspaceController extends Controller
             );
         }
         $workspace->fill($data)->save();
+        $this->requiredAccounts->ensure($workspace->refresh());
 
         return response()->json(['data' => $this->payload($workspace->refresh())]);
     }
@@ -137,6 +157,7 @@ class WorkspaceController extends Controller
             'name' => $entity->name,
             'workspace_code' => $entity->workspace_code,
             'is_active' => $entity->is_active,
+            'is_fake_data' => (bool) $entity->is_fake_data,
             'theme_color' => $entity->theme_color,
             'logo_url' => $entity->logo_path ? Storage::disk('public')->url($entity->logo_path) : null,
             'logo_size' => (int) data_get($entity->workspace_settings, 'logo_size', 96),
@@ -151,6 +172,7 @@ class WorkspaceController extends Controller
             'transaction_number_format' => data_get($entity->workspace_settings, 'transaction_number_format'),
             'journal_number_formats' => data_get($entity->workspace_settings, 'journal_number_formats', []),
             'bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books'),
+            'issue_report_url' => data_get($entity->workspace_settings, 'issue_report_url'),
         ];
     }
 
@@ -168,7 +190,7 @@ class WorkspaceController extends Controller
     private function normalizeNumberFormats(array $data): array
     {
         $formats = is_array($data['workspace_settings'] ?? null) ? $data['workspace_settings'] : [];
-        foreach (['journal_number_format', 'transaction_number_format', 'bookkeeping_mode'] as $key) {
+        foreach (['journal_number_format', 'transaction_number_format', 'bookkeeping_mode', 'issue_report_url'] as $key) {
             if (array_key_exists($key, $data)) {
                 $formats[$key] = $data[$key] ?: null;
                 unset($data[$key]);

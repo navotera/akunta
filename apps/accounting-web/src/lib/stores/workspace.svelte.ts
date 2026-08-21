@@ -19,6 +19,7 @@ import AutoMappingPage from '../../routes/auto-mapping/+page.svelte';
 import AutoMappingDetailPage from '../../routes/auto-mapping/[id]/+page.svelte';
 import AutoMappingDocumentationPage from '../../routes/documentation/auto-mapping/+page.svelte';
 import DocumentationPage from '../../routes/documentation/+page.svelte';
+import FiscalAdjustmentPage from '../../routes/fiskal/koreksi/+page.svelte';
 
 type PageComponent = Component<Record<string, never>>;
 
@@ -55,10 +56,33 @@ const routes: RouteDefinition[] = [
     icon: '↻',
     component: RecurringJournalPage,
   },
-  { prefix: '/auto-mapping/', label: 'Detail Auto Mapping', icon: '⇄', component: AutoMappingDetailPage },
-  { prefix: '/auto-mapping', exact: true, label: 'Auto Mapping', icon: '⇄', component: AutoMappingPage },
-  { prefix: '/documentation/auto-mapping', exact: true, label: 'Dokumentasi Auto Mapping', icon: '▤', component: AutoMappingDocumentationPage },
-  { prefix: '/documentation', exact: true, label: 'Documentation', icon: '▤', component: DocumentationPage },
+  {
+    prefix: '/auto-mapping/',
+    label: 'Detail Auto Mapping',
+    icon: '⇄',
+    component: AutoMappingDetailPage,
+  },
+  {
+    prefix: '/auto-mapping',
+    exact: true,
+    label: 'Auto Mapping',
+    icon: '⇄',
+    component: AutoMappingPage,
+  },
+  {
+    prefix: '/documentation/auto-mapping',
+    exact: true,
+    label: 'Dokumentasi Auto Mapping',
+    icon: '▤',
+    component: AutoMappingDocumentationPage,
+  },
+  {
+    prefix: '/documentation',
+    exact: true,
+    label: 'Documentation',
+    icon: '▤',
+    component: DocumentationPage,
+  },
   { prefix: '/akun', exact: true, label: 'Bagan Akun', icon: '⊞', component: AccountPage },
   { prefix: '/periode', exact: true, label: 'Periode', icon: '⌚', component: PeriodPage },
   {
@@ -70,6 +94,13 @@ const routes: RouteDefinition[] = [
   },
   { prefix: '/integrasi', exact: true, label: 'Integrasi', icon: '⌘', component: IntegrationPage },
   { prefix: '/settings', exact: true, label: 'Setting', icon: '⚙', component: SettingsPage },
+  {
+    prefix: '/fiskal/koreksi',
+    exact: true,
+    label: 'Koreksi & Provisi Pajak',
+    icon: 'F',
+    component: FiscalAdjustmentPage,
+  },
   {
     prefix: '/laporan/neraca-saldo',
     exact: true,
@@ -109,6 +140,7 @@ const routes: RouteDefinition[] = [
 ];
 
 const WORKSPACE_STORAGE_KEY = 'akunta:accounting-workspace-tabs';
+const WORKSPACE_ACTIVE_STORAGE_KEY = 'akunta:accounting-workspace-active';
 
 export const workspace = $state({
   tabs: [] as WorkspaceTab[],
@@ -130,9 +162,26 @@ export function resolveWorkspaceTab(href: string): WorkspaceTab {
 export function ensureWorkspaceTab(href: string): void {
   if (workspace.emptyAt === href) return;
   workspace.emptyAt = null;
-  if (!workspace.tabs.some((tab) => tab.href === href)) {
-    workspace.tabs = [...workspace.tabs, resolveWorkspaceTab(href)];
+  const resolved = resolveWorkspaceTab(href);
+  const existingIndex = workspace.tabs.findIndex((tab) => tab.href === href);
+  if (existingIndex < 0) {
+    workspace.tabs = [...workspace.tabs, resolved];
+    return;
   }
+
+  const existing = workspace.tabs[existingIndex];
+  if (
+    existing &&
+    (existing.component !== resolved.component ||
+      existing.label !== resolved.label ||
+      existing.icon !== resolved.icon)
+  ) {
+    workspace.tabs = workspace.tabs.map((tab, index) => (index === existingIndex ? resolved : tab));
+  }
+}
+
+export function getWorkspaceTab(href: string): WorkspaceTab | null {
+  return workspace.tabs.find((tab) => tab.href === href) ?? null;
 }
 
 export function initializeWorkspace(href: string): void {
@@ -159,10 +208,17 @@ export function initializeWorkspace(href: string): void {
   persistWorkspace();
 }
 
-export function persistWorkspace(): void {
+export function getPersistedWorkspaceHref(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  const href = localStorage.getItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+  return href && resolveWorkspaceTab(href).label !== 'Halaman' ? href : null;
+}
+
+export function persistWorkspace(activeHref?: string): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(
     WORKSPACE_STORAGE_KEY,
     JSON.stringify(workspace.tabs.map(({ href, label, icon }) => ({ href, label, icon }))),
   );
+  if (activeHref) localStorage.setItem(WORKSPACE_ACTIVE_STORAGE_KEY, activeHref);
 }

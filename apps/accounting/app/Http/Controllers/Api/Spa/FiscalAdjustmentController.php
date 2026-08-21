@@ -31,7 +31,12 @@ class FiscalAdjustmentController extends Controller
 
         $query = FiscalAdjustment::query()
             ->where('entity_id', $entity->id)
-            ->with(['account:id,code,name,type', 'journal:id,number,journal_mode'])
+            ->with([
+                'account:id,code,name,type',
+                'journal:id,number,journal_mode',
+                'creator:id,name',
+                'approver:id,name',
+            ])
             ->withCount('attachments')
             ->latest('date')
             ->latest('created_at');
@@ -48,6 +53,10 @@ class FiscalAdjustmentController extends Controller
 
         return response()->json([
             'data' => $query->get()->map(fn (FiscalAdjustment $adjustment): array => $this->payload($adjustment)),
+            'meta' => [
+                'can_manage' => $request->user()?->hasPermission('fiscal.adjustment.manage', $entity->id) ?? false,
+                'can_approve' => $request->user()?->hasPermission('fiscal.adjustment.approve', $entity->id) ?? false,
+            ],
         ]);
     }
 
@@ -73,7 +82,9 @@ class FiscalAdjustmentController extends Controller
             'created_by' => $request->user()?->id,
         ]);
 
-        return response()->json(['data' => $this->payload($adjustment->load(['account', 'journal']))], 201);
+        return response()->json([
+            'data' => $this->payload($adjustment->load(['account', 'journal', 'creator', 'approver'])->loadCount('attachments')),
+        ], 201);
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -84,35 +95,43 @@ class FiscalAdjustmentController extends Controller
         $this->ensureDraft($adjustment);
         $adjustment->fill($this->validatePayload($request, $entity))->save();
 
-        return response()->json(['data' => $this->payload($adjustment->refresh()->load(['account', 'journal']))]);
+        return response()->json([
+            'data' => $this->payload($adjustment->refresh()->load(['account', 'journal', 'creator', 'approver'])->loadCount('attachments')),
+        ]);
     }
 
     public function approve(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->ensureFiscalBooksEnabled($entity);
         abort_unless(
             $request->user()?->hasPermission('fiscal.adjustment.approve', $entity->id),
             403,
             'Anda tidak memiliki izin menyetujui koreksi Fiskal.',
         );
-        $adjustment = $this->find($entity, $id);
-        $this->ensureDraft($adjustment);
-
-        if ($adjustment->attachments_count < 1) {
-            throw ValidationException::withMessages([
-                'attachments' => 'Minimal satu bukti harus diunggah sebelum koreksi Fiskal disetujui.',
-            ]);
-        }
-
-        DB::transaction(function () use ($adjustment, $request): void {
+        $adjustment = DB::transaction(function () use ($entity, $id, $request): FiscalAdjustment {
+            $adjustment = FiscalAdjustment::query()
+                ->where('entity_id', $entity->id)
+                ->lockForUpdate()
+                ->findOrFail($id);
+            $this->ensureDraft($adjustment);
+            if (! $adjustment->attachments()->exists()) {
+                throw ValidationException::withMessages([
+                    'attachments' => 'Minimal satu bukti harus diunggah sebelum koreksi Fiskal disetujui.',
+                ]);
+            }
             $adjustment->forceFill([
                 'status' => FiscalAdjustment::STATUS_APPROVED,
                 'approved_by' => $request->user()?->id,
                 'approved_at' => now(),
             ])->save();
+
+            return $adjustment;
         });
 
-        return response()->json(['data' => $this->payload($adjustment->refresh()->load(['account', 'journal']))]);
+        return response()->json([
+            'data' => $this->payload($adjustment->refresh()->load(['account', 'journal', 'creator', 'approver'])->loadCount('attachments')),
+        ]);
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -121,7 +140,10 @@ class FiscalAdjustmentController extends Controller
         $this->authorizeManage($request, $entity);
         $adjustment = $this->find($entity, $id);
         $this->ensureDraft($adjustment);
-        $adjustment->delete();
+        DB::transaction(function () use ($adjustment): void {
+            $adjustment->attachments()->delete();
+            $adjustment->delete();
+        });
 
         return response()->json(null, 204);
     }
@@ -171,7 +193,12 @@ class FiscalAdjustmentController extends Controller
     {
         return FiscalAdjustment::query()
             ->where('entity_id', $entity->id)
-            ->with(['account:id,code,name,type', 'journal:id,number,journal_mode'])
+            ->with([
+                'account:id,code,name,type',
+                'journal:id,number,journal_mode',
+                'creator:id,name',
+                'approver:id,name',
+            ])
             ->withCount('attachments')
             ->findOrFail($id);
     }
@@ -187,11 +214,7 @@ class FiscalAdjustmentController extends Controller
 
     private function authorizeRead(Request $request, Entity $entity): void
     {
-        abort_unless(
-            data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') === 'independent_books',
-            404,
-            'Buku Fiskal tidak aktif untuk entitas ini.',
-        );
+        $this->ensureFiscalBooksEnabled($entity);
         abort_unless(
             $request->user()?->hasPermission('fiscal.adjustment.read', $entity->id),
             403,
@@ -201,10 +224,20 @@ class FiscalAdjustmentController extends Controller
 
     private function authorizeManage(Request $request, Entity $entity): void
     {
+        $this->ensureFiscalBooksEnabled($entity);
         abort_unless(
             $request->user()?->hasPermission('fiscal.adjustment.manage', $entity->id),
             403,
             'Anda tidak memiliki izin mengelola koreksi Fiskal.',
+        );
+    }
+
+    private function ensureFiscalBooksEnabled(Entity $entity): void
+    {
+        abort_unless(
+            data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') === 'independent_books',
+            404,
+            'Buku Fiskal tidak aktif untuk entitas ini.',
         );
     }
 
@@ -226,7 +259,9 @@ class FiscalAdjustmentController extends Controller
             'status' => $adjustment->status,
             'attachments_count' => (int) ($adjustment->attachments_count ?? 0),
             'created_by' => $adjustment->created_by,
+            'created_by_name' => $adjustment->creator?->name,
             'approved_by' => $adjustment->approved_by,
+            'approved_by_name' => $adjustment->approver?->name,
             'approved_at' => $adjustment->approved_at?->toIso8601String(),
             'created_at' => $adjustment->created_at?->toIso8601String(),
         ];

@@ -109,7 +109,16 @@ it('keeps both books independent and applies approved corrections only to the fi
             'legal_basis' => 'Kebijakan pajak perusahaan',
         ])
         ->assertCreated()
-        ->assertJsonPath('data.status', FiscalAdjustment::STATUS_DRAFT);
+        ->assertJsonPath('data.status', FiscalAdjustment::STATUS_DRAFT)
+        ->assertJsonPath('data.created_by_name', 'Tax_officer');
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/reports/fiscal-reconciliation?period_start=2026-01-01&period_end=2026-12-31')
+        ->assertOk()
+        ->assertJsonPath('data.book_net_income', '-10000000.00')
+        ->assertJsonPath('data.positive_adjustments', '0.00')
+        ->assertJsonPath('data.final_net_income', '-10000000.00');
 
     $this->actingAs(User::findOrFail($this->taxUserId))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -118,7 +127,7 @@ it('keeps both books independent and applies approved corrections only to the fi
         ->assertJsonValidationErrors('attachments');
 
     Storage::fake(config('filesystems.default'));
-    $this->actingAs(User::findOrFail($this->taxUserId))
+    $attachment = $this->actingAs(User::findOrFail($this->taxUserId))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->post('/api/v1/spa/attachments', [
             'attachable_type' => FiscalAdjustment::class,
@@ -131,7 +140,42 @@ it('keeps both books independent and applies approved corrections only to the fi
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fiscal-adjustments/'.$created->json('data.id').'/approve')
         ->assertOk()
-        ->assertJsonPath('data.status', FiscalAdjustment::STATUS_APPROVED);
+        ->assertJsonPath('data.status', FiscalAdjustment::STATUS_APPROVED)
+        ->assertJsonPath('data.attachments_count', 1)
+        ->assertJsonPath('data.approved_by_name', 'Tax_officer');
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/fiscal-adjustments?period_start=2026-01-01&period_end=2026-12-31')
+        ->assertOk()
+        ->assertJsonPath('meta.can_manage', true)
+        ->assertJsonPath('meta.can_approve', true)
+        ->assertJsonPath('data.0.approved_by_name', 'Tax_officer');
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/fiscal-adjustments/'.$created->json('data.id'), [
+            'journal_id' => $this->fiscalJournal->id,
+            'account_id' => $this->expense->id,
+            'date' => '2026-04-30',
+            'direction' => 'negative',
+            'amount' => '1000000.00',
+            'reason' => 'Perubahan yang tidak boleh tersimpan.',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('status');
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson('/api/v1/spa/attachments/'.$attachment->json('data.id'))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('status');
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson('/api/v1/spa/fiscal-adjustments/'.$created->json('data.id'))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('status');
 
     expect(JournalEntry::count())->toBe($beforeEntries)
         ->and($this->internalJournal->entries()->sum('debit'))->toEqual('20000000')
@@ -148,8 +192,67 @@ it('keeps both books independent and applies approved corrections only to the fi
         ->assertJsonPath('data.rows.0.final_amount', '6000000.00');
 });
 
+it('applies approved negative corrections as a reduction to fiscal net income', function () {
+    $user = User::findOrFail($this->taxUserId);
+    $headers = ['X-Tenant-Slug' => $this->entity->id];
+
+    $created = $this->actingAs($user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/fiscal-adjustments', [
+            'journal_id' => $this->fiscalJournal->id,
+            'account_id' => $this->expense->id,
+            'date' => '2026-04-30',
+            'direction' => 'negative',
+            'amount' => '2000000.00',
+            'reason' => 'Beban dapat menjadi pengurang penghasilan Fiskal.',
+        ])
+        ->assertCreated();
+
+    Storage::fake(config('filesystems.default'));
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->post('/api/v1/spa/attachments', [
+            'attachable_type' => FiscalAdjustment::class,
+            'attachable_id' => $created->json('data.id'),
+            'file' => UploadedFile::fake()->create('bukti-koreksi-negatif.pdf', 100, 'application/pdf'),
+        ])
+        ->assertCreated();
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/fiscal-adjustments/'.$created->json('data.id').'/approve')
+        ->assertOk();
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/reports/fiscal-reconciliation?period_start=2026-01-01&period_end=2026-12-31')
+        ->assertOk()
+        ->assertJsonPath('data.book_net_income', '-10000000.00')
+        ->assertJsonPath('data.negative_adjustments', '2000000.00')
+        ->assertJsonPath('data.final_net_income', '-12000000.00')
+        ->assertJsonPath('data.rows.0.final_amount', '12000000.00');
+});
+
 it('forces inspector reads to the fiscal book and rejects internal drill down', function () {
     $this->travelTo('2026-04-20');
+
+    $this->actingAs(User::findOrFail($this->inspectorUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/fiscal-adjustments')
+        ->assertOk()
+        ->assertJsonPath('meta.can_manage', false)
+        ->assertJsonPath('meta.can_approve', false);
+
+    $this->actingAs(User::findOrFail($this->inspectorUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/fiscal-adjustments', [
+            'account_id' => $this->expense->id,
+            'date' => '2026-04-30',
+            'direction' => 'positive',
+            'amount' => '1000000.00',
+            'reason' => 'Inspector tidak boleh membuat koreksi.',
+        ])
+        ->assertForbidden();
 
     $this->actingAs(User::findOrFail($this->inspectorUserId))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -186,4 +289,54 @@ it('forces inspector reads to the fiscal book and rejects internal drill down', 
         ->getJson('/api/v1/spa/widgets/financial-pulse')
         ->assertOk()
         ->assertJsonPath('data.expenses.current', '10000000.00');
+});
+
+it('returns independent internal and fiscal values in combined financial reports', function () {
+    $user = User::findOrFail($this->taxUserId);
+    $headers = ['X-Tenant-Slug' => $this->entity->id];
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/reports/balance-sheet?as_of=2026-12-31&journal_mode=both')
+        ->assertOk()
+        ->assertJsonPath('data.equity.net_income_ytd', '-20000000.00')
+        ->assertJsonPath('data.fiscal.equity.net_income_ytd', '-10000000.00');
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/reports/income-statement?period_start=2026-01-01&period_end=2026-12-31&journal_mode=both')
+        ->assertOk()
+        ->assertJsonPath('data.expenses.total', '20000000.00')
+        ->assertJsonPath('data.fiscal.expenses.total', '10000000.00');
+
+    $this->actingAs($user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/reports/general-ledger?account_id='.$this->expense->id.'&period_start=2026-01-01&period_end=2026-12-31&journal_mode=both')
+        ->assertOk()
+        ->assertJsonPath('data.total_debit', '20000000.00')
+        ->assertJsonPath('data.fiscal.total_debit', '10000000.00');
+
+    $this->actingAs(User::findOrFail($this->inspectorUserId))
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/reports/income-statement?period_start=2026-01-01&period_end=2026-12-31&journal_mode=both')
+        ->assertForbidden();
+});
+
+it('does not expose fiscal corrections when the entity uses internal only books', function () {
+    $this->entity->update([
+        'workspace_settings' => ['bookkeeping_mode' => 'internal_only'],
+    ]);
+
+    $this->actingAs(User::findOrFail($this->taxUserId))
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/fiscal-adjustments', [
+            'account_id' => $this->expense->id,
+            'date' => '2026-04-30',
+            'direction' => 'positive',
+            'amount' => '4000000.00',
+            'reason' => 'Tidak boleh tersimpan pada mode buku Intern saja.',
+        ])
+        ->assertNotFound();
+
+    expect(FiscalAdjustment::query()->where('entity_id', $this->entity->id)->exists())->toBeFalse();
 });

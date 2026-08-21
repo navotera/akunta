@@ -108,6 +108,10 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::post('fiscal-adjustments/{id}/approve', [FiscalAdjustmentController::class, 'approve']);
         Route::delete('fiscal-adjustments/{id}', [FiscalAdjustmentController::class, 'destroy']);
 
+        Route::get('tax-provisions/current', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'show']);
+        Route::post('tax-provisions/preview', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'preview']);
+        Route::post('tax-provisions', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'store']);
+
         Route::get('fake-data', [FakeDataController::class, 'index']);
         Route::post('fake-data/import-all', [FakeDataController::class, 'importAll']);
         Route::post('fake-data/{group}/import', [FakeDataController::class, 'import']);

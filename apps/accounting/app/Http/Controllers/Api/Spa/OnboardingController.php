@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Period;
 use App\Services\Onboarding\CoaTemplateRegistry;
+use App\Services\RequiredAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,13 +21,14 @@ class OnboardingController extends Controller
     public function __construct(
         private readonly CoaTemplateRegistry $registry,
         private readonly ApplyCoaTemplateAction $apply,
+        private readonly RequiredAccountService $requiredAccounts,
     ) {}
 
     public function status(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
 
-        $accountCount = Account::where('entity_id', $entity->id)->count();
+        $accountCount = Account::where('entity_id', $entity->id)->whereNull('system_key')->count();
         $periodCount = Period::where('entity_id', $entity->id)->count();
 
         return response()->json([
@@ -55,6 +57,7 @@ class OnboardingController extends Controller
         $settings = is_array($entity->workspace_settings) ? $entity->workspace_settings : [];
         $settings['bookkeeping_mode'] = $data['bookkeeping_mode'];
         $entity->forceFill(['workspace_settings' => $settings])->save();
+        $this->requiredAccounts->ensure($entity->refresh());
 
         return response()->json([
             'data' => [

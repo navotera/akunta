@@ -66,7 +66,7 @@ export const period = {
       state.available = items;
 
       const stored = read();
-      const valid = items.find((p) => p.id === stored);
+      const valid = items.find((p) => p.id === stored && p.status === 'open');
       if (valid) {
         state.activeId = valid.id;
         return;
@@ -86,7 +86,7 @@ export const period = {
 
   switch(id: string): void {
     const target = state.available.find((p) => p.id === id);
-    if (!target) return;
+    if (!target || target.status !== 'open') return;
     state.activeId = target.id;
     write(target.id);
   },

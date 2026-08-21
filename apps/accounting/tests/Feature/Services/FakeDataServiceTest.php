@@ -18,6 +18,7 @@ use App\Services\Reporting\BalanceSheetService;
 use App\Services\Reporting\FiscalReconciliationService;
 use App\Services\Reporting\GeneralLedgerService;
 use App\Services\Reporting\TrialBalanceService;
+use App\Services\RequiredAccountService;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'PT Demo Teknologi', 'slug' => 'fake-it-'.uniqid()]);
@@ -294,6 +295,20 @@ it('never follows a corrupt marker across tenant boundaries', function () {
 
     expect(Account::find($manualOtherAccount->id))->not->toBeNull()
         ->and(FakeDataRecord::where('model_id', $manualOtherAccount->id)->exists())->toBeFalse();
+});
+
+it('keeps required system accounts when fake COA is cleared', function () {
+    $this->service->import($this->entity, 'accounts');
+    $required = Account::query()
+        ->where('entity_id', $this->entity->id)
+        ->where('system_key', RequiredAccountService::CURRENT_TAX_EXPENSE)
+        ->firstOrFail();
+
+    $this->service->delete($this->entity, 'accounts');
+
+    expect(Account::find($required->id))->not->toBeNull()
+        ->and(Account::query()->where('entity_id', $this->entity->id)->whereNotNull('system_key')->count())->toBe(4)
+        ->and(FakeDataRecord::query()->where('model_id', $required->id)->exists())->toBeFalse();
 });
 
 it('adapts the complete demo to an Intern-only workspace', function () {

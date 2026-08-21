@@ -6,6 +6,7 @@
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import WorkspaceRouter from '$lib/components/shell/WorkspaceRouter.svelte';
   import { palette } from '$lib/stores/palette.svelte.js';
+  import ZeroValueStyler from '$lib/components/ui/ZeroValueStyler.svelte';
 
   let { children } = $props();
 
@@ -34,3 +35,4 @@
 {/if}
 
 <Toaster />
+<ZeroValueStyler />

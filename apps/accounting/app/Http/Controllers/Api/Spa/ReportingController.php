@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
+use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
 use App\Services\Reporting\BalanceSheetService;
@@ -20,7 +21,7 @@ use Illuminate\Validation\ValidationException;
 
 class ReportingController extends Controller
 {
-    use AuthorizesBookAccess;
+    use AuthorizesBookAccess, ResolvesTenant;
 
     public function __construct(
         private readonly TrialBalanceService $trialBalance,
@@ -35,10 +36,15 @@ class ReportingController extends Controller
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
             'as_of' => 'required|date_format:Y-m-d',
-            'journal_mode' => 'nullable|in:internal,fiscal',
+            'journal_mode' => 'nullable|in:internal,fiscal,both',
         ]);
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
-        $this->authorizeBookRead($request, $mode);
+        if ($mode === 'both') {
+            $this->authorizeBookRead($request, Journal::MODE_INTERNAL);
+            $this->authorizeBookRead($request, Journal::MODE_FISCAL);
+        } else {
+            $this->authorizeBookRead($request, $mode);
+        }
 
         $report = $this->trialBalance->compute($entity->id, $data['as_of'], $mode);
 
@@ -59,18 +65,25 @@ class ReportingController extends Controller
             'as_of' => 'required|date_format:Y-m-d',
             'period_start' => 'nullable|date_format:Y-m-d|before_or_equal:as_of',
             'show_fiscal' => 'sometimes|boolean',
-            'journal_mode' => 'nullable|in:internal,fiscal',
+            'journal_mode' => 'nullable|in:internal,fiscal,both',
         ]);
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
-        $this->authorizeBookRead($request, $mode);
+        if ($mode === 'both') {
+            $this->authorizeBookRead($request, Journal::MODE_INTERNAL);
+            $this->authorizeBookRead($request, Journal::MODE_FISCAL);
+        } else {
+            $this->authorizeBookRead($request, $mode);
+        }
+
+        $primaryMode = $mode === 'both' ? Journal::MODE_INTERNAL : $mode;
 
         $report = $this->balanceSheet->compute(
             $entity->id,
             $data['as_of'],
             $data['period_start'] ?? null,
-            $mode,
+            $primaryMode,
         );
-        if ($request->boolean('show_fiscal') && $mode === Journal::MODE_INTERNAL) {
+        if ($mode === 'both' || ($request->boolean('show_fiscal') && $primaryMode === Journal::MODE_INTERNAL)) {
             $this->authorizeBookRead($request, Journal::MODE_FISCAL);
             $report['fiscal'] = $this->balanceSheet->compute(
                 $entity->id,
@@ -96,17 +109,32 @@ class ReportingController extends Controller
         $data = $request->validate([
             'period_start' => 'required|date_format:Y-m-d',
             'period_end' => 'required|date_format:Y-m-d|after_or_equal:period_start',
-            'journal_mode' => 'nullable|in:internal,fiscal',
+            'journal_mode' => 'nullable|in:internal,fiscal,both',
         ]);
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
-        $this->authorizeBookRead($request, $mode);
+        if ($mode === 'both') {
+            $this->authorizeBookRead($request, Journal::MODE_INTERNAL);
+            $this->authorizeBookRead($request, Journal::MODE_FISCAL);
+        } else {
+            $this->authorizeBookRead($request, $mode);
+        }
+
+        $primaryMode = $mode === 'both' ? Journal::MODE_INTERNAL : $mode;
 
         $report = $this->incomeStatement->compute(
             $entity->id,
             $data['period_start'],
             $data['period_end'],
-            $mode,
+            $primaryMode,
         );
+        if ($mode === 'both') {
+            $report['fiscal'] = $this->incomeStatement->compute(
+                $entity->id,
+                $data['period_start'],
+                $data['period_end'],
+                Journal::MODE_FISCAL,
+            );
+        }
 
         return response()->json([
             'data' => $report,
@@ -131,10 +159,17 @@ class ReportingController extends Controller
             'source_app' => 'nullable|string|max:40',
             'source_ref_type' => 'nullable|string|max:40',
             'source_ref_id' => 'nullable|string|max:80',
-            'journal_mode' => 'nullable|in:internal,fiscal',
+            'journal_mode' => 'nullable|in:internal,fiscal,both',
         ]);
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
-        $this->authorizeBookRead($request, $mode);
+        if ($mode === 'both') {
+            $this->authorizeBookRead($request, Journal::MODE_INTERNAL);
+            $this->authorizeBookRead($request, Journal::MODE_FISCAL);
+        } else {
+            $this->authorizeBookRead($request, $mode);
+        }
+
+        $primaryMode = $mode === 'both' ? Journal::MODE_INTERNAL : $mode;
 
         $filters = array_filter([
             'cost_center_id' => $data['cost_center_id'] ?? null,
@@ -151,8 +186,18 @@ class ReportingController extends Controller
             $data['period_start'],
             $data['period_end'],
             $filters,
-            $mode,
+            $primaryMode,
         );
+        if ($mode === 'both') {
+            $report['fiscal'] = $this->generalLedger->compute(
+                $entity->id,
+                $data['account_id'],
+                $data['period_start'],
+                $data['period_end'],
+                $filters,
+                Journal::MODE_FISCAL,
+            );
+        }
 
         return response()->json([
             'data' => $report,

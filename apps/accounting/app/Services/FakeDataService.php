@@ -124,6 +124,13 @@ class FakeDataService
 
                     continue;
                 }
+                if ($model instanceof Account && $model->isSystemAccount()) {
+                    // A required account may have originated from the fake COA,
+                    // but it is now part of the entity's permanent baseline.
+                    $marker->delete();
+
+                    continue;
+                }
                 if ($model instanceof Period && Journal::where('period_id', $model->id)->exists()) {
                     continue;
                 }
@@ -162,22 +169,27 @@ class FakeDataService
         // Never create overlapping demo periods around periods configured by
         // the user. The period importer is only a bootstrap for an empty entity.
         if (Period::where('entity_id', $entity->id)->exists()) {
+            $this->synchronizeFakePeriodStatuses($entity);
+
             return 0;
         }
 
         $created = 0;
-        $year = now()->year;
-        for ($month = 1; $month <= 12; $month++) {
-            $start = Carbon::create($year, $month, 1)->startOfMonth();
+        $currentYear = now()->year;
+        for ($year = $currentYear - 4; $year <= $currentYear; $year++) {
+            $start = Carbon::create($year, 1, 1)->startOfYear();
+            $end = $start->copy()->endOfYear();
             $period = Period::firstOrCreate(
                 ['entity_id' => $entity->id, 'start_date' => $start->toDateString()],
-                ['name' => 'Demo '.$start->format('F Y'), 'end_date' => $start->copy()->endOfMonth()->toDateString(), 'status' => Period::STATUS_OPEN],
+                ['name' => 'Demo '.$start->format('Y'), 'end_date' => $end->toDateString(), 'status' => Period::STATUS_OPEN],
             );
             if ($period->wasRecentlyCreated) {
                 $this->mark($entity, 'periods', $period);
                 $created++;
             }
         }
+
+        $this->synchronizeFakePeriodStatuses($entity);
 
         return $created;
     }
@@ -188,8 +200,14 @@ class FakeDataService
         $independentBooks = data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') === 'independent_books';
         $created = 0;
         $existingAccounts = Account::where('entity_id', $entity->id)->get();
+        $markedFakeAccountIds = FakeDataRecord::query()
+            ->where('entity_id', $entity->id)
+            ->where('group_key', 'accounts')
+            ->where('model_type', Account::class)
+            ->pluck('model_id')
+            ->flip();
         $idsByCode = [];
-        $createdCodes = [];
+        $managedCodes = [];
 
         foreach ($rows as $row) {
             [$code, $name, $type, $normalBalance, , $isPostable] = $row;
@@ -202,7 +220,26 @@ class FakeDataService
                 $availability = Account::AVAILABILITY_INTERN;
             }
 
-            $account = $this->findEquivalentAccount($existingAccounts, $row, $availability);
+            // A canonical-code match may be upgraded only when provenance
+            // proves this importer owns the account in the same entity.
+            // This repairs stale native demo COA classifications without
+            // mutating a manual account that happens to use the same code.
+            $account = $existingAccounts->first(fn (Account $candidate): bool => strcasecmp($candidate->code, $code) === 0
+                && $markedFakeAccountIds->has((string) $candidate->id));
+            if ($account) {
+                $account->forceFill([
+                    'name' => $name,
+                    'description' => $description,
+                    'type' => $type,
+                    'normal_balance' => $normalBalance,
+                    'is_postable' => $isPostable,
+                    'is_active' => true,
+                    'availability' => $availability,
+                ])->save();
+                $managedCodes[] = $code;
+            } else {
+                $account = $this->findEquivalentAccount($existingAccounts, $row, $availability);
+            }
             if (! $account) {
                 $resolvedCode = $this->availableTechnologyCode($existingAccounts, $code);
                 $account = Account::create([
@@ -222,7 +259,7 @@ class FakeDataService
             $idsByCode[$code] = $account->id;
             if ($account->wasRecentlyCreated) {
                 $this->mark($entity, 'accounts', $account);
-                $createdCodes[] = $code;
+                $managedCodes[] = $code;
                 $created++;
             } elseif ($description !== null && FakeDataRecord::query()
                 ->where('entity_id', $entity->id)
@@ -238,13 +275,15 @@ class FakeDataService
 
         foreach ($rows as $row) {
             [$code, , , , $parentCode] = $row;
-            if (! in_array($code, $createdCodes, true) || $parentCode === null) {
+            if (! in_array($code, $managedCodes, true) || $parentCode === null) {
                 continue;
             }
             Account::whereKey($idsByCode[$code])->update([
                 'parent_account_id' => $idsByCode[$parentCode] ?? null,
             ]);
         }
+
+        app(RequiredAccountService::class)->ensure($entity);
 
         return $created;
     }
@@ -303,7 +342,36 @@ class FakeDataService
             $created++;
         }
 
+        $this->synchronizeFakePeriodStatuses($entity);
+
         return $created;
+    }
+
+    private function synchronizeFakePeriodStatuses(Entity $entity): void
+    {
+        $periodIds = FakeDataRecord::query()
+            ->where('entity_id', $entity->id)
+            ->where('group_key', 'periods')
+            ->where('model_type', Period::class)
+            ->pluck('model_id');
+
+        if ($periodIds->isEmpty()) {
+            return;
+        }
+
+        $currentStart = now()->startOfYear()->toDateString();
+        Period::query()
+            ->where('entity_id', $entity->id)
+            ->whereIn('id', $periodIds)
+            ->get()
+            ->each(function (Period $period) use ($currentStart): void {
+                $isCurrent = $period->start_date->toDateString() === $currentStart;
+                $period->forceFill([
+                    'status' => $isCurrent ? Period::STATUS_OPEN : Period::STATUS_CLOSED,
+                    'closed_at' => $isCurrent ? null : ($period->closed_at ?? now()),
+                    'closed_by' => $isCurrent ? null : $period->closed_by,
+                ])->save();
+            });
     }
 
     private function importRecurringJournals(Entity $entity, ?Period $period): int

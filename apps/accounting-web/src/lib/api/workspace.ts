@@ -6,6 +6,7 @@ export interface WorkspaceRecord {
   name: string;
   workspace_code: string | null;
   is_active: boolean;
+  is_fake_data: boolean;
   theme_color: string;
   logo_url: string | null;
   logo_size: number;
@@ -20,6 +21,7 @@ export interface WorkspaceRecord {
   transaction_number_format: string | null;
   journal_number_formats: Record<string, string>;
   bookkeeping_mode: 'independent_books' | 'internal_only';
+  issue_report_url: string | null;
 }
 
 export const workspaceApi = {
@@ -61,4 +63,5 @@ export interface WorkspaceInput {
   transaction_number_format?: string;
   journal_number_formats?: Record<string, string>;
   bookkeeping_mode?: 'independent_books' | 'internal_only';
+  issue_report_url?: string | null;
 }

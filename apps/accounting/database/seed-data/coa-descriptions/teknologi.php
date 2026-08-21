@@ -61,7 +61,7 @@ Contoh: pembayaran tahunan tool DevOps yang diamortisasi setiap bulan.',
     '1402' => 'PPN atas perolehan barang atau jasa yang dicatat sebagai pajak masukan sesuai dokumen perpajakan. Digunakan ketika faktur pajak masukan yang sah diterima.
 
 Contoh: PPN pada invoice vendor server cloud lokal.',
-    '1403' => 'Pembayaran atau pemotongan pajak yang dapat diperhitungkan pada kewajiban pajak periode terkait. Digunakan berdasarkan bukti bayar atau bukti potong yang valid.
+    '1498' => 'Pembayaran atau pemotongan pajak yang dapat diperhitungkan pada kewajiban pajak periode terkait. Digunakan berdasarkan bukti bayar atau bukti potong yang valid.
 
 Contoh: PPh 23 yang dipotong pelanggan atas jasa konsultasi.',
     '1404' => 'Pembayaran kepada vendor sebelum barang atau jasa diterima. Digunakan selama perusahaan masih memiliki hak atas penyerahan atau pengembalian uang dari vendor.
@@ -131,9 +131,15 @@ Contoh: pemotongan PPh 21 gaji pegawai bulan berjalan.',
     '2112' => 'PPh Pasal 23 yang telah dipotong perusahaan dari pembayaran kepada pihak lain dan belum disetor. Digunakan hanya untuk transaksi yang termasuk objek pemotongan.
 
 Contoh: pemotongan PPh 23 atas honor konsultan berbadan usaha.',
-    '2113' => 'Kewajiban fiskal atas PPh badan periode berjalan yang belum dibayar. Digunakan setelah perhitungan penghasilan kena pajak dan pajak terutang disetujui.
+    '2115' => 'PPh final yang dipotong atau dipungut perusahaan dan belum disetor. Digunakan hanya untuk transaksi yang merupakan objek PPh final sesuai ketentuan yang berlaku.
+
+Contoh: PPh Final Pasal 4 ayat (2) yang dipotong atas pembayaran sewa tanah dan bangunan.',
+    '2197' => 'Estimasi kewajiban PPh badan periode berjalan. Digunakan pada buku intern setelah rekonsiliasi fiskal dan provisi pajak kini disetujui.
 
 Contoh: pengakuan PPh badan kurang bayar pada penutupan tahun pajak.',
+    '2198' => 'Kewajiban PPh badan yang telah dihitung secara definitif berdasarkan rekonsiliasi dan dokumen perpajakan. Digunakan pada buku Intern dan Fiskal sampai kewajiban dibayar atau diselesaikan.
+
+Contoh: pengakuan PPh badan definitif berdasarkan penghitungan pajak tahunan.',
     '2114' => 'Kewajiban kepada karyawan atas gaji atau benefit yang telah menjadi hak tetapi belum dibayar. Digunakan pada cut-off payroll.
 
 Contoh: gaji akhir bulan yang dibayarkan pada awal bulan berikutnya.',
@@ -309,6 +315,9 @@ Contoh: fee recruitment agency untuk mencari DevOps engineer.',
     '6801' => 'Denda atau sanksi yang timbul karena ketidakpatuhan perpajakan. Digunakan pada buku intern ketika surat tagihan atau kewajiban sanksi diakui; evaluasi fiskal dilakukan melalui rekonsiliasi.
 
 Contoh: sanksi administrasi keterlambatan penyetoran pajak.',
+    '6998' => 'Beban pajak penghasilan kini berdasarkan penghasilan kena pajak setelah rekonsiliasi fiskal. Digunakan pada buku intern ketika provisi pajak periode berjalan telah dihitung dan akan dipasangkan dengan kredit pajak serta utang PPh Badan.
+
+Contoh: pengakuan beban PPh badan tahun berjalan setelah memperhitungkan kompensasi rugi dan kredit pajak.',
 
     '8000' => 'Kelompok akun penyajian penyesuaian dari hasil komersial menuju dasar fiskal. Digunakan sebagai akun induk fiskal dan tidak untuk posting transaksi operasional langsung.
 
@@ -319,7 +328,4 @@ Contoh: bagian beban representasi yang tidak memenuhi persyaratan fiskal dikorek
     '8102' => 'Akun penyajian fiskal untuk koreksi yang mengurangi penghasilan kena pajak atau menambah pengurang fiskal. Digunakan hanya berdasarkan analisis koreksi dan dasar pendukung yang disetujui.
 
 Contoh: penyesuaian beda waktu ketika pengurang fiskal periode berjalan lebih besar daripada beban komersial.',
-    '8103' => 'Beban PPh badan berdasarkan perhitungan fiskal periode berjalan. Digunakan setelah rekonsiliasi fiskal dan perhitungan pajak terutang selesai.
-
-Contoh: pengakuan beban PPh badan pada penutupan tahun pajak.',
 ];

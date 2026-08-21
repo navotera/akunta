@@ -17,7 +17,14 @@
 
 <div class="mx-auto max-w-5xl px-6 py-8">
   <div class="border-b border-border-default pb-6">
-    <p class="text-sm font-semibold text-primary">Documentation</p>
+    <a
+      href="/documentation"
+      class="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+    >
+      <span aria-hidden="true">←</span>
+      Kembali ke Panduan Pengguna
+    </a>
+    <p class="mt-5 text-sm font-semibold text-primary">Panduan Teknis</p>
     <h1 class="mt-2 text-3xl font-bold">Auto Mapping</h1>
     <p class="mt-2 max-w-3xl text-sm leading-6 text-text-muted">Auto Mapping menerima transaksi JSON dari sistem eksternal, mengenali pola yang sudah disimpan, lalu membuat jurnal balance secara otomatis.</p>
   </div>

@@ -8,6 +8,7 @@ use Akunta\Rbac\Models\Entity;
 use App\Models\Account;
 use App\Services\AccountSopService;
 use App\Services\Onboarding\CoaTemplateRegistry;
+use App\Services\RequiredAccountService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,6 +24,7 @@ class ApplyCoaTemplateAction
     public function __construct(
         private readonly CoaTemplateRegistry $registry,
         private readonly AccountSopService $accountSop,
+        private readonly RequiredAccountService $requiredAccounts,
     ) {}
 
     /**
@@ -95,6 +97,8 @@ class ApplyCoaTemplateAction
                 }
             }
         });
+
+        $this->requiredAccounts->ensure($entity);
 
         return [
             'created' => $created,

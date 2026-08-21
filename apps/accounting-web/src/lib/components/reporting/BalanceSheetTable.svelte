@@ -6,6 +6,7 @@
   interface Props {
     report: BalanceSheetData;
     fiscal?: BalanceSheetData;
+    primaryBook?: 'internal' | 'fiscal';
   }
 
   interface MergedRow {
@@ -16,7 +17,10 @@
     fiscalBalance: string;
   }
 
-  let { report, fiscal }: Props = $props();
+  let { report, fiscal, primaryBook = 'internal' }: Props = $props();
+
+  const internHeader = 'bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] text-[#166534]';
+  const fiscalHeader = 'bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] text-[#854d0e]';
 
   function mergedRows(internal: BalanceSheetSection, fiscalSection?: BalanceSheetSection) {
     const rows = new Map<string, MergedRow>();
@@ -73,8 +77,8 @@
             <tr>
               <th class="w-20 px-3 py-2 text-left font-semibold">Kode</th>
               <th class="px-3 py-2 text-left font-semibold">Nama Akun</th>
-              <th class="px-3 py-2 text-right font-semibold">Intern</th>
-              {#if fiscal}<th class="px-3 py-2 text-right font-semibold">Fiskal</th>{/if}
+              <th class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal' ? fiscalHeader : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th>
+              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th>{/if}
             </tr>
           </thead>
           <tbody>
@@ -123,8 +127,8 @@
             <tr>
               <th class="w-20 px-3 py-2 text-left font-semibold">Kode</th>
               <th class="px-3 py-2 text-left font-semibold">Nama Akun</th>
-              <th class="px-3 py-2 text-right font-semibold">Intern</th>
-              {#if fiscal}<th class="px-3 py-2 text-right font-semibold">Fiskal</th>{/if}
+              <th class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal' ? fiscalHeader : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th>
+              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th>{/if}
             </tr>
           </thead>
           <tbody>

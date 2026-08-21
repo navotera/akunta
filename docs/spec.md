@@ -653,7 +653,7 @@ ALTER TABLE journal_templates ADD COLUMN applies_to_type VARCHAR NULL;
 - **12c-iii** Buku Pembantu + Register PPN reports
 - **12c-iv** Template per-type + recurring per-type
 
-### 8.7 Buku Intern dan Fiskal ✅ [IMPLEMENTED — 2026-08-18]
+### 8.7 Buku Intern dan Fiskal ✅ [IMPLEMENTED — updated 2026-08-21]
 
 Entitas memilih `bookkeeping_mode` melalui onboarding atau pengaturan:
 
@@ -678,8 +678,60 @@ otomatis antarpasangan. Mode gabungan hanya menerima akun
 Akun dengan `availability=fiskal` atau `availability=both` wajib menyimpan
 dasar hukum pajak. Akun `availability=intern` tidak mewajibkan metadata ini.
 
-Koreksi Fiskal berada pada `fiscal_adjustments`. Koreksi approved dengan bukti
-memengaruhi rekonsiliasi Pajak Final tanpa membuat atau mengubah journal entry.
+Setiap entitas wajib memiliki empat akun sistem untuk koreksi fiskal dan
+provisi pajak kini: Pajak Dibayar di Muka (`both`), Utang PPh Badan - Provisi
+(`intern`), Utang PPh Badan Definitif (`both`), dan Beban Pajak Penghasilan
+Kini (`intern`). Akun ini dibuat saat entitas dibuat, dipastikan kembali ketika
+template COA atau seeder dijalankan, serta ditandai dengan `system_key` unik per
+entitas. Kode, nama, tipe, saldo normal, parent, status postable/aktif, dan
+ketersediaannya tidak dapat diubah dari pengelolaan COA; akun sistem tidak dapat
+dihapus. Deskripsi dan dasar hukum tetap dapat diperbarui.
+
+Koreksi Fiskal berada pada `fiscal_adjustments`. Draft dapat diubah dan bukti
+pendukungnya dapat ditambah atau dihapus. Persetujuan mewajibkan minimal satu
+bukti; setelah disetujui, data koreksi dan buktinya tidak dapat diubah. Koreksi
+approved dengan bukti memengaruhi rekonsiliasi pajak tanpa membuat atau
+mengubah journal entry.
+
+Koreksi dapat menyimpan referensi opsional ke satu jurnal Fiskal sumber yang
+sudah `posted`. Referensi ini adalah audit trail untuk menelusuri akun, nominal,
+uraian, dan bukti transaksi asal serta membantu mencegah koreksi ganda; referensi
+tidak mengubah jurnal atau saldonya. Field boleh kosong bila koreksi berasal dari
+rekap banyak jurnal, perhitungan eksternal, kebijakan, atau temuan yang tidak
+dapat dipetakan ke satu jurnal. Untuk banyak sumber, pengguna menjelaskan
+cakupannya pada alasan koreksi dan melampirkan rekap pendukung.
+
+Pengakuan dampak pajak kini ke laporan keuangan menggunakan `tax_provisions`
+dan jurnal penyesuaian Intern yang terpisah. Perhitungan menyimpan snapshot
+penghasilan neto setelah koreksi, kompensasi rugi, tarif yang dikonfirmasi,
+kredit pajak, penghasilan kena pajak, beban pajak kini, dan utang pajak. Saat
+disimpan, sistem membuat jurnal `internal` berstatus `draft` dengan pola:
+
+- Debit Beban Pajak Penghasilan Kini sebesar pajak bruto.
+- Kredit Pajak Dibayar di Muka sebesar kredit yang digunakan, bila ada.
+- Kredit Utang PPh Badan - Provisi sebesar sisa pajak kini terutang.
+
+Jurnal tersebut baru memengaruhi Neraca Saldo dan laporan Intern setelah
+diposting melalui workflow jurnal biasa. Perhitungan dapat memperbarui jurnal
+yang masih draft/rejected; jurnal submitted/posted harus direverse sebelum
+perhitungan pengganti dibuat. Koreksi Fiskal, buku Fiskal, dan jurnal sumber
+tidak boleh ditulis ulang oleh proses ini. Hasil perhitungan bukan SPT yang
+sudah dilaporkan.
+
+Pada SPA, rincian penghitungan dan pajak yang perlu dicatat ditampilkan sebagai
+teks baca-saja. Setiap jurnal yang diperlukan ditampilkan sebagai satu baris
+rekomendasi. Aksi `Tambahkan jurnal` hanya membuka form jurnal standar dengan
+buku Intern, tipe penyesuaian, tanggal, akun, deskripsi `Koreksi fiskal &
+provisi`, dan nominal yang sudah terisi; jurnal belum dipersist hingga pengguna
+meninjau dan menyimpan form tersebut. Jika penghitungan membutuhkan beberapa
+jurnal, setiap jurnal wajib tampil sebagai baris terpisah.
+
+Pajak tangguhan tidak dihitung otomatis dari arah koreksi positif/negatif.
+Pengakuannya memerlukan jumlah tercatat, dasar pajak, pola pemulihan/pelunasan,
+dan tarif yang berlaku untuk aset atau liabilitas terkait. Sebelum model dan
+workflow khusus tersedia, pajak tangguhan dicatat melalui jurnal terpisah yang
+telah direview dan API provisi wajib menyatakan status `not_calculated`.
+
 Dashboard Fiskal menyajikan analisis potensi pajak sebagai simulasi, bukan nilai
 SPT final.
 
@@ -693,6 +745,29 @@ sebagai Diajukan, `submitted` sebagai Di review, `posted` sebagai Tersimpan, dan
 Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
 
 ### 8.8 Fake Data Lengkap dan Aman
+
+Instalasi development menyediakan satu entitas bawaan `PT. Fake Data` dengan
+penanda entity-level `is_fake_data`. Entitas ini diprovision secara idempotent
+oleh seeder, bukan melalui aksi import di UI. Datasetnya adalah record domain
+normal yang mencakup profil entitas, COA, periode, jurnal Intern/Fiskal lintas
+periode dan status workflow, template, jurnal berulang, koreksi fiskal beserta
+bukti, source-ref, dimensi, pajak simulasi, auto-mapping, integrasi webhook dan
+log, serta user-role demo. Dashboard dan laporan wajib menghitung record tersebut
+melalui query database yang sama dengan entitas biasa; tidak boleh memakai angka
+statis khusus demo.
+
+Seluruh ringkasan dashboard dibatasi oleh entitas aktif dan periode aktif. Client
+mengirim ID keduanya, backend wajib memastikan periode tersebut dimiliki oleh
+entitas aktif, dan hanya jurnal pada pasangan entity-periode itu yang boleh masuk
+ke metrik periode. Saldo neraca ditampilkan sampai tanggal akhir periode aktif.
+Pergantian entitas atau periode wajib memuat ulang seluruh ringkasan agar data
+dari konteks sebelumnya tidak tertinggal di UI.
+
+`PT. Fake Data` dapat diaktifkan atau dinonaktifkan secara independen dari
+Settings. Entitas nonaktif tetap tampil di daftar Settings tetapi tidak muncul
+di pemilih entitas pada toolbar. Entitas demo aktif diberi badge `Fake data`.
+Import dan Clear Fake Data tidak tersedia pada entitas demo bawaan agar dataset
+native tidak dapat dihapus melalui flow importer.
 
 Settings menyediakan import fake data per kelompok dan Import All. Import data
 keuangan wajib meminta satu periode terbuka milik entitas aktif. Dataset demo
@@ -746,11 +821,12 @@ manual yang sudah terisi tidak boleh ditimpa oleh backfill.
 
 Pada workspace `independent_books`, akun ekonomi biasa seperti kas, piutang,
 persediaan, utang, ekuitas, pendapatan, HPP, pajak transaksi, dan beban
-operasional tersedia pada Intern & Fiskal. Akun estimasi/alokasi manajemen,
-penyusutan komersial, dan kapitalisasi produk software intern tersedia pada
-Intern. Akun penyusutan fiskal, PPh Badan fiskal, serta penyajian koreksi fiskal
-tersedia pada Fiskal. Workspace `internal_only` tetap memetakan seluruh akun ke
-Intern.
+operasional, Pajak Dibayar di Muka, dan Utang PPh Badan Definitif tersedia pada
+Intern & Fiskal. Akun estimasi/alokasi manajemen, penyusutan komersial,
+kapitalisasi produk software, Beban Pajak Penghasilan Kini, dan Utang PPh
+Badan - Provisi tersedia pada Intern. Akun penyusutan fiskal tersedia pada Fiskal;
+penyajian koreksi berasal dari `fiscal_adjustments`, bukan akun ledger khusus.
+Workspace `internal_only` tetap memetakan seluruh akun ke Intern.
 
 Editor akun menampilkan pilihan ketersediaan sebagai tiga badge radio berwarna,
 bukan dropdown. Warna mengikuti bahasa visual COA: Intern hijau, Fiskal kuning,
@@ -787,6 +863,11 @@ dan Intern & Fiskal berupa gradasi hijau-kuning.
 | Jurnal Umum | Listing | Range periode |
 | Aged AR (Piutang Usaha) | Aging buckets 30/60/90 | Per tanggal |
 | Aged AP (Hutang Usaha) | Aging buckets 30/60/90 | Per tanggal |
+
+Pada entitas `independent_books`, seluruh laporan ledger menyediakan tab
+`Intern`, `Fiskal`, dan `Intern & Fiskal`. Tab gabungan menampilkan nilai kedua
+buku secara berdampingan untuk perbandingan dan tidak membentuk ledger ketiga
+atau menggabungkan saldo Intern dengan Fiskal.
 
 **Export:** PDF, Excel (xlsx), CSV.
 

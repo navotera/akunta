@@ -61,10 +61,11 @@ body {
  * Lives outside @layer so cascade reliably wins. Selectors target generic
  * fi-wi-* descendants (legacy Filament markup) AND tabnum cells. */
 .ak-dim,
+.ak-zero-value,
 table .tabnum.ak-dim,
 .fi-wi .ak-dim {
   color: var(--m-text-muted) !important;
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 /* Pill — matches prior Filament status pills */

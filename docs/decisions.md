@@ -1107,13 +1107,23 @@ Akunta supports an entity-level `bookkeeping_mode` with `independent_books` as t
 
 Accounts available to the Fiscal book (`fiskal` or `both`) require persisted legal-basis metadata. The SPA and tenant-scoped account API both enforce this requirement; Intern-only accounts do not require it.
 
-Fiscal corrections are stored separately in `fiscal_adjustments`. A correction may reference one posted Fiscal journal, but never an Intern journal. It records an income-statement account, positive/negative direction, amount, justification, optional legal basis, evidence, creator, and approval metadata. Draft corrections do not affect reports. Approved corrections affect only the Fiscal Final/Tax reconciliation report and do not post debit/credit entries or modify either ledger. Approved corrections and their evidence are immutable; later changes require a new correction.
+Fiscal corrections are stored separately in `fiscal_adjustments`. A correction may reference one posted Fiscal journal, but never an Intern journal. It records an income-statement account, positive/negative direction, amount, justification, optional legal basis, evidence, creator, and approval metadata. Draft corrections do not affect reports. Approved corrections affect only the Fiscal reconciliation and do not post debit/credit entries or modify either ledger. Approved corrections and their evidence are immutable; later changes require a new correction.
+
+### Amendment 2026-08-21 — current-tax provision is a separate Intern journal
+
+The financial-statement effect of current income tax is a separate accounting event. A confirmed calculation is stored in `tax_provisions` together with its reconciliation snapshot and creates one balanced `internal` adjustment journal in `draft` status: debit current-income-tax expense, credit prepaid tax for credits applied, and credit current-income-tax payable for the remainder. The journal affects the Intern ledger only after normal posting; it never rewrites the Fiscal ledger or the originating corrections. A draft/rejected journal may be recalculated in place, while a submitted/posted journal must be reversed before a replacement calculation is created. This provision is an accounting estimate and workflow artifact, not a filed tax return.
+
+The SPA presents the calculation as read-only text and renders each required journal as a separate recommendation row. “Tambahkan jurnal” opens the standard journal form with the Intern book, adjustment type, accounts, description, date, and amount prefilled; opening the form does not persist a journal. This keeps review and final submission inside the normal journal workflow and allows future tax calculations that require more than one journal to expose separate recommendation rows.
+
+Every entity receives four idempotently provisioned system accounts identified by an entity-scoped `system_key`: prepaid tax (`both`), current-tax payable provision (`intern`), definitive current-tax payable (`both`), and current-income-tax expense (`intern`). Provisioning runs at entity creation, after COA templates, and in the database/fake-data seed paths. Their structural fields are protected and the accounts cannot be deleted through COA or fake-data cleanup; descriptions and legal-basis metadata remain editable. The provision payable and expense stay Intern because they represent an accounting estimate, while prepaid tax and a definitive tax payable may be presented in both independent ledgers.
+
+Deferred tax is not inferred from positive/negative fiscal corrections. Its recognition requires carrying amounts, tax bases, reversal expectations, and applicable rates for the underlying assets and liabilities. Until those inputs have a dedicated model and review workflow, deferred tax is recorded through a separately reviewed journal and the tax-provision API reports it as not calculated.
 
 Inspector access is enforced server-side: inspector cannot access the management dashboard, is redirected to the Fiscal journal list, journal lists are forced to Fiscal, Intern journal detail and Intern report requests return 403, and correction/evidence access requires the fiscal read permission. UI menu filtering is supplementary and not the security boundary. The dashboard Intern/Fiscal toggle is for authorized management/tax users; its tax amount is explicitly a simulation and must not be presented as a filed SPT liability.
 
 ## Locked 2026-08-18 — Technology & IT COA and safe demo data
 
-The Technology & IT COA classifies ordinary economic accounts—cash, receivables, payables, operating revenue, COGS, and substantiated expenses—as `both`. Management-only accruals, reserves, internal allocations, and commercial-only depreciation/amortisation are `intern`. Fiscal depreciation, current income-tax liability/expense, and fiscal-correction presentation accounts are `fiskal`. Fake-data import never reclassifies an existing user-created account.
+The Technology & IT COA classifies ordinary economic accounts—cash, receivables, payables, operating revenue, COGS, substantiated expenses, prepaid tax, and definitive current-tax payable—as `both`. Management-only accruals, reserves, internal allocations, commercial-only depreciation/amortisation, current-income-tax expense, and current-tax payable provision are `intern`. Fiscal depreciation remains `fiskal`; fiscal corrections are presented from `fiscal_adjustments` and do not require ledger presentation accounts. Fake-data import never reclassifies an existing user-created account.
 
 Financial demo import requires an open period from the active entity. Every model created by the importer has an explicit `fake_data_records` marker. Clear Fake Data may follow only those markers within the same entity and must stop at dependencies that could contain manual data; a cross-entity or unverifiable marker never authorizes deletion.
 
@@ -1133,6 +1143,34 @@ Technology COA import resolves duplicates conservatively. Exact or normalized co
 
 Every persisted account must carry a curated operator-facing SOP description with a definition, usage boundary, and economic-event example. `accounting:backfill-account-sop` is the repeatable audit mechanism. It defaults to dry-run, preserves non-empty manual descriptions, and applies no changes if any account name in scope is unresolved.
 
-For `independent_books`, ordinary transaction accounts are `both`; management estimates/allocations and commercial depreciation/amortisation remain `intern`; fiscal depreciation, current corporate-income-tax presentation, and fiscal-correction accounts remain `fiskal`. An `internal_only` entity remains entirely `intern`. This classification controls selection in independent books and does not synchronize journal balances.
+For `independent_books`, ordinary transaction accounts, prepaid tax, and definitive current-tax payable are `both`; management estimates/allocations, commercial depreciation/amortisation, current corporate-income-tax expense, and the current-tax payable provision remain `intern`. Fiscal depreciation remains `fiskal`, while fiscal-correction presentation comes from `fiscal_adjustments` rather than ledger accounts. An `internal_only` entity remains entirely `intern`. This classification controls selection in independent books and does not synchronize journal balances.
 
 A matching account code is not sufficient proof of semantic equivalence during Technology COA import. Code, account nature, and a strongly equivalent name must agree. When a legacy code is occupied by a different economic account, the importer preserves it and creates the Technology account under a deterministic `.01`-style alternate code instead of posting demo journals to the wrong account.
+
+## Locked 2026-08-21 — native PT. Fake Data entity
+
+Development seeding creates exactly one `PT. Fake Data` workspace in the local
+super-admin tenant. The entity carries an explicit `is_fake_data` database flag
+and an idempotently provisioned, entity-scoped dataset. It is not populated by
+an operator pressing Import All. Its records use the same models, APIs, tenant
+filters, reporting services, and dashboard queries as normal accounting data.
+Dashboard requests carry the selected entity and active period explicitly. The
+backend rejects cross-entity period IDs, period-flow metrics use only journals
+from that entity-period pair, and balance metrics are calculated as of the
+selected period end date. Static financial figures are not permitted.
+
+The native dataset covers all user-facing Accounting domains: complete
+Technology & IT COA with independent Intern/Fiskal availability, monthly
+periods, posted journals across current and previous periods, draft/submitted/
+rejected workflow samples, source references, journal templates and recurring
+journals, fiscal corrections with evidence, tax and organizational dimensions,
+auto-mapping raw data and a saved rule, webhooks and delivery history, and demo
+users with explicit per-entity assignments. Every generated record has either
+the entity-level marker or a `fake_data_records` provenance marker.
+
+Workspace availability is independent from the currently selected workspace.
+An admin may disable `PT. Fake Data` in Settings without disabling other
+entities; disabled entities remain manageable in Settings but are excluded from
+the toolbar selector. At least one workspace per tenant must remain active.
+Native demo data cannot be imported over or cleared through the generic fake
+data endpoints.

@@ -24,7 +24,7 @@ export const journalSchema = z
     if (Math.abs(d - c) >= 0.005 || d <= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Debit harus sama dengan kredit dan > 0',
+        message: 'Bagian Debit / Credit belum balance',
         path: ['entries_debit'],
       });
     }

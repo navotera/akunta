@@ -90,6 +90,8 @@
   let numberFormatSaving = $state(false);
   let bookkeepingMode = $state<'independent_books' | 'internal_only'>('independent_books');
   let bookkeepingModeSaving = $state(false);
+  let issueReportUrl = $state('');
+  let issueReportSaving = $state(false);
   let workspaceError = $state<string | null>(null);
   let isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
@@ -102,6 +104,9 @@
   let selectedFakePeriodId = $state('');
   let displayedWorkspaces = $derived(
     isAdmin && workspaceRecords.length > 0 ? workspaceRecords : tenant.available,
+  );
+  let currentWorkspaceIsFake = $derived(
+    tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
 
   function selectLogo(event: Event) {
@@ -144,6 +149,7 @@
     dateFormat = localStorage.getItem('akunta.date.format') ?? DEFAULT_DATE_FORMAT;
     themeColor = getWorkspaceTheme(tenant.id);
     const activeWorkspace = tenant.available.find((item) => item.id === tenant.id);
+    issueReportUrl = activeWorkspace?.issue_report_url ?? '';
     if (activeWorkspace?.theme_color) {
       themeColor = activeWorkspace.theme_color;
       applyWorkspaceTheme(tenant.id, themeColor);
@@ -270,6 +276,7 @@
         transactionNumberFormat =
           activeWorkspace.transaction_number_format ?? 'TRX/{tahun}/{bulan}/{numbering}';
         bookkeepingMode = activeWorkspace.bookkeeping_mode ?? 'independent_books';
+        issueReportUrl = activeWorkspace.issue_report_url ?? '';
       }
     } catch (error) {
       workspaceError = error instanceof Error ? error.message : 'Gagal memuat workspace.';
@@ -318,32 +325,50 @@
     }
   }
 
+  async function saveIssueReportUrl() {
+    const activeWorkspace =
+      workspaceRecords.find((item) => item.id === tenant.id) ??
+      tenant.available.find((item) => item.id === tenant.id);
+    if (!isAdmin || !activeWorkspace || issueReportSaving) return;
+    issueReportSaving = true;
+    workspaceError = null;
+    try {
+      await workspaceApi.update(activeWorkspace.id, {
+        name: activeWorkspace.name,
+        issue_report_url: issueReportUrl.trim() || null,
+      });
+      savedMessage = 'URL Laporan Issue disimpan.';
+      window.setTimeout(() => (savedMessage = null), 3000);
+      await loadWorkspaces();
+      await auth.refresh();
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : 'URL Laporan Issue gagal disimpan.';
+    } finally {
+      issueReportSaving = false;
+    }
+  }
+
   async function toggleWorkspaceActive(workspaceItem: WorkspaceRecord) {
     if (!isAdmin || workspaceToggling) return;
     workspaceToggling = workspaceItem.id;
     workspaceError = null;
     try {
+      const nextActive = !workspaceItem.is_active;
+      const wasSelected = tenant.id === workspaceItem.id;
       const otherActiveWorkspaces = workspaceRecords.filter(
         (item) => item.id !== workspaceItem.id && item.is_active,
       );
-      await Promise.all(
-        otherActiveWorkspaces.map((item) =>
-          workspaceApi.update(item.id, {
-            name: item.name,
-            is_active: false,
-            theme_color: item.theme_color,
-          }),
-        ),
-      );
+      if (!nextActive && otherActiveWorkspaces.length === 0) {
+        throw new Error('Minimal satu workspace harus tetap aktif.');
+      }
       await workspaceApi.update(workspaceItem.id, {
         name: workspaceItem.name,
-        is_active: true,
+        is_active: nextActive,
         theme_color: workspaceItem.theme_color,
       });
       await loadWorkspaces();
       await auth.refresh();
-      if (!workspaceItem.is_active && tenant.id !== workspaceItem.id) {
-        tenant.switch(workspaceItem.id);
+      if (!nextActive && wasSelected) {
         window.location.reload();
       }
     } catch (error) {
@@ -596,7 +621,7 @@
               <h3 class="text-sm font-semibold">Mode pembukuan</h3>
               <p class="mt-1 max-w-xl text-xs text-text-muted">
                 Intern dan Fiskal Independen membuat dua buku yang tidak saling menyinkronkan.
-                Koreksi hanya bekerja pada laporan Pajak Final.
+                Koreksi bekerja pada rekonsiliasi pajak, bukan langsung pada Debit/Kredit ledger.
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -651,6 +676,50 @@
               </select>
             </div>
           </div>
+          <div class="flex items-start justify-between gap-4 py-4">
+            <div>
+              <h3 class="text-sm font-semibold">Laporan Issue</h3>
+              <p class="mt-1 max-w-xl text-xs text-text-muted">
+                Atur URL tujuan untuk mengirim laporan issue atau kendala penggunaan Akunta.
+              </p>
+            </div>
+            <div class="flex max-w-xl flex-1 flex-wrap items-center justify-end gap-2">
+              <input
+                type="url"
+                bind:value={issueReportUrl}
+                placeholder="https://support.example.com/akunta/issues"
+                class="min-w-64 flex-1 rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
+                disabled={!isAdmin || issueReportSaving}
+                aria-label="URL redirect Laporan Issue"
+              />
+              {#if isAdmin}
+                <button
+                  type="button"
+                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onclick={saveIssueReportUrl}
+                  disabled={issueReportSaving}
+                >
+                  {issueReportSaving ? 'Menyimpan…' : 'Simpan'}
+                </button>
+              {/if}
+              {#if issueReportUrl.trim()}
+                <a
+                  href={issueReportUrl.trim()}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="text-sm font-semibold text-primary hover:underline"
+                >
+                  Buka
+                </a>
+              {/if}
+            </div>
+          </div>
+          {#if workspaceError}
+            <p class="py-3 text-xs text-danger" role="alert">{workspaceError}</p>
+          {/if}
+          {#if savedMessage}
+            <p class="py-3 text-xs text-paid" role="status">{savedMessage}</p>
+          {/if}
         </div>
       {:else if activeSection === 'workspace'}
         <div class="flex items-start justify-between gap-4">
@@ -699,7 +768,15 @@
                     {workspaceItem.name.charAt(0).toUpperCase()}
                   </span>
                   <div class="min-w-0">
-                    <h3 class="truncate text-sm font-semibold">{workspaceItem.name}</h3>
+                    <div class="flex min-w-0 items-center gap-2">
+                      <h3 class="truncate text-sm font-semibold">{workspaceItem.name}</h3>
+                      {#if workspaceItem.is_fake_data}
+                        <span
+                          class="shrink-0 rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
+                          >Fake data</span
+                        >
+                      {/if}
+                    </div>
                     <p class="mt-1 text-xs text-text-muted">ID: {workspaceItem.id}</p>
                   </div>
                 </div>
@@ -762,7 +839,11 @@
                 {#if tenant.id === workspaceItem.id}
                   <span
                     class="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white"
-                    >Aktif</span
+                    >Dipilih</span
+                  >
+                {:else if !workspaceItem.is_active}
+                  <span class="shrink-0 rounded-full bg-page-bg px-3 py-1 text-xs text-text-muted"
+                    >Nonaktif</span
                   >
                 {:else}
                   <span class="shrink-0 text-xs text-text-muted">Tersedia</span>
@@ -1285,60 +1366,69 @@
         <p class="mt-1 text-sm text-text-muted">
           Gunakan data simulasi untuk mencoba alur aplikasi tanpa data produksi.
         </p>
-        <div
-          class="mt-5 rounded-md border border-[#c27a00]/60 bg-[#fff4cc] p-4 text-sm font-medium text-[#6b3f00]"
-        >
-          Semua data yang diimpor dari halaman ini memiliki penanda khusus di database. Tombol hapus
-          hanya menghapus record bertanda fake; data yang dimasukkan manual oleh user tidak akan
-          dihapus.
-        </div>
-        <div class="mt-5 flex justify-end">
-          <button
-            type="button"
-            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            onclick={() => requestFakeDataImport()}
-            disabled={fakeDataBusy !== null}
+        {#if currentWorkspaceIsFake}
+          <div
+            class="mt-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
           >
-            {fakeDataBusy === 'all' ? 'Mengimpor…' : 'Import All'}
-          </button>
-        </div>
-        <div class="mt-4 space-y-3">
-          {#each fakeDataGroups as group (group.key)}
-            <div
-              class="flex items-center justify-between gap-4 rounded-md border border-border-soft bg-card-bg p-4"
+            <strong>Dataset bawaan aktif.</strong> PT. Fake Data sudah berisi data native untuk seluruh
+            alur aplikasi. Import dan Clear Fake Data dinonaktifkan agar dataset demo ini tetap utuh.
+          </div>
+        {:else}
+          <div
+            class="mt-5 rounded-md border border-[#c27a00]/60 bg-[#fff4cc] p-4 text-sm font-medium text-[#6b3f00]"
+          >
+            Semua data yang diimpor dari halaman ini memiliki penanda khusus di database. Tombol
+            hapus hanya menghapus record bertanda fake; data yang dimasukkan manual oleh user tidak
+            akan dihapus.
+          </div>
+          <div class="mt-5 flex justify-end">
+            <button
+              type="button"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onclick={() => requestFakeDataImport()}
+              disabled={fakeDataBusy !== null}
             >
-              <div>
-                <h3 class="text-sm font-semibold">{group.label}</h3>
-                <p class="mt-1 text-sm text-text-muted">{group.description}</p>
-                {#if group.requires_period}
+              {fakeDataBusy === 'all' ? 'Mengimpor…' : 'Import All'}
+            </button>
+          </div>
+          <div class="mt-4 space-y-3">
+            {#each fakeDataGroups as group (group.key)}
+              <div
+                class="flex items-center justify-between gap-4 rounded-md border border-border-soft bg-card-bg p-4"
+              >
+                <div>
+                  <h3 class="text-sm font-semibold">{group.label}</h3>
+                  <p class="mt-1 text-sm text-text-muted">{group.description}</p>
+                  {#if group.requires_period}
+                    <span
+                      class="mt-2 mr-2 inline-flex rounded-full bg-warning-light px-2 py-1 text-xs font-medium text-warning"
+                      >Pilih periode saat import</span
+                    >
+                  {/if}
                   <span
-                    class="mt-2 mr-2 inline-flex rounded-full bg-warning-light px-2 py-1 text-xs font-medium text-warning"
-                    >Pilih periode saat import</span
+                    class="mt-2 inline-flex rounded-full bg-page-bg px-2 py-1 text-xs text-text-muted"
+                    >{group.count} data fake tersimpan</span
                   >
-                {/if}
-                <span
-                  class="mt-2 inline-flex rounded-full bg-page-bg px-2 py-1 text-xs text-text-muted"
-                  >{group.count} data fake tersimpan</span
-                >
+                </div>
+                <div class="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    class="rounded-md border border-danger/30 px-3 py-2 text-sm font-semibold text-danger disabled:opacity-50"
+                    onclick={() => deleteFakeData(group)}
+                    disabled={fakeDataBusy !== null || group.count === 0}>Hapus Fake</button
+                  >
+                  <button
+                    type="button"
+                    class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    onclick={() => requestFakeDataImport(group.key)}
+                    disabled={fakeDataBusy !== null}
+                    >{fakeDataBusy === group.key ? 'Mengimpor…' : 'Import Now'}</button
+                  >
+                </div>
               </div>
-              <div class="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  class="rounded-md border border-danger/30 px-3 py-2 text-sm font-semibold text-danger disabled:opacity-50"
-                  onclick={() => deleteFakeData(group)}
-                  disabled={fakeDataBusy !== null || group.count === 0}>Hapus Fake</button
-                >
-                <button
-                  type="button"
-                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  onclick={() => requestFakeDataImport(group.key)}
-                  disabled={fakeDataBusy !== null}
-                  >{fakeDataBusy === group.key ? 'Mengimpor…' : 'Import Now'}</button
-                >
-              </div>
-            </div>
-          {/each}
-        </div>
+            {/each}
+          </div>
+        {/if}
         {#if fakeDataMessage}<p class="mt-4 text-sm text-paid" role="status">
             {fakeDataMessage}
           </p>{/if}

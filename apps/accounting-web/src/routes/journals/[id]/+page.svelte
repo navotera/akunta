@@ -9,6 +9,7 @@
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
   import { attachmentApi } from '$lib/api/attachment.js';
+  import { formatMessageDates } from '$lib/utils/date.js';
 
   const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
@@ -42,11 +43,18 @@
   function captureError(e: unknown) {
     if (e instanceof ApiError) {
       const body = e.body as { message?: string; errors?: Record<string, string[]> } | null;
-      serverErrors = body?.errors ?? null;
-      serverMessage = body?.message ?? `Server error ${e.status}`;
+      serverErrors = body?.errors
+        ? Object.fromEntries(
+            Object.entries(body.errors).map(([key, messages]) => [
+              key,
+              messages.map((message) => formatMessageDates(message)),
+            ]),
+          )
+        : null;
+      serverMessage = formatMessageDates(body?.message ?? `Server error ${e.status}`);
     } else {
       serverErrors = null;
-      serverMessage = e instanceof Error ? e.message : String(e);
+      serverMessage = formatMessageDates(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -88,7 +96,7 @@
           attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
         ),
       );
-      detail = updated;
+      detail = await journalApi.show(updated.id);
     } catch (e) {
       captureError(e);
     } finally {
@@ -134,24 +142,74 @@
     goto('/journals');
   }
 
-  async function approveReview() {
+  async function approveReview(payload: FormPayload) {
     if (!detail) return;
+    saving = true;
+    serverErrors = null;
+    serverMessage = null;
     try {
-      detail = await journalApi.post(detail.id);
+      const updated = await journalApi.update(detail.id, {
+        transaction_code: payload.transaction_code,
+        journal_mode: payload.journal_mode,
+        type: payload.type,
+        date: payload.date,
+        memo: payload.memo,
+        reference: payload.reference,
+        entries_debit: payload.entries_debit,
+        entries_credit: payload.entries_credit,
+      });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
+      const journalsToPost = [updated, ...(updated.paired_journal ? [updated.paired_journal] : [])];
+      await Promise.all(journalsToPost.map((journal) => journalApi.post(journal.id)));
       goto('/journals');
     } catch (e) {
       captureError(e);
+    } finally {
+      saving = false;
     }
   }
 
-  async function rejectReview() {
+  async function rejectReview(payload: FormPayload) {
     if (!detail) return;
-    const note = window.prompt('Alasan penolakan jurnal:');
+    const note = window.prompt('Catatan revisi untuk operator:');
     if (!note?.trim()) return;
+    saving = true;
+    serverErrors = null;
+    serverMessage = null;
     try {
-      detail = await journalApi.reject(detail.id, note.trim());
+      const updated = await journalApi.update(detail.id, {
+        transaction_code: payload.transaction_code,
+        journal_mode: payload.journal_mode,
+        type: payload.type,
+        date: payload.date,
+        memo: payload.memo,
+        reference: payload.reference,
+        entries_debit: payload.entries_debit,
+        entries_credit: payload.entries_credit,
+      });
+      await Promise.all(
+        payload.attachments.map((file) =>
+          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
+        ),
+      );
+      const journalsToRevise = [
+        updated,
+        ...(updated.paired_journal ? [updated.paired_journal] : []),
+      ];
+      detail = await journalApi.reject(updated.id, note.trim());
+      if (journalsToRevise.length > 1) {
+        await Promise.all(
+          journalsToRevise.slice(1).map((journal) => journalApi.reject(journal.id, note.trim())),
+        );
+      }
     } catch (e) {
       captureError(e);
+    } finally {
+      saving = false;
     }
   }
 </script>
@@ -223,27 +281,30 @@
       onclick={cancel}>Kembali ke daftar jurnal</button
     >
   </div>
+{:else if detail.status === 'submitted' && isSupervisor}
+  <JournalForm
+    initial={detail}
+    {accounts}
+    {templates}
+    {saving}
+    {serverErrors}
+    {serverMessage}
+    reviewMode={true}
+    allowPosting={false}
+    title={`Review Jurnal ${detail.number}`}
+    breadcrumb={`Transaksi / Review Jurnal / ${detail.number}`}
+    onSaveDraft={saveDraft}
+    onPosting={postingJurnal}
+    onApprove={approveReview}
+    onRevise={rejectReview}
+    onCancel={cancel}
+    auditTrail={detail.audit_trail}
+  />
 {:else if detail.status === 'submitted'}
   <div class="mx-auto max-w-3xl space-y-4 p-6">
     <div class="rounded-xl border border-warning/30 bg-warning-light p-5">
       <h1 class="text-xl font-bold">Jurnal {detail.number} menunggu review</h1>
-      <p class="mt-1 text-sm text-text-muted">
-        Supervisor dapat menyetujui untuk posting atau menolak dengan alasan.
-      </p>
-      {#if isSupervisor}
-        <div class="mt-4 flex gap-2">
-          <button
-            type="button"
-            class="rounded-md bg-paid px-4 py-2 text-sm font-semibold text-white"
-            onclick={approveReview}>Setujui & Posting</button
-          >
-          <button
-            type="button"
-            class="rounded-md border border-danger/40 px-4 py-2 text-sm font-semibold text-danger"
-            onclick={rejectReview}>Tolak</button
-          >
-        </div>
-      {/if}
+      <p class="mt-1 text-sm text-text-muted">Jurnal sedang menunggu pemeriksaan supervisor.</p>
       {#if serverMessage}<p class="mt-3 text-sm text-danger">{serverMessage}</p>{/if}
     </div>
   </div>
@@ -261,5 +322,6 @@
     onSaveDraft={saveDraft}
     onPosting={postingJurnal}
     onCancel={cancel}
+    auditTrail={detail.audit_trail}
   />
 {/if}

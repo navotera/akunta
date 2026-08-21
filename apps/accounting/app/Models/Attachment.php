@@ -5,13 +5,14 @@ namespace App\Models;
 use Akunta\Rbac\Models\Entity;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Storage;
 
 class Attachment extends Model
 {
-    use HasUlids;
+    use HasUlids, SoftDeletes;
 
     protected $fillable = [
         'attachable_type',
@@ -26,6 +27,7 @@ class Attachment extends Model
         'description',
         'uploaded_by',
         'metadata',
+        'deleted_at',
     ];
 
     protected $casts = [

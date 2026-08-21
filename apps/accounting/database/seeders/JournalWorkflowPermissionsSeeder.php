@@ -24,15 +24,17 @@ class JournalWorkflowPermissionsSeeder extends Seeder
             ['code' => 'automapping.manage', 'description' => 'Mengelola rule Auto Mapping dan raw data transaksi', 'category' => 'journal'],
             ['code' => 'fiscal.adjustment.read', 'description' => 'Melihat jurnal, koreksi, bukti, dan laporan Fiskal', 'category' => 'fiscal'],
             ['code' => 'fiscal.adjustment.manage', 'description' => 'Membuat dan mengubah koreksi Fiskal draft', 'category' => 'fiscal'],
-            ['code' => 'fiscal.adjustment.approve', 'description' => 'Menyetujui koreksi yang masuk laporan pajak final', 'category' => 'fiscal'],
+            ['code' => 'fiscal.adjustment.approve', 'description' => 'Menyetujui koreksi yang masuk rekonsiliasi pajak', 'category' => 'fiscal'],
+            ['code' => 'fiscal.tax_provision.read', 'description' => 'Melihat perhitungan dan jurnal provisi pajak', 'category' => 'fiscal'],
+            ['code' => 'fiscal.tax_provision.manage', 'description' => 'Membuat perhitungan dan jurnal provisi pajak draft', 'category' => 'fiscal'],
         ])->keyBy('code');
 
         $roles = [
             'admin' => array_keys($permissions->all()),
-            'supervisor' => ['journal.read', 'journal.review', 'journal.post', 'journal.reverse', 'journal.update', 'automapping.manage'],
+            'supervisor' => ['journal.read', 'journal.review', 'journal.post', 'journal.reverse', 'journal.update', 'automapping.manage', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
             'operator' => ['journal.read', 'journal.create', 'journal.update', 'journal.delete', 'journal.submit'],
-            'accountant' => ['journal.read', 'journal.create', 'journal.update', 'journal.delete', 'journal.submit', 'fiscal.adjustment.read', 'fiscal.adjustment.manage'],
-            'tax_officer' => ['journal.read', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.adjustment.approve'],
+            'accountant' => ['journal.read', 'journal.create', 'journal.update', 'journal.delete', 'journal.submit', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
+            'tax_officer' => ['journal.read', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.adjustment.approve', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
             'inspector' => ['journal.read', 'fiscal.adjustment.read'],
         ];
         foreach ($roles as $roleCode => $codes) {

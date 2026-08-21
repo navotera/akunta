@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Akunta\EcopaClient\EcopaClient;
+use Akunta\EcopaClient\Exceptions\EcopaException;
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
@@ -83,7 +85,7 @@ it('returns ecosystem apps from Ecopa filtering self_slug and tagging icon_key',
     $this->user->main_tier_user_id = 'ecopa-uuid-123';
     $this->user->save();
 
-    $fake = new class extends \Akunta\EcopaClient\EcopaClient
+    $fake = new class extends EcopaClient
     {
         public function __construct() {}
 
@@ -96,7 +98,7 @@ it('returns ecosystem apps from Ecopa filtering self_slug and tagging icon_key',
             ];
         }
     };
-    $this->app->instance(\Akunta\EcopaClient\EcopaClient::class, $fake);
+    $this->app->instance(EcopaClient::class, $fake);
 
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -116,16 +118,16 @@ it('returns empty data with error meta when Ecopa is unreachable', function () {
     $this->user->main_tier_user_id = 'ecopa-uuid-123';
     $this->user->save();
 
-    $fake = new class extends \Akunta\EcopaClient\EcopaClient
+    $fake = new class extends EcopaClient
     {
         public function __construct() {}
 
         public function fetchUserApps(string $userId): array
         {
-            throw new \Akunta\EcopaClient\Exceptions\EcopaException('boom');
+            throw new EcopaException('boom');
         }
     };
-    $this->app->instance(\Akunta\EcopaClient\EcopaClient::class, $fake);
+    $this->app->instance(EcopaClient::class, $fake);
 
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -136,24 +138,63 @@ it('returns empty data with error meta when Ecopa is unreachable', function () {
         ->assertJsonPath('meta.error', 'unreachable');
 });
 
-it('returns financial pulse with current and previous month numbers', function () {
+it('returns financial pulse for the active entity period', function () {
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->getJson('/api/v1/spa/widgets/financial-pulse');
+        ->getJson('/api/v1/spa/widgets/financial-pulse?period_id='.$this->period->id);
 
     $res->assertOk()
         ->assertJsonPath('data.entity_id', $this->entity->id)
+        ->assertJsonPath('data.period.id', $this->period->id)
         ->assertJsonPath('data.revenue.current', '500000.00')
-        ->assertJsonPath('data.journals.posted_this_month', 1);
+        ->assertJsonPath('data.cash_balance.current', '500000.00')
+        ->assertJsonPath('data.journals.posted_count', 1)
+        ->assertJsonPath('data.revenue_composition.0.amount', '500000.00');
 });
 
 it('returns recent journals limited and ordered', function () {
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->getJson('/api/v1/spa/widgets/recent-journals?limit=5');
+        ->getJson('/api/v1/spa/widgets/recent-journals?limit=5&period_id='.$this->period->id);
 
     $res->assertOk()
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.number', 'J-WG-1')
         ->assertJsonPath('data.0.status', 'posted');
+});
+
+it('rejects an active period that belongs to another entity', function () {
+    $otherTenant = Tenant::create(['name' => 'Other', 'slug' => 'other-'.uniqid()]);
+    $otherEntity = Entity::create(['tenant_id' => $otherTenant->id, 'name' => 'Other Co']);
+    $otherPeriod = Period::create([
+        'entity_id' => $otherEntity->id,
+        'name' => 'Other Period',
+        'start_date' => now()->startOfMonth()->toDateString(),
+        'end_date' => now()->endOfMonth()->toDateString(),
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/financial-pulse?period_id='.$otherPeriod->id)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('period_id');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/recent-journals?period_id='.$otherPeriod->id)
+        ->assertUnprocessable();
+});
+
+it('rejects dashboard data for an inactive entity', function () {
+    $this->entity->update(['is_active' => false]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/financial-pulse?period_id='.$this->period->id)
+        ->assertUnprocessable();
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/widgets/recent-journals?period_id='.$this->period->id)
+        ->assertUnprocessable();
 });

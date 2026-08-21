@@ -99,35 +99,11 @@
   });
 
   function openCreate() {
-    creating = true;
-    editing = null;
-    form = {
-      code: '',
-      name: '',
-      description: '',
-      journal_mode: 'internal',
-      lines: [blankLine(), blankLine()],
-    };
-    formErrors = null;
+    goto('/journals/new?as_template=1');
   }
 
   async function openEdit(s: JournalTemplateSummary) {
-    creating = false;
-    formErrors = null;
-    const d = await templateApi.show(s.id);
-    editing = d;
-    form = {
-      code: d.code,
-      name: d.name,
-      description: d.description ?? '',
-      journal_mode: d.journal_mode ?? 'internal',
-      lines: d.lines.map((l) => ({
-        account_id: l.account_id,
-        side: l.side,
-        amount: l.amount,
-        memo: l.memo ?? '',
-      })),
-    };
+    goto(`/journals/new?as_template=1&template_id=${encodeURIComponent(s.id)}`);
   }
 
   function closeForm() {
@@ -191,12 +167,16 @@
     if (bookmarking) return;
     const isBookmarked = !template.is_bookmarked;
     bookmarking = template.id;
-    items = items.map((item) => (item.id === template.id ? { ...item, is_bookmarked: isBookmarked } : item));
+    items = items.map((item) =>
+      item.id === template.id ? { ...item, is_bookmarked: isBookmarked } : item,
+    );
     try {
       const updated = await templateApi.bookmark(template.id, isBookmarked);
       items = items.map((item) => (item.id === updated.id ? updated : item));
     } catch (e) {
-      items = items.map((item) => (item.id === template.id ? { ...item, is_bookmarked: !isBookmarked } : item));
+      items = items.map((item) =>
+        item.id === template.id ? { ...item, is_bookmarked: !isBookmarked } : item,
+      );
       error = e instanceof Error ? e.message : String(e);
     } finally {
       bookmarking = null;
@@ -265,8 +245,19 @@
                     onclick={(event) => toggleBookmark(event, t)}
                     disabled={bookmarking === t.id}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill={t.is_bookmarked ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" aria-hidden="true">
-                      <path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.5L6 21V4.75Z" stroke-linejoin="round" />
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill={t.is_bookmarked ? 'currentColor' : 'none'}
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.5L6 21V4.75Z"
+                        stroke-linejoin="round"
+                      />
                     </svg>
                   </button>
                   <span>{t.name}</span>
@@ -274,9 +265,9 @@
               </td>
               <td class="px-4 py-2 text-center">
                 <span
-                  class="rounded-full px-2 py-1 text-xs font-semibold {t.journal_mode === 'fiscal'
+                  class="rounded-full px-2 py-1 text-[0.7125rem] font-semibold {t.journal_mode === 'fiscal'
                     ? 'bg-warning-light text-warning'
-                    : 'bg-primary-light text-primary'}"
+                    : 'bg-paid-light text-paid'}"
                 >
                   {t.journal_mode === 'fiscal' ? 'Fiskal' : 'Intern'}
                 </span>
@@ -287,7 +278,7 @@
             </tr>
           {:else}
             <tr
-                ><td colspan="7" class="px-4 py-10 text-center text-text-muted"
+              ><td colspan="7" class="px-4 py-10 text-center text-text-muted"
                 >Belum ada template.</td
               ></tr
             >

@@ -53,11 +53,14 @@
     },
     {
       title: 'Fiskal',
-      items: [{ href: '/fiskal/koreksi', label: 'Koreksi & Pajak Final', icon: 'F' }],
+      items: [{ href: '/fiskal/koreksi', label: 'Koreksi & Provisi Pajak', icon: 'F' }],
     },
     {
-      title: 'Documentation',
-      items: [{ href: '/documentation', label: 'Documentation', icon: '▤' }],
+      title: 'Bantuan',
+      items: [
+        { href: '/documentation', label: 'Panduan Pengguna', icon: '▤' },
+        { href: '/settings?section=issue-report', label: 'Laporan Issue', icon: '!' },
+      ],
     },
   ];
 
@@ -67,10 +70,35 @@
 
   function isActive(item: NavItem): boolean {
     const path = $page.url.pathname;
+    if (item.label === 'Laporan Issue') {
+      return (
+        path === '/settings' &&
+        (!$page.url.searchParams.get('section') ||
+          $page.url.searchParams.get('section') === 'general')
+      );
+    }
     if (item.href && path === item.href) return true;
     if ((item.match ?? []).some((m) => path.startsWith(m))) return true;
     if (item.children?.some((c) => isActive(c))) return true;
     return false;
+  }
+
+  function navigationHref(item: NavItem): string | undefined {
+    return item.label === 'Laporan Issue'
+      ? issueReportUrl || '/settings?section=general'
+      : item.href;
+  }
+
+  async function openIssueReport(event: MouseEvent): Promise<void> {
+    event.preventDefault();
+    const latestUser = await auth.refresh();
+    const latestEntity = latestUser?.tenants.find((item) => item.id === tenant.id);
+    const url = latestEntity?.issue_report_url ?? issueReportUrl;
+    if (url) {
+      window.location.assign(url);
+      return;
+    }
+    await goto('/settings?section=general');
   }
 
   // Keep the sidebar compact by default, with the journal group open on journal pages.
@@ -81,10 +109,16 @@
       $page.url.pathname === '/template-jurnal' ||
       $page.url.pathname === '/jurnal-berulang',
   });
+  let openMenuOrder = $state<string[]>(
+    $page.url.pathname.startsWith('/journals') ||
+      $page.url.pathname === '/template-jurnal' ||
+      $page.url.pathname === '/jurnal-berulang'
+      ? ['group:Jurnal']
+      : [],
+  );
   let menuStateRestored = $state(false);
 
   $effect(() => {
-    const pathname = $page.url.pathname;
     if (!menuStateRestored && typeof localStorage !== 'undefined') {
       try {
         const stored = JSON.parse(localStorage.getItem(MENU_STORAGE_KEY) ?? '{}') as Record<
@@ -92,19 +126,17 @@
           boolean
         >;
         openGroups = { ...openGroups, ...stored };
+        openMenuOrder = Object.keys(openGroups)
+          .filter((key) => openGroups[key])
+          .map((key) => `group:${key}`)
+          .slice(-2);
+        for (const key of Object.keys(openGroups)) {
+          if (openGroups[key] && !openMenuOrder.includes(`group:${key}`)) openGroups[key] = false;
+        }
       } catch {
         localStorage.removeItem(MENU_STORAGE_KEY);
       }
       menuStateRestored = true;
-    }
-
-    const activeGroup = groups.find((group) =>
-      group.items.some(
-        (item) => item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`)),
-      ),
-    )?.title;
-    if (activeGroup && !openGroups[activeGroup]) {
-      openGroups[activeGroup] = true;
     }
   });
 
@@ -115,15 +147,46 @@
   }
 
   function toggleParent(key: string) {
-    openParents[key] = !openParents[key];
+    const token = `parent:${key}`;
+    if (openParents[key]) {
+      openParents[key] = false;
+      openMenuOrder = openMenuOrder.filter((item) => item !== token);
+    } else {
+      openParents[key] = true;
+      openMenuOrder = [...openMenuOrder.filter((item) => item !== token), token];
+      closeOldestMenuItems();
+    }
   }
 
   function isParentOpen(item: NavItem): boolean {
     return openParents[item.label] === true;
   }
 
+  function closeOldestMenuItems() {
+    for (const oldest of openMenuOrder.slice(0, -2)) {
+      if (oldest.startsWith('group:')) {
+        openGroups[oldest.slice('group:'.length)] = false;
+      } else if (oldest.startsWith('parent:')) {
+        openParents[oldest.slice('parent:'.length)] = false;
+      }
+    }
+    openMenuOrder = openMenuOrder.slice(-2);
+  }
+
+  function openGroup(key: string) {
+    openGroups[key] = true;
+    const token = `group:${key}`;
+    openMenuOrder = [...openMenuOrder.filter((item) => item !== token), token];
+    closeOldestMenuItems();
+  }
+
   function toggleGroup(key: string) {
-    openGroups[key] = !openGroups[key];
+    if (openGroups[key]) {
+      openGroups[key] = false;
+      openMenuOrder = openMenuOrder.filter((item) => item !== `group:${key}`);
+    } else {
+      openGroup(key);
+    }
     persistMenuState();
   }
 
@@ -132,21 +195,26 @@
   }
 
   const ecosystemOpen = $derived(isGroupOpen('Ekosistem'));
+  const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
   const isInspector = $derived(
     auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
   );
+  const currentEntity = $derived(tenant.available.find((item) => item.id === tenant.id));
+  const currentEntityIsFake = $derived(currentEntity?.is_fake_data ?? false);
+  const issueReportUrl = $derived(currentEntity?.issue_report_url ?? null);
   const visibleGroups = $derived(
     isInspector
       ? groups.filter((group) => group.title === 'Fiskal')
       : groups.filter(
           (group) =>
-            group.title !== 'Fiskal' ||
-            tenant.available.find((item) => item.id === tenant.id)?.bookkeeping_mode ===
-              'independent_books',
+            group.title !== 'Fiskal' || currentEntity?.bookkeeping_mode === 'independent_books',
         ),
   );
   const visibleEntities = $derived(
-    isInspector ? tenant.available.filter((item) => item.id === tenant.id) : tenant.available,
+    (isInspector
+      ? tenant.available.filter((item) => item.id === tenant.id)
+      : tenant.available
+    ).filter((item) => item.is_active !== false),
   );
 
   async function logout() {
@@ -284,8 +352,13 @@
   let displayedApps = $derived(showingPreview ? ECO_PREVIEW : ecosystem.apps);
 
   function pickPeriod(id: string) {
+    if (!isAdmin) return;
     period.switch(id);
     periodMenuOpen = false;
+    // Dashboard and reports are period-scoped. Remount every page so no data
+    // from the previously active period remains visible in a cached tab.
+    if (typeof window !== 'undefined') window.location.reload();
+    else invalidateAll();
   }
 
   function pickEntity(id: string) {
@@ -398,7 +471,10 @@
                           {@const childActive = isActive(child)}
                           <li>
                             <a
-                              href={child.href}
+                              href={navigationHref(child)}
+                              onclick={child.label === 'Laporan Issue'
+                                ? openIssueReport
+                                : undefined}
                               class="ak-nav-item ak-nav-subitem"
                               style="background: transparent; font-weight: {childActive
                                 ? '600'
@@ -419,7 +495,11 @@
                       </ul>
                     {/if}
                   {:else}
-                    <a href={it.href} class="ak-nav-item {isActive(it) ? 'is-active' : ''}">
+                    <a
+                      href={navigationHref(it)}
+                      onclick={it.label === 'Laporan Issue' ? openIssueReport : undefined}
+                      class="ak-nav-item {isActive(it) ? 'is-active' : ''}"
+                    >
                       <span class="ak-nav-icon">{it.icon ?? ''}</span>
                       <span>{it.label}</span>
                     </a>
@@ -498,31 +578,18 @@
       </div>
     </nav>
 
-    <footer class="border-t border-border-soft px-3 py-3">
+    <footer class="flex justify-end px-3 py-3">
       {#if auth.user}
-        <div class="flex items-center gap-3 px-2 py-1.5">
-          <span
-            class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-light text-primary font-bold"
-          >
-            {auth.user.name.charAt(0).toUpperCase()}
-          </span>
-          <div class="min-w-0 flex-1">
-            <strong class="block truncate text-sm font-semibold text-text-default"
-              >{auth.user.name}</strong
-            >
-            <span class="block truncate text-xs text-text-muted">{auth.user.email}</span>
-          </div>
-          <button
-            type="button"
-            class="text-text-muted hover:text-danger"
-            onclick={logout}
-            title="Keluar"
-            data-testid="logout-button"
-            aria-label="Keluar"
-          >
-            ⏻
-          </button>
-        </div>
+        <button
+          type="button"
+          class="text-text-muted hover:text-danger"
+          onclick={logout}
+          title="Keluar"
+          data-testid="logout-button"
+          aria-label="Keluar"
+        >
+          ⏻
+        </button>
       {/if}
     </footer>
   </aside>
@@ -563,7 +630,7 @@
               class="flex h-9 items-center gap-2 rounded-md border border-border-default bg-card-bg px-3 text-sm font-medium text-text-default hover:border-primary"
               onclick={() => (entityMenuOpen = !entityMenuOpen)}
               data-testid="entity-switcher"
-              title="Workspace hanya dapat diganti melalui Settings → Workspace"
+              title="Pilih entitas aktif"
               aria-haspopup="listbox"
               aria-expanded={entityMenuOpen}
             >
@@ -573,6 +640,12 @@
                 {(tenant.name ?? '?').charAt(0).toUpperCase()}
               </span>
               <span class="max-w-[10rem] truncate">{tenant.name ?? 'Pilih entitas'}</span>
+              {#if currentEntityIsFake}
+                <span
+                  class="rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
+                  >Fake data</span
+                >
+              {/if}
               <span class="text-text-muted text-xs">▾</span>
             </button>
 
@@ -593,15 +666,10 @@
                       class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-page-bg {tenant.id ===
                       t.id
                         ? 'bg-primary-light text-primary-active font-semibold'
-                        : t.is_active === false
-                          ? 'text-text-muted'
-                          : 'text-text-default'}"
-                      disabled
+                        : 'text-text-default'}"
+                      onclick={() => pickEntity(t.id)}
                       role="option"
                       aria-selected={tenant.id === t.id}
-                      title={t.is_active === false
-                        ? 'Workspace nonaktif. Buka Settings untuk mengaktifkannya.'
-                        : undefined}
                     >
                       <span
                         class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary"
@@ -613,18 +681,21 @@
                         {#if t.slug}<span class="block truncate text-xs text-text-muted"
                             >{t.slug}</span
                           >{/if}
-                        {#if t.is_active === false}
-                          <span class="block text-xs font-medium text-warning"
-                            >Nonaktif · buka Settings</span
+                      </span>
+                      <span class="ml-auto flex shrink-0 items-center gap-2">
+                        {#if t.is_fake_data}
+                          <span
+                            class="rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
+                            >Fake data</span
                           >
                         {/if}
+                        {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}
                       </span>
-                      {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}
                     </button>
                   </li>
                 {/each}
                 <li class="border-t border-border-soft px-3 py-2 text-xs text-text-muted">
-                  Switch to other workspace di
+                  Workspace nonaktif dapat diaktifkan kembali di
                   <a
                     href="/settings?section=workspace"
                     class="font-medium text-primary underline-offset-2 hover:underline">sini</a
@@ -673,6 +744,7 @@
                         ? 'bg-primary-light/40 text-primary-active font-semibold'
                         : 'text-text-default'}"
                       onclick={() => pickPeriod(p.id)}
+                      disabled={!isAdmin || p.status !== 'open'}
                       role="option"
                       aria-selected={isActive}
                     >
@@ -690,12 +762,20 @@
                       </span>
                       {#if p.status !== 'open'}
                         <span class="text-[0.6rem] uppercase tracking-wider text-text-muted"
-                          >{p.status}</span
+                          >{p.status === 'closed' ? 'Ditutup' : 'Menutup'}</span
                         >
                       {/if}
                     </button>
                   {/each}
                 {/each}
+                <div class="border-t border-border-soft px-3 py-2 text-xs text-text-muted">
+                  Ganti periode akses
+                  <a
+                    href="/periode"
+                    class="font-medium text-primary underline-offset-2 hover:underline"
+                    onclick={() => (periodMenuOpen = false)}>di sini</a
+                  >
+                </div>
               </div>
             {/if}
           </div>

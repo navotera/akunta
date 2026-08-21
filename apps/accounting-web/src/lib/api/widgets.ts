@@ -7,11 +7,46 @@ export interface PulseValues {
 
 export interface FinancialPulse {
   entity_id: string;
+  period: {
+    id: string;
+    name: string;
+    start_date: string;
+    end_date: string;
+    status: 'open' | 'closing' | 'closed';
+  };
+  previous_period: FinancialPulse['period'] | null;
   period_label: string;
   revenue: PulseValues;
   expenses: PulseValues;
   net_income: PulseValues;
-  journals: { draft_count: number; posted_this_month: number };
+  cash_balance: PulseValues & { account_count: number };
+  journals: {
+    draft_count: number;
+    submitted_count: number;
+    rejected_count: number;
+    posted_count: number;
+  };
+  trend: Array<{ label: string; income: string; expense: string }>;
+  revenue_composition: Array<{
+    account_id: string;
+    code: string;
+    label: string;
+    amount: string;
+  }>;
+  balance_accounts: Array<{
+    account_id: string;
+    code: string;
+    label: string;
+    type: 'asset' | 'liability';
+    amount: string;
+  }>;
+  pending_journals: Array<{
+    id: string;
+    number: string;
+    date: string;
+    memo: string | null;
+    total: string;
+  }>;
 }
 
 export interface RecentJournal {
@@ -19,18 +54,35 @@ export interface RecentJournal {
   number: string;
   date: string;
   memo: string | null;
-  status: 'draft' | 'posted' | 'reversed';
+  status: 'draft' | 'submitted' | 'posted' | 'rejected' | 'reversed';
   type: string;
   total: string;
 }
 
 export const widgetsApi = {
-  financialPulse: (tenantSlug?: string | null) =>
-    api<{ data: FinancialPulse }>(`/api/v1/spa/widgets/financial-pulse`, { tenantSlug }).then((r) => r.data),
+  financialPulse: (periodId?: string | null, tenantSlug?: string | null) => {
+    const params = new URLSearchParams();
+    if (periodId) params.set('period_id', periodId);
+    const query = params.size ? `?${params.toString()}` : '';
 
-  recentJournals: (limit = 10, tenantSlug?: string | null) =>
-    api<{ data: RecentJournal[] }>(
-      `/api/v1/spa/widgets/recent-journals?limit=${limit}`,
-      { tenantSlug },
-    ).then((r) => r.data),
+    return api<{ data: FinancialPulse }>(`/api/v1/spa/widgets/financial-pulse${query}`, {
+      tenantSlug,
+      cache: 'no-store',
+    }).then((r) => r.data);
+  },
+
+  recentJournals: (
+    limit = 10,
+    periodId?: string | null,
+    tenantSlug?: string | null,
+    journalMode: 'internal' | 'fiscal' = 'internal',
+  ) => {
+    const params = new URLSearchParams({ limit: String(limit), journal_mode: journalMode });
+    if (periodId) params.set('period_id', periodId);
+
+    return api<{ data: RecentJournal[] }>(
+      `/api/v1/spa/widgets/recent-journals?${params.toString()}`,
+      { tenantSlug, cache: 'no-store' },
+    ).then((r) => r.data);
+  },
 };

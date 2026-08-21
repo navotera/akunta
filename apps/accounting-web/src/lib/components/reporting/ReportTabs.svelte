@@ -12,7 +12,7 @@
     { href: '/laporan/neraca-saldo', label: 'Neraca Saldo' },
     { href: '/laporan/buku-besar', label: 'Buku Besar' },
     { href: '/laporan/buku-pembantu', label: 'Buku Pembantu' },
-    { href: '/fiskal/koreksi', label: 'Pajak Final' },
+    { href: '/fiskal/koreksi', label: 'Rekonsiliasi Pajak' },
   ];
 
   function isActive(href: string): boolean {
