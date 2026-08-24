@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\Spa;
 use App\Actions\RunRecurringJournalAction;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
+use App\Models\JournalTemplate;
 use App\Models\RecurringJournal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,6 +51,13 @@ class RecurringJournalController extends Controller
         $data['entity_id'] = $entity->id;
         $data['created_by'] = Auth::id();
         $data['next_run_at'] ??= $data['start_date'];
+
+        if (! JournalTemplate::query()
+            ->where('entity_id', $entity->id)
+            ->where('id', $data['template_id'])
+            ->exists()) {
+            return response()->json(['message' => 'The selected template does not belong to the active entity.'], 422);
+        }
 
         $rec = RecurringJournal::create($data);
 

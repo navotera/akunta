@@ -22,7 +22,11 @@
 
     const activeTab = workspace.tabs[activeIndex];
     if (!activeTab) return;
-    workspace.tabs = [activeTab, ...workspace.tabs.slice(0, activeIndex), ...workspace.tabs.slice(activeIndex + 1)];
+    workspace.tabs = [
+      activeTab,
+      ...workspace.tabs.slice(0, activeIndex),
+      ...workspace.tabs.slice(activeIndex + 1),
+    ];
     persistWorkspace();
   }
 

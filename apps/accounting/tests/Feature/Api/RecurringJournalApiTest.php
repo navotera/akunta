@@ -12,10 +12,11 @@ use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
 use App\Models\Period;
 use App\Models\RecurringJournal;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 
 beforeEach(function () {
-    Gate::define('journal.post', fn (?\Illuminate\Contracts\Auth\Authenticatable $u = null) => true);
+    Gate::define('journal.post', fn (?Authenticatable $u = null) => true);
 
     $tenant = Tenant::create(['name' => 'PT Demo', 'slug' => 'demo-'.uniqid()]);
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Demo']);
@@ -64,12 +65,12 @@ beforeEach(function () {
 it('creates a recurring schedule via API', function () {
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
         ->postJson('/api/v1/recurring-journals', [
-            'entity_id'   => $this->entity->id,
+            'entity_id' => $this->entity->id,
             'template_id' => $this->template->id,
-            'name'        => 'Rent monthly',
-            'frequency'   => 'monthly',
-            'start_date'  => '2026-04-15',
-            'auto_post'   => false,
+            'name' => 'Rent monthly',
+            'frequency' => 'monthly',
+            'start_date' => '2026-04-15',
+            'auto_post' => false,
         ]);
 
     $res->assertStatus(201)
@@ -87,7 +88,7 @@ it('pauses a recurring schedule via API', function () {
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
-        ->postJson("/api/v1/recurring-journals/{$rec->id}/pause");
+        ->postJson("/api/v1/recurring-journals/{$rec->id}/pause?entity_id={$this->entity->id}");
 
     $res->assertOk()->assertJsonPath('status', 'paused');
     expect($rec->fresh()->status)->toBe('paused');
@@ -101,7 +102,7 @@ it('resumes a paused schedule via API', function () {
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
-        ->postJson("/api/v1/recurring-journals/{$rec->id}/resume");
+        ->postJson("/api/v1/recurring-journals/{$rec->id}/resume?entity_id={$this->entity->id}");
 
     $res->assertOk()->assertJsonPath('status', 'active');
 });
@@ -114,7 +115,7 @@ it('refuses to pause an ended schedule', function () {
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
-        ->postJson("/api/v1/recurring-journals/{$rec->id}/pause");
+        ->postJson("/api/v1/recurring-journals/{$rec->id}/pause?entity_id={$this->entity->id}");
 
     $res->assertStatus(422)->assertJsonPath('error', 'cannot_pause_ended_schedule');
 });
@@ -127,7 +128,7 @@ it('manually runs a due schedule via API', function () {
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
-        ->postJson("/api/v1/recurring-journals/{$rec->id}/run");
+        ->postJson("/api/v1/recurring-journals/{$rec->id}/run?entity_id={$this->entity->id}");
 
     $res->assertStatus(201)
         ->assertJsonPath('ran', true)
@@ -142,7 +143,7 @@ it('returns ran=false when schedule is not due', function () {
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer '.$this->plain)
-        ->postJson("/api/v1/recurring-journals/{$rec->id}/run");
+        ->postJson("/api/v1/recurring-journals/{$rec->id}/run?entity_id={$this->entity->id}");
 
     $res->assertOk()->assertJsonPath('ran', false);
 });

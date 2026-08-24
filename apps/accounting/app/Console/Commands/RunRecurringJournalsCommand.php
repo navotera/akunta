@@ -24,6 +24,7 @@ class RunRecurringJournalsCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         $q = RecurringJournal::query()
+            ->whereHas('entity', fn ($query) => $query->where('is_fake_data', false))
             ->where('status', RecurringJournal::STATUS_ACTIVE)
             ->whereDate('next_run_at', '<=', $today);
 

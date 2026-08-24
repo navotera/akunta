@@ -24,15 +24,16 @@
     return pad.t + ih - ((v - min) / (max - min)) * ih;
   }
   function mkPath(arr: number[]): string {
-    return arr.map((v, i) => (i ? 'L' : 'M') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1)).join(' ');
+    return arr
+      .map((v, i) => (i ? 'L' : 'M') + xAt(i).toFixed(1) + ',' + yAt(v).toFixed(1))
+      .join(' ');
   }
 
   const grids = $derived([0, 0.25, 0.5, 0.75, 1].map((t) => min + t * (max - min)));
   const incomePath = $derived(mkPath(income));
   const expensePath = $derived(mkPath(expense));
   const incomeArea = $derived(
-    incomePath +
-      ` L ${xAt(income.length - 1)},${pad.t + ih} L ${pad.l},${pad.t + ih} Z`,
+    incomePath + ` L ${xAt(income.length - 1)},${pad.t + ih} L ${pad.l},${pad.t + ih} Z`,
   );
 
   function fmtCompact(n: number): string {
@@ -62,18 +63,40 @@
       stroke-width="1"
       stroke-dasharray={i === 0 ? '0' : '2 4'}
     />
-    <text x={pad.l - 8} y={yAt(g)} dy="3" font-size="10" text-anchor="end" fill="var(--m-text-muted)">
+    <text
+      x={pad.l - 8}
+      y={yAt(g)}
+      dy="3"
+      font-size="10"
+      text-anchor="end"
+      fill="var(--m-text-muted)"
+    >
       {fmtCompact(g)}
     </text>
   {/each}
 
   {#each labels as l, i (i)}
-    <text x={xAt(i)} y={h - 6} font-size="10" text-anchor="middle" fill="var(--m-text-muted)">{l}</text>
+    <text x={xAt(i)} y={h - 6} font-size="10" text-anchor="middle" fill="var(--m-text-muted)"
+      >{l}</text
+    >
   {/each}
 
   <path d={incomeArea} fill="url(#cfa)" />
-  <path d={incomePath} fill="none" stroke="var(--m-primary)" stroke-width="2" stroke-linejoin="round" />
-  <path d={expensePath} fill="none" stroke="var(--m-text-muted)" stroke-width="1.6" stroke-dasharray="3 3" stroke-linejoin="round" />
+  <path
+    d={incomePath}
+    fill="none"
+    stroke="var(--m-primary)"
+    stroke-width="2"
+    stroke-linejoin="round"
+  />
+  <path
+    d={expensePath}
+    fill="none"
+    stroke="var(--m-text-muted)"
+    stroke-width="1.6"
+    stroke-dasharray="3 3"
+    stroke-linejoin="round"
+  />
   <circle
     cx={xAt(income.length - 1)}
     cy={yAt(income[income.length - 1] ?? 0)}

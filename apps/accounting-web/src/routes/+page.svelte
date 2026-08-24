@@ -10,6 +10,4 @@
   });
 </script>
 
-<div class="flex min-h-screen items-center justify-center text-text-muted">
-  Memuat…
-</div>
+<div class="flex min-h-screen items-center justify-center text-text-muted">Memuat…</div>

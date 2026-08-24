@@ -84,6 +84,47 @@ it('filters templates by journal mode', function () {
         ->assertJsonPath('data.0.journal_mode', Journal::MODE_FISCAL);
 });
 
+it('only lists templates belonging to the active entity', function () {
+    $otherEntity = Entity::create([
+        'tenant_id' => $this->entity->tenant_id,
+        'name' => 'Other Co',
+    ]);
+    $otherApp = RbacApp::create(['code' => 'tpl-other-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $otherRole = Role::create(['code' => 'tpl-other-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    $this->user->assignments()->create([
+        'entity_id' => $otherEntity->id, 'app_id' => $otherApp->id, 'role_id' => $otherRole->id,
+    ]);
+    JournalTemplate::create([
+        'entity_id' => $otherEntity->id, 'code' => 'OTHER', 'name' => 'Other Entity Template',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journal-templates')
+        ->assertOk()
+        ->assertJsonMissing(['code' => 'OTHER']);
+});
+
+it('cannot use a template from another entity for a recurring journal', function () {
+    $otherEntity = Entity::create([
+        'tenant_id' => $this->entity->tenant_id,
+        'name' => 'Other Co',
+    ]);
+    $otherTemplate = JournalTemplate::create([
+        'entity_id' => $otherEntity->id, 'code' => 'OTHER', 'name' => 'Other Entity Template',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/recurring-journals', [
+            'template_id' => $otherTemplate->id,
+            'name' => 'Cross entity',
+            'frequency' => 'monthly',
+            'start_date' => '2026-01-01',
+        ])
+        ->assertStatus(422);
+});
+
 it('toggles a tenant template bookmark', function () {
     $template = JournalTemplate::create([
         'entity_id' => $this->entity->id, 'code' => 'TPL-BOOK', 'name' => 'Bookmarked',

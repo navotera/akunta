@@ -7,6 +7,7 @@ use App\Actions\ApplyCoaTemplateAction;
 use App\Actions\SeedSampleJournalTemplatesAction;
 use App\Models\Period;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Artisan;
 
 /**
  * First-install bootstrap: ensure every Entity has the basics needed to
@@ -26,7 +27,7 @@ class EcosystemBootstrapSeeder extends Seeder
         // (Ecopa is the source of truth for the entity catalogue).
         if (config('ecopa.url') && config('ecopa.api_token')) {
             try {
-                \Illuminate\Support\Facades\Artisan::call('ecopa:reconcile');
+                Artisan::call('ecopa:reconcile');
                 $this->command?->line('  EcosystemBootstrap: ecopa:reconcile ran.');
             } catch (\Throwable $e) {
                 $this->command?->warn('  ! ecopa:reconcile failed: '.$e->getMessage());
@@ -41,6 +42,10 @@ class EcosystemBootstrapSeeder extends Seeder
         }
 
         foreach ($entities as $entity) {
+            if ($entity->is_fake_data) {
+                continue;
+            }
+
             $coa->execute($entity->id, 'generic');
             $this->ensureCurrentPeriod($entity->id);
             $samples->execute($entity->id);
@@ -63,11 +68,11 @@ class EcosystemBootstrapSeeder extends Seeder
         }
 
         return Period::create([
-            'entity_id'  => $entityId,
+            'entity_id' => $entityId,
             'start_date' => $start,
-            'end_date'   => $today->copy()->endOfMonth()->toDateString(),
-            'name'       => $today->translatedFormat('F Y'),
-            'status'     => Period::STATUS_OPEN,
+            'end_date' => $today->copy()->endOfMonth()->toDateString(),
+            'name' => $today->translatedFormat('F Y'),
+            'status' => Period::STATUS_OPEN,
         ]);
     }
 }

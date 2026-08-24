@@ -5,26 +5,69 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Rbac\Models\Entity;
+use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\FakeDataRecord;
-use App\Models\Period;
 use App\Models\User;
 use App\Services\FakeDataService;
+use App\Services\NativeFakeDataProvisioner;
+use App\Services\NativeFakeDataResetService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
 
 class FakeDataController extends Controller
 {
-    public function __construct(private readonly FakeDataService $service) {}
+    use ResolvesTenant;
+
+    private const SELF_SERVICE_GROUPS = ['accounts', 'users'];
+
+    public function __construct(
+        private readonly FakeDataService $service,
+        private readonly NativeFakeDataResetService $resetService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
 
-        return response()->json(['data' => ['groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity), 'impersonating' => session()->has('impersonator_id')]]);
+        return response()->json(['data' => [
+            'groups' => $this->groups($entity),
+            'users' => $this->service->fakeUsers($entity),
+            'impersonating' => session()->has('impersonator_id'),
+            'dataset' => $this->dataset($entity),
+        ]]);
+    }
+
+    public function resetPreview(Request $request): JsonResponse
+    {
+        $entity = $this->entity($request);
+        $this->authorizeFakeData($entity);
+
+        return response()->json(['data' => $this->resetService->preview($entity)]);
+    }
+
+    public function reset(Request $request): JsonResponse
+    {
+        $entity = $this->entity($request);
+        $this->authorizeFakeData($entity);
+        abort_unless($entity->is_fake_data, 409, 'Reset dataset hanya tersedia untuk PT. Fake Data.');
+        $data = $request->validate([
+            'confirmation' => ['required', 'string', 'in:'.NativeFakeDataResetService::CONFIRMATION_PHRASE],
+            'expected_version' => ['required', 'string', 'in:'.NativeFakeDataProvisioner::DATASET_VERSION],
+            'preview_token' => ['required', 'string', 'size:64'],
+        ]);
+
+        /** @var User|null $owner */
+        $owner = Auth::user();
+        $result = $this->resetService->reset($entity, $owner, $data['preview_token']);
+
+        return response()->json(['data' => [
+            ...$result,
+            'message' => 'Dataset PT. Fake Data berhasil di-reset ke Demo 2026.',
+            'dataset' => $this->dataset($entity->fresh()),
+        ]]);
     }
 
     public function import(Request $request, string $group): JsonResponse
@@ -32,20 +75,16 @@ class FakeDataController extends Controller
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
         $this->ensureImportableEntity($entity);
-        $period = $this->periodForImport($request, $entity, $this->service->groupRequiresPeriod($group));
+        $this->ensureSelfServiceGroup($group);
 
-        return response()->json(['data' => ['created' => $this->service->import($entity, $group, $period), 'groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
+        return response()->json(['data' => ['created' => $this->service->import($entity, $group), 'groups' => $this->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
     }
 
     public function importAll(Request $request): JsonResponse
     {
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
-        $this->ensureImportableEntity($entity);
-        $period = $this->periodForImport($request, $entity, true);
-        $created = collect(FakeDataService::GROUPS)->keys()->sum(fn (string $group) => $this->service->import($entity, $group, $period));
-
-        return response()->json(['data' => ['created' => $created, 'groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
+        abort(409, 'Import All telah dinonaktifkan. Entitas biasa hanya dapat mengimpor COA dan menyiapkan akun impersonation.');
     }
 
     public function destroy(Request $request, string $group): JsonResponse
@@ -53,8 +92,9 @@ class FakeDataController extends Controller
         $entity = $this->entity($request);
         $this->authorizeFakeData($entity);
         $this->ensureImportableEntity($entity);
+        $this->ensureSelfServiceGroup($group);
 
-        return response()->json(['data' => ['deleted' => $this->service->delete($entity, $group), 'groups' => $this->service->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
+        return response()->json(['data' => ['deleted' => $this->service->delete($entity, $group), 'groups' => $this->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
     }
 
     public function impersonate(Request $request, string $userId): JsonResponse
@@ -65,7 +105,7 @@ class FakeDataController extends Controller
         abort_unless($isFake, 404, 'Impersonation hanya tersedia untuk user fake.');
         abort_if(session()->has('impersonator_id'), 409, 'Impersonation sedang aktif.');
         session(['impersonator_id' => Auth::id(), 'impersonation_entity_id' => $entity->id]);
-        Auth::login(User::findOrFail($userId));
+        Auth::guard('web')->login(User::findOrFail($userId));
 
         return response()->json(['data' => ['message' => 'Impersonation aktif.']]);
     }
@@ -74,7 +114,7 @@ class FakeDataController extends Controller
     {
         $originalId = session('impersonator_id');
         abort_unless($originalId, 409, 'Tidak ada impersonation aktif.');
-        Auth::login(User::findOrFail($originalId));
+        Auth::guard('web')->login(User::findOrFail($originalId));
         session()->forget(['impersonator_id', 'impersonation_entity_id']);
 
         return response()->json(['data' => ['message' => 'Kembali ke akun admin.']]);
@@ -82,9 +122,7 @@ class FakeDataController extends Controller
 
     private function entity(Request $request): Entity
     {
-        return ($request->header('X-Tenant-Slug') ? Entity::find($request->header('X-Tenant-Slug')) : null)
-            ?? Auth::user()?->getDefaultTenant()
-            ?? abort(422, 'Tenant not resolvable.');
+        return $this->resolveEntity($request);
     }
 
     private function authorizeFakeData(Entity $entity): void
@@ -110,25 +148,45 @@ class FakeDataController extends Controller
         );
     }
 
-    private function periodForImport(Request $request, Entity $entity, bool $required): ?Period
+    private function ensureSelfServiceGroup(string $group): void
     {
-        $data = $request->validate([
-            'period_id' => [$required ? 'required' : 'nullable', 'string', 'size:26'],
-        ]);
-        if (empty($data['period_id'])) {
+        abort_unless(isset(FakeDataService::GROUPS[$group]), 404, 'Kelompok fake data tidak ditemukan.');
+        abort_unless(
+            in_array($group, self::SELF_SERVICE_GROUPS, true),
+            409,
+            'Import fake data pada entitas biasa hanya tersedia untuk COA dan akun impersonation.',
+        );
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function groups(Entity $entity): array
+    {
+        $groups = $this->service->groups($entity);
+        if ($entity->is_fake_data) {
+            return $groups;
+        }
+
+        return array_values(array_filter(
+            $groups,
+            fn (array $group): bool => in_array($group['key'], self::SELF_SERVICE_GROUPS, true),
+        ));
+    }
+
+    /** @return array<string, mixed>|null */
+    private function dataset(Entity $entity): ?array
+    {
+        if (! $entity->is_fake_data) {
             return null;
         }
 
-        $period = Period::query()
-            ->where('entity_id', $entity->id)
-            ->where('status', Period::STATUS_OPEN)
-            ->find($data['period_id']);
-        if (! $period) {
-            throw ValidationException::withMessages([
-                'period_id' => 'Periode harus milik entitas aktif dan berstatus terbuka.',
-            ]);
-        }
-
-        return $period;
+        return [
+            'label' => NativeFakeDataProvisioner::DATASET_LABEL,
+            'version' => (string) data_get($entity->workspace_settings, 'native_fake_data_version', 'legacy'),
+            'target_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+            'period_year' => FakeDataService::NATIVE_DEMO_YEAR,
+            'immutable_period' => true,
+            'immutable_posted_journals' => true,
+            'background_recurring_disabled' => true,
+        ];
     }
 }

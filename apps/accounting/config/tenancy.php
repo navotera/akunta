@@ -55,6 +55,8 @@ return [
         // Once provisioning lands, remove this and resolve tenant from token.app_id or header.
         '/api/v1/journals',
         '/api/v1/journals/*',
+        '/api/v1/auto-mapping/*',
+        '/api/auto-mapping/*',
         '/api/v1/journal-templates',
         '/api/v1/journal-templates/*',
         '/api/v1/recurring-journals',

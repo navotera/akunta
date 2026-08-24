@@ -16,7 +16,6 @@ class ProcessAutoMappingRawData implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public string $queue = 'auto_journal';
     public int $tries = 3;
 
     public function __construct(public string $rawId) {}

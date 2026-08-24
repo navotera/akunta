@@ -63,7 +63,14 @@
     try {
       if (journalMode === 'both') {
         const [internal, fiscal] = await Promise.all([
-          sourceRefApi.aggregate(p.source_app, p.ref_type, periodStart, periodEnd, null, 'internal'),
+          sourceRefApi.aggregate(
+            p.source_app,
+            p.ref_type,
+            periodStart,
+            periodEnd,
+            null,
+            'internal',
+          ),
           sourceRefApi.aggregate(p.source_app, p.ref_type, periodStart, periodEnd, null, 'fiscal'),
         ]);
         rows = internal.data;
@@ -96,12 +103,35 @@
   }
 
   function mergedRows() {
-    const merged = new Map<string, { ref_id: string; code: string | null; label: string | null; internal: SourceRefAggregateRow | null; fiscal: SourceRefAggregateRow | null }>();
-    for (const row of rows) merged.set(row.ref_id, { ref_id: row.ref_id, code: row.code, label: row.label, internal: row, fiscal: null });
+    const merged = new Map<
+      string,
+      {
+        ref_id: string;
+        code: string | null;
+        label: string | null;
+        internal: SourceRefAggregateRow | null;
+        fiscal: SourceRefAggregateRow | null;
+      }
+    >();
+    for (const row of rows)
+      merged.set(row.ref_id, {
+        ref_id: row.ref_id,
+        code: row.code,
+        label: row.label,
+        internal: row,
+        fiscal: null,
+      });
     for (const row of fiscalRows) {
       const current = merged.get(row.ref_id);
       if (current) current.fiscal = row;
-      else merged.set(row.ref_id, { ref_id: row.ref_id, code: row.code, label: row.label, internal: null, fiscal: row });
+      else
+        merged.set(row.ref_id, {
+          ref_id: row.ref_id,
+          code: row.code,
+          label: row.label,
+          internal: null,
+          fiscal: row,
+        });
     }
     return [...merged.values()];
   }
@@ -123,7 +153,9 @@
 <ReportShell
   title="Buku Pembantu"
   breadcrumb="Laporan / Buku Pembantu"
-  subtitle={meta ? `${meta.source_app} · ${meta.ref_type} · ${formatDate(meta.period_start)} → ${formatDate(meta.period_end)}` : null}
+  subtitle={meta
+    ? `${meta.source_app} · ${meta.ref_type} · ${formatDate(meta.period_start)} → ${formatDate(meta.period_end)}`
+    : null}
 >
   {#snippet actions()}
     <BookToggle
@@ -187,36 +219,68 @@
         </tr>
         <tr>
           {#each ['Entri', 'Debit', 'Kredit', 'Net'] as group (group)}
-            <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
-            <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
+            <th
+              class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]"
+              >Intern</th
+            >
+            <th
+              class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]"
+              >Fiskal</th
+            >
           {/each}
         </tr>
       </thead>
       <tbody>
         {#each mergedRows() as row (row.ref_id)}
-          <tr class="cursor-pointer border-t border-border-soft hover:bg-page-bg" onclick={() => goto(`/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${row.ref_id}`)}>
+          <tr
+            class="cursor-pointer border-t border-border-soft hover:bg-page-bg"
+            onclick={() =>
+              goto(
+                `/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${row.ref_id}`,
+              )}
+          >
             <td class="px-4 py-2 font-mono">{row.code ?? '—'}</td>
             <td class="px-4 py-2">{row.label ?? row.ref_id}</td>
             <td class="px-4 py-2 text-right tabnum">{row.internal?.entry_count ?? 0}</td>
             <td class="px-4 py-2 text-right tabnum">{row.fiscal?.entry_count ?? 0}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(row.internal?.total_debit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(row.fiscal?.total_debit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(row.internal?.total_credit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(row.fiscal?.total_credit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum {netClass(row.internal?.net ?? '0')}">{formatRupiah(row.internal?.net ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum {netClass(row.fiscal?.net ?? '0')}">{formatRupiah(row.fiscal?.net ?? '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(row.internal?.total_debit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(row.fiscal?.total_debit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(row.internal?.total_credit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(row.fiscal?.total_credit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum {netClass(row.internal?.net ?? '0')}"
+              >{formatRupiah(row.internal?.net ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum {netClass(row.fiscal?.net ?? '0')}"
+              >{formatRupiah(row.fiscal?.net ?? '0')}</td
+            >
           </tr>
         {:else}
-          <tr><td colspan="10" class="px-4 py-10 text-center text-text-muted">Tidak ada transaksi pada rentang ini.</td></tr>
+          <tr
+            ><td colspan="10" class="px-4 py-10 text-center text-text-muted"
+              >Tidak ada transaksi pada rentang ini.</td
+            ></tr
+          >
         {/each}
       </tbody>
       <tfoot class="bg-page-bg font-semibold">
         <tr class="border-t-2 border-border-default">
           <td class="px-4 py-2" colspan="4">Total</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(meta.totals.debit)}</td>
-          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscalMeta.totals.debit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum"
+            >{formatRupiah(fiscalMeta.totals.debit)}</td
+          >
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(meta.totals.credit)}</td>
-          <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscalMeta.totals.credit)}</td>
+          <td class="px-4 py-2 text-right font-mono tabnum"
+            >{formatRupiah(fiscalMeta.totals.credit)}</td
+          >
           <td colspan="2"></td>
         </tr>
       </tfoot>
@@ -237,17 +301,26 @@
         {#each rows as r (r.ref_id)}
           <tr
             class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-            onclick={() => goto(`/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${r.ref_id}`)}
+            onclick={() =>
+              goto(
+                `/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${r.ref_id}`,
+              )}
           >
             <td class="px-4 py-2 font-mono">{r.code ?? '—'}</td>
             <td class="px-4 py-2">{r.label ?? r.ref_id}</td>
             <td class="px-4 py-2 text-right">{r.entry_count}</td>
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(r.total_debit)}</td>
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(r.total_credit)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum {netClass(r.net)}">{formatRupiah(r.net)}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum {netClass(r.net)}"
+              >{formatRupiah(r.net)}</td
+            >
           </tr>
         {:else}
-          <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Tidak ada transaksi pada rentang ini.</td></tr>
+          <tr
+            ><td colspan="6" class="px-4 py-10 text-center text-text-muted"
+              >Tidak ada transaksi pada rentang ini.</td
+            ></tr
+          >
         {/each}
       </tbody>
       {#if rows.length > 0 && meta}
@@ -255,7 +328,8 @@
           <tr class="border-t-2 border-border-default">
             <td class="px-4 py-2" colspan="3">Total</td>
             <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(meta.totals.debit)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(meta.totals.credit)}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(meta.totals.credit)}</td
+            >
             <td class="px-4 py-2"></td>
           </tr>
         </tfoot>

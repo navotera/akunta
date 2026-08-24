@@ -28,9 +28,7 @@ class JournalTemplateController extends Controller
         $journalMode = $request->query('journal_mode');
 
         $query = JournalTemplate::query()
-            ->where(function ($q) use ($entity) {
-                $q->whereNull('entity_id')->orWhere('entity_id', $entity->id);
-            })
+            ->where('entity_id', $entity->id)
             ->withCount('lines')
             ->orderBy('name')
             ->limit($limit);
@@ -59,9 +57,7 @@ class JournalTemplateController extends Controller
 
         $template = JournalTemplate::query()
             ->with(['lines.account'])
-            ->where(function ($q) use ($entity) {
-                $q->whereNull('entity_id')->orWhere('entity_id', $entity->id);
-            })
+            ->where('entity_id', $entity->id)
             ->findOrFail($id);
 
         return response()->json(['data' => $this->detail($template)]);
@@ -203,7 +199,7 @@ class JournalTemplateController extends Controller
             'journal_mode' => $t->journal_mode,
             'is_active' => (bool) $t->is_active,
             'is_bookmarked' => (bool) $t->is_bookmarked,
-            'is_global' => $t->entity_id === null,
+            'is_global' => false,
             'lines_count' => $t->lines_count,
         ];
     }
@@ -221,7 +217,7 @@ class JournalTemplateController extends Controller
             'default_reference' => $t->default_reference,
             'is_active' => (bool) $t->is_active,
             'is_bookmarked' => (bool) $t->is_bookmarked,
-            'is_global' => $t->entity_id === null,
+            'is_global' => false,
             'lines' => $t->lines->map(fn ($l) => [
                 'line_no' => $l->line_no,
                 'side' => $l->side,

@@ -347,6 +347,14 @@ class WorkspaceController extends Controller
 
         $tenantId = $this->tenantId($request);
         $entityId = $data['accounting_entity_id'] ?? $this->accountingEntityId($request);
+        if ($entityId === null || $entityId === '') {
+            return response()->json([
+                'errors' => [[
+                    'code' => 'accounting_entity_required',
+                    'message' => 'Pemetaan template jurnal wajib menggunakan entitas Akunta aktif.',
+                ]],
+            ], 422);
+        }
         $template = $this->akuntaReferences->findJournalTemplate(
             id: $data['journal_template_id'],
             entityId: $entityId,
@@ -387,15 +395,13 @@ class WorkspaceController extends Controller
      */
     private function journalTemplateMappings(string $tenantId, ?string $entityId): array
     {
+        if ($entityId === null || $entityId === '') {
+            return [];
+        }
+
         $mappings = JournalTemplateMapping::query()
             ->where('tenant_id', $tenantId)
-            ->where(function ($query) use ($entityId) {
-                $query->where('accounting_entity_id', $entityId);
-
-                if ($entityId === null || $entityId === '') {
-                    $query->orWhereNull('accounting_entity_id');
-                }
-            })
+            ->where('accounting_entity_id', $entityId)
             ->get()
             ->keyBy('transaction_type');
 

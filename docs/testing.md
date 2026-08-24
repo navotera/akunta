@@ -61,6 +61,23 @@ export PATH=/opt/homebrew/opt/php/bin:$PATH && \
 
 Pest wraps PHPUnit — every PHPUnit flag works: `--stop-on-failure`, `--coverage-html coverage/`, `-v`, `--debug`.
 
+### 3.1 Accounting Web fake-data regression
+
+The native demo E2E tests mock API responses and do not write to the local
+development database. Playwright reuses the frontend on port 5175 when it is
+already running, or starts it automatically otherwise.
+
+```bash
+cd apps/accounting-web
+bunx playwright test tests/e2e/native-fake-period-switch.spec.ts
+bunx playwright test tests/e2e/native-fake-reset.spec.ts
+```
+
+The first scenario starts from a normal entity in period 2028 and verifies that
+switching to PT. Fake Data selects `Demo 2026`. The second verifies reset
+preview, marker/manual-record disclosure, exact confirmation, and the submitted
+snapshot token.
+
 ---
 
 ## 4. Per-feature test map

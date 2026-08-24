@@ -4,7 +4,8 @@
     onclick: () => void;
   }
   let { side, onclick }: Props = $props();
-  const colorCls = 'border-border-soft bg-page-bg/70 text-[#1b84ff] hover:bg-page-bg hover:text-[#056ee9]';
+  const colorCls =
+    'border-border-soft bg-page-bg/70 text-[#1b84ff] hover:bg-page-bg hover:text-[#056ee9]';
 </script>
 
 <button

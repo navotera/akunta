@@ -3,10 +3,9 @@
 declare(strict_types=1);
 
 use Akunta\Rbac\Models\SocialAccount;
-use Akunta\Rbac\Models\User;
+use App\Models\User;
 use Laravel\Socialite\Contracts\User as SocialiteUserContract;
 use Laravel\Socialite\Facades\Socialite;
-use Mockery\MockInterface;
 
 function makeSocialiteUser(array $attrs): SocialiteUserContract
 {

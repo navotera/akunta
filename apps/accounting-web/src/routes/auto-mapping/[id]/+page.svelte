@@ -478,7 +478,9 @@
     </div>
 
     {#if variantListOpen}
-      <div class="mt-2.5 rounded-lg border border-[#dbdfe9] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div
+        class="mt-2.5 rounded-lg border border-[#dbdfe9] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]"
+      >
         <div class="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#99a1b7]">
           URL Incoming
         </div>
@@ -568,8 +570,8 @@
                 <button
                   type="button"
                   class="font-semibold text-[#1b84ff] underline decoration-[#1b84ff]/40 underline-offset-2 hover:text-[#056ee9]"
-                  onclick={startVariant}
-                >buat sekarang</button>
+                  onclick={startVariant}>buat sekarang</button
+                >
               </div>
             {:else}
               {#each variants as variant (variant.id)}
@@ -612,7 +614,9 @@
     {/if}
 
     {#if !variantListOpen}
-      <div class="mt-2.5 rounded-lg border border-[#dbdfe9] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <div
+        class="mt-2.5 rounded-lg border border-[#dbdfe9] bg-white px-5 py-3 shadow-[0_1px_2px_rgba(15,23,42,.04)]"
+      >
         <div class="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#99a1b7]">
           URL Incoming
         </div>
@@ -967,8 +971,10 @@
                           >{line.account_field
                             ? previewValue(line.account_field)
                             : line.account_value || 'Belum dipilih'}</td
-                        ><td class="py-3 font-mono tabular-nums">{previewAmountValue(line.amount_field)}</td><td
-                          class="py-3">{line.memo_field ? previewValue(line.memo_field) : '—'}</td
+                        ><td class="py-3 font-mono tabular-nums"
+                          >{previewAmountValue(line.amount_field)}</td
+                        ><td class="py-3"
+                          >{line.memo_field ? previewValue(line.memo_field) : '—'}</td
                         ></tr
                       >{/each}
                   </tbody>

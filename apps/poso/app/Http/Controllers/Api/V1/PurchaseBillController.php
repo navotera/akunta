@@ -218,15 +218,15 @@ class PurchaseBillController extends Controller
 
     private function defaultJournalTemplateId(string $tenantId, ?string $accountingEntityId): ?string
     {
+        if ($accountingEntityId === null || $accountingEntityId === '') {
+            return null;
+        }
+
         return JournalTemplateMapping::query()
             ->where('tenant_id', $tenantId)
             ->where('transaction_type', JournalTemplateMapping::TYPE_PURCHASE_BILL)
             ->where('is_active', true)
-            ->where(function ($query) use ($accountingEntityId) {
-                $query->where('accounting_entity_id', $accountingEntityId)
-                    ->orWhereNull('accounting_entity_id');
-            })
-            ->orderByRaw('accounting_entity_id is null')
+            ->where('accounting_entity_id', $accountingEntityId)
             ->value('journal_template_id');
     }
 

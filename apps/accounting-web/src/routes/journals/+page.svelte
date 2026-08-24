@@ -140,7 +140,8 @@
         {#if statusCounts[tab.value] > 0}
           <span
             class="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-border-soft bg-page-bg px-1.5 text-[11px] font-semibold leading-none text-text-muted"
-          >{statusCounts[tab.value]}</span>
+            >{statusCounts[tab.value]}</span
+          >
         {/if}
       </button>
     {/each}

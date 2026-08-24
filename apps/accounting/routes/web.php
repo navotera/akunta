@@ -1,10 +1,13 @@
 <?php
 
+use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Auth\EcopaController;
+use App\Http\Controllers\Auth\GoogleOAuthController;
 use App\Http\Controllers\Webhooks\EcopaWebhookController;
 use App\Http\Controllers\Webhooks\OidcBackchannelLogoutController;
 use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
 use App\Http\Middleware\VerifyEcopaSignature;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -33,13 +36,13 @@ Route::get('/dashboard', function () {
 // Ecopa webhook receiver (lifecycle events). HMAC-verified, no CSRF.
 Route::post('/webhooks/ecopa', [EcopaWebhookController::class, 'handle'])
     ->middleware(['api', VerifyEcopaSignature::class])
-    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
+    ->withoutMiddleware([VerifyCsrfToken::class])
     ->name('webhooks.ecopa');
 
 // OIDC back-channel logout (RS256 JWT-verified). No CSRF.
 Route::post('/oidc/backchannel-logout', [OidcBackchannelLogoutController::class, 'handle'])
     ->middleware(['api'])
-    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
+    ->withoutMiddleware([VerifyCsrfToken::class])
     ->name('oidc.backchannel-logout');
 
 // Default `login` route — redirect ke Ecopa SSO when configured.
@@ -79,7 +82,7 @@ Route::get('/sso/login', function () {
         if ($tenant === null
             && method_exists($user, 'isSsoAdmin')
             && $user->isSsoAdmin()) {
-            $tenant = \Akunta\Rbac\Models\Entity::query()->first();
+            $tenant = Entity::query()->first();
         }
 
         if ($tenant !== null) {
@@ -96,7 +99,7 @@ Route::get('/sso/login', function () {
         // claims were stored). Force fresh OAuth once — second pass will either
         // succeed (claims rebuilt) or land here again with retry=1.
         $alreadyRetried = (bool) request()->query('retry');
-        $sessionStale   = session('ecopa.app_role') === null;
+        $sessionStale = session('ecopa.app_role') === null;
 
         if ($sessionStale && ! $alreadyRetried && config('ecopa.client_id')) {
             auth()->logout();
@@ -111,7 +114,7 @@ Route::get('/sso/login', function () {
             (string) ($user->email ?? '?'),
             (string) (session('ecopa.app_role') ?? 'NULL'),
             (int) ($user->assignments()?->whereNull('revoked_at')->count() ?? 0),
-            (int) \Akunta\Rbac\Models\Entity::query()->count(),
+            (int) Entity::query()->count(),
         );
 
         abort(403,
@@ -129,6 +132,10 @@ Route::get('/sso/login', function () {
 
 // Ecopa (Main Tier) SSO
 Route::middleware('web')->group(function () {
+    Route::get('/accounting/oauth/{provider}', [GoogleOAuthController::class, 'redirect'])
+        ->name('google.oauth.redirect');
+    Route::get('/accounting/oauth/callback/{provider}', [GoogleOAuthController::class, 'callback'])
+        ->name('google.oauth.callback');
     Route::get('/auth/ecopa/redirect', [EcopaController::class, 'redirect'])->name('ecopa.login');
     Route::get('/auth/ecopa/callback', [EcopaController::class, 'callback'])->name('ecopa.callback');
     Route::match(['get', 'post'], '/auth/ecopa/logout', function () {
@@ -140,7 +147,7 @@ Route::middleware('web')->group(function () {
         $redirect = url('/');
 
         return redirect()->away(
-            $base . '/oauth/logout?post_logout_redirect_uri=' . urlencode($redirect)
+            $base.'/oauth/logout?post_logout_redirect_uri='.urlencode($redirect)
         );
     })->name('ecopa.logout');
 });

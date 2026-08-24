@@ -1125,7 +1125,7 @@ Inspector access is enforced server-side: inspector cannot access the management
 
 The Technology & IT COA classifies ordinary economic accounts—cash, receivables, payables, operating revenue, COGS, substantiated expenses, prepaid tax, and definitive current-tax payable—as `both`. Management-only accruals, reserves, internal allocations, commercial-only depreciation/amortisation, current-income-tax expense, and current-tax payable provision are `intern`. Fiscal depreciation remains `fiskal`; fiscal corrections are presented from `fiscal_adjustments` and do not require ledger presentation accounts. Fake-data import never reclassifies an existing user-created account.
 
-Financial demo import requires an open period from the active entity. Every model created by the importer has an explicit `fake_data_records` marker. Clear Fake Data may follow only those markers within the same entity and must stop at dependencies that could contain manual data; a cross-entity or unverifiable marker never authorizes deletion.
+Generic financial demo import is no longer exposed for normal entities. Their Settings flow is limited to the Technology & IT COA and demo users required for impersonation. Every model created by either remaining importer has an explicit `fake_data_records` marker. Clear Fake Data may follow only those markers within the same entity and must stop at dependencies that could contain manual data; a cross-entity or unverifiable marker never authorizes deletion.
 
 ## Locked 2026-08-18 — Account descriptions are persisted domain metadata
 
@@ -1149,8 +1149,8 @@ A matching account code is not sufficient proof of semantic equivalence during T
 
 ## Locked 2026-08-21 — native PT. Fake Data entity
 
-Development seeding creates exactly one `PT. Fake Data` workspace in the local
-super-admin tenant. The entity carries an explicit `is_fake_data` database flag
+Application seeding creates exactly one `PT. Fake Data` workspace in the
+configured super-admin tenant. The entity carries an explicit `is_fake_data` database flag
 and an idempotently provisioned, entity-scoped dataset. It is not populated by
 an operator pressing Import All. Its records use the same models, APIs, tenant
 filters, reporting services, and dashboard queries as normal accounting data.
@@ -1160,17 +1160,45 @@ from that entity-period pair, and balance metrics are calculated as of the
 selected period end date. Static financial figures are not permitted.
 
 The native dataset covers all user-facing Accounting domains: complete
-Technology & IT COA with independent Intern/Fiskal availability, monthly
-periods, posted journals across current and previous periods, draft/submitted/
-rejected workflow samples, source references, journal templates and recurring
+Technology & IT COA with independent Intern/Fiskal availability, one open
+annual period (`Demo 2026`), posted journals plus draft/submitted/rejected/
+reversed workflow samples, source references, journal templates and recurring
 journals, fiscal corrections with evidence, tax and organizational dimensions,
 auto-mapping raw data and a saved rule, webhooks and delivery history, and demo
 users with explicit per-entity assignments. Every generated record has either
 the entity-level marker or a `fake_data_records` provenance marker.
+
+Entity switches discard the previous entity's active-period selection. The
+native demo therefore resolves to its sole 2026 period even when the source
+workspace was on 2028 or another year. Native recurring schedules are display
+samples only: the background recurring command excludes `is_fake_data`
+entities, while manual UI inspection of active/paused/ended examples remains
+available.
 
 Workspace availability is independent from the currently selected workspace.
 An admin may disable `PT. Fake Data` in Settings without disabling other
 entities; disabled entities remain manageable in Settings but are excluded from
 the toolbar selector. At least one workspace per tenant must remain active.
 Native demo data cannot be imported over or cleared through the generic fake
-data endpoints.
+data endpoints. Normal entities no longer receive Import All or any financial,
+period, template, recurring-journal, or auto-mapping demo import; only COA and
+impersonation-user provisioning remain.
+
+The native dataset is a versioned product fixture. Version `2026.1.0` is shown
+in the workspace selector and Settings together with its `Demo 2026` label.
+Admins restore it through a dedicated preview-and-reset flow, not through the
+generic importer cleanup. The preview reports marker counts, stale provenance,
+and unmarked records that will survive, and produces a fingerprint token. Reset
+requires both that token and the exact confirmation phrase; a changed snapshot
+returns a conflict. Deletion follows only verified `fake_data_records` markers
+for the same entity, executes with dependency-aware ordering in one transaction,
+re-provisions the target version, deletes obsolete attachment objects only after
+commit, and records `fake_data.dataset_reset` in the audit log. Manual records
+and cross-entity or unverifiable markers are never deletion authority.
+
+Native periods are immutable at the API boundary: create, update, close, reopen,
+and delete are rejected even if the UI is bypassed. Native `posted` and
+`reversed` journals and their attachments are also immutable. The SPA mirrors
+these constraints with lock notices and hidden mutation actions. Draft workflow
+examples remain interactive for permission-appropriate simulations, while the
+baseline is recovered only through the audited dataset reset.

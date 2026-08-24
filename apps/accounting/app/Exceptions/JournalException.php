@@ -8,7 +8,7 @@ class JournalException extends RuntimeException
 {
     public static function unbalanced(string $debit, string $credit): self
     {
-        return new self("Bagian Debit / Credit belum balance. Debit {$debit} tidak sama dengan Credit {$credit}.");
+        return new self("Bagian Debit / Credit belum balance (unbalanced). Debit {$debit} tidak sama dengan Credit {$credit}.");
     }
 
     public static function periodNotOpen(string $status): self

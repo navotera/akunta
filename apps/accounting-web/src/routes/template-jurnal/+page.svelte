@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { tenant } from '$lib/stores/tenant.svelte.js';
   import {
     templateApi,
     type JournalTemplateSummary,
@@ -21,7 +22,7 @@
 
   let items = $state<JournalTemplateSummary[]>([]);
   let accounts = $state<Account[]>([]);
-  let loading = $state(true);
+  let loading = $state(false);
   let error = $state<string | null>(null);
 
   let editing = $state<JournalTemplateDetail | null>(null);
@@ -72,20 +73,32 @@
 
   const blankLine = (): LineDraft => ({ account_id: '', side: 'debit', amount: '0', memo: '' });
 
-  async function load() {
+  let loadedTenantId = $state<string | null>(null);
+
+  async function load(tenantId: string) {
     loading = true;
     error = null;
     try {
       [items, accounts] = await Promise.all([
-        templateApi.list(50),
-        accountApi.list('', null, false),
+        templateApi.list(50, tenantId),
+        accountApi.list('', tenantId, false),
       ]);
+      loadedTenantId = tenantId;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+      items = [];
+      accounts = [];
     } finally {
       loading = false;
     }
   }
+
+  $effect(() => {
+    const activeTenantId = tenant.id;
+    if (activeTenantId && activeTenantId !== loadedTenantId && !loading) {
+      void load(activeTenantId);
+    }
+  });
 
   onMount(async () => {
     if (!auth.user) {
@@ -95,7 +108,6 @@
         return;
       }
     }
-    await load();
   });
 
   function openCreate() {
@@ -140,7 +152,7 @@
       if (editing) await templateApi.update(editing.id, payload);
       else await templateApi.create(payload);
       closeForm();
-      await load();
+      if (tenant.id) await load(tenant.id);
     } catch (e) {
       if (e instanceof ApiError) {
         const body = e.body as { errors?: Record<string, string[]> } | null;
@@ -156,7 +168,7 @@
     try {
       await templateApi.destroy(s.id);
       closeForm();
-      await load();
+      if (tenant.id) await load(tenant.id);
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -265,7 +277,8 @@
               </td>
               <td class="px-4 py-2 text-center">
                 <span
-                  class="rounded-full px-2 py-1 text-[0.7125rem] font-semibold {t.journal_mode === 'fiscal'
+                  class="rounded-full px-2 py-1 text-[0.7125rem] font-semibold {t.journal_mode ===
+                  'fiscal'
                     ? 'bg-warning-light text-warning'
                     : 'bg-paid-light text-paid'}"
                 >

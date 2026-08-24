@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
+use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Attachment;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
-use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class AttachmentController extends Controller
 {
+    use ProtectsNativeFakeData;
     use ResolvesTenant;
 
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -57,6 +59,10 @@ class AttachmentController extends Controller
         ]);
 
         $this->authorizeParent($request, $entity->id, $data['attachable_type'], $data['attachable_id'], true);
+        if ($data['attachable_type'] === Journal::class) {
+            $journal = Journal::query()->where('entity_id', $entity->id)->findOrFail($data['attachable_id']);
+            $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
+        }
 
         $file = $request->file('file');
         $disk = config('filesystems.default');
@@ -108,6 +114,10 @@ class AttachmentController extends Controller
         $entity = $this->resolveEntity($request);
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
         $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true);
+        if ($attachment->attachable_type === Journal::class) {
+            $journal = Journal::query()->where('entity_id', $entity->id)->findOrFail($attachment->attachable_id);
+            $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
+        }
 
         $attachment->delete();
 
@@ -137,7 +147,9 @@ class AttachmentController extends Controller
     private function auditAttachment(string $journalId, string $entityId, string $change): void
     {
         $journal = Journal::with('entries.account')->where('entity_id', $entityId)->find($journalId);
-        if (! $journal) return;
+        if (! $journal) {
+            return;
+        }
 
         $this->auditLogger->record('journal.attachment_changed', Journal::class, $journal->id, $entityId, [
             'snapshot' => [

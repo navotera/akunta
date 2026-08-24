@@ -17,7 +17,7 @@ class RecurringJournalController extends Controller
     public function index(Request $request): JsonResponse
     {
         $entityId = $request->query('entity_id');
-        $status   = $request->query('status'); // optional filter
+        $status = $request->query('status'); // optional filter
 
         $q = RecurringJournal::query()->orderBy('next_run_at');
         if ($entityId !== null) {
@@ -32,23 +32,25 @@ class RecurringJournalController extends Controller
         ]);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
-        return response()->json($this->serialize(RecurringJournal::findOrFail($id)));
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+
+        return response()->json($this->serialize(RecurringJournal::where('entity_id', $entityId)->findOrFail($id)));
     }
 
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'entity_id'   => 'required|string|size:26',
+            'entity_id' => 'required|string|size:26',
             'template_id' => 'required|string|size:26',
-            'name'        => 'required|string|max:255',
-            'frequency'   => 'required|in:'.implode(',', RecurringJournal::FREQUENCIES),
-            'day'         => 'nullable|integer|min:0|max:31',
-            'month'       => 'nullable|integer|min:1|max:12',
-            'start_date'  => 'required|date_format:Y-m-d',
-            'end_date'    => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
-            'auto_post'   => 'nullable|boolean',
+            'name' => 'required|string|max:255',
+            'frequency' => 'required|in:'.implode(',', RecurringJournal::FREQUENCIES),
+            'day' => 'nullable|integer|min:0|max:31',
+            'month' => 'nullable|integer|min:1|max:12',
+            'start_date' => 'required|date_format:Y-m-d',
+            'end_date' => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
+            'auto_post' => 'nullable|boolean',
         ]);
 
         /** @var ApiToken $token */
@@ -60,18 +62,18 @@ class RecurringJournalController extends Controller
         }
 
         $rec = RecurringJournal::create([
-            'entity_id'   => $data['entity_id'],
+            'entity_id' => $data['entity_id'],
             'template_id' => $data['template_id'],
-            'name'        => $data['name'],
-            'frequency'   => $data['frequency'],
-            'day'         => $data['day'] ?? null,
-            'month'       => $data['month'] ?? null,
-            'start_date'  => $data['start_date'],
-            'end_date'    => $data['end_date'] ?? null,
+            'name' => $data['name'],
+            'frequency' => $data['frequency'],
+            'day' => $data['day'] ?? null,
+            'month' => $data['month'] ?? null,
+            'start_date' => $data['start_date'],
+            'end_date' => $data['end_date'] ?? null,
             'next_run_at' => $data['start_date'],
-            'auto_post'   => $data['auto_post'] ?? false,
-            'status'      => RecurringJournal::STATUS_ACTIVE,
-            'created_by'  => $token->user_id,
+            'auto_post' => $data['auto_post'] ?? false,
+            'status' => RecurringJournal::STATUS_ACTIVE,
+            'created_by' => $token->user_id,
         ]);
 
         return response()->json($this->serialize($rec), 201);
@@ -79,12 +81,13 @@ class RecurringJournalController extends Controller
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $rec = RecurringJournal::findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $rec = RecurringJournal::where('entity_id', $entityId)->findOrFail($id);
 
         $data = $request->validate([
-            'name'       => 'nullable|string|max:255',
-            'end_date'   => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
-            'auto_post'  => 'nullable|boolean',
+            'name' => 'nullable|string|max:255',
+            'end_date' => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
+            'auto_post' => 'nullable|boolean',
         ]);
 
         $rec->fill(array_filter($data, fn ($v) => $v !== null))->save();
@@ -92,16 +95,18 @@ class RecurringJournalController extends Controller
         return response()->json($this->serialize($rec));
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
-        RecurringJournal::findOrFail($id)->delete();
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        RecurringJournal::where('entity_id', $entityId)->findOrFail($id)->delete();
 
         return response()->json(['deleted' => true]);
     }
 
-    public function pause(string $id): JsonResponse
+    public function pause(Request $request, string $id): JsonResponse
     {
-        $rec = RecurringJournal::findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $rec = RecurringJournal::where('entity_id', $entityId)->findOrFail($id);
 
         if ($rec->status === RecurringJournal::STATUS_ENDED) {
             return response()->json(['error' => 'cannot_pause_ended_schedule'], 422);
@@ -111,9 +116,10 @@ class RecurringJournalController extends Controller
         return response()->json($this->serialize($rec));
     }
 
-    public function resume(string $id): JsonResponse
+    public function resume(Request $request, string $id): JsonResponse
     {
-        $rec = RecurringJournal::findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $rec = RecurringJournal::where('entity_id', $entityId)->findOrFail($id);
 
         if ($rec->status === RecurringJournal::STATUS_ENDED) {
             return response()->json(['error' => 'cannot_resume_ended_schedule'], 422);
@@ -123,9 +129,10 @@ class RecurringJournalController extends Controller
         return response()->json($this->serialize($rec));
     }
 
-    public function run(string $id): JsonResponse
+    public function run(Request $request, string $id): JsonResponse
     {
-        $rec = RecurringJournal::findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $rec = RecurringJournal::where('entity_id', $entityId)->findOrFail($id);
         $journal = $this->runner->execute($rec);
 
         if ($journal === null) {
@@ -133,30 +140,30 @@ class RecurringJournalController extends Controller
         }
 
         return response()->json([
-            'ran'        => true,
+            'ran' => true,
             'journal_id' => $journal->id,
-            'status'     => $journal->status,
-            'next_run_at'=> $rec->fresh()->next_run_at?->toDateString(),
+            'status' => $journal->status,
+            'next_run_at' => $rec->fresh()->next_run_at?->toDateString(),
         ], 201);
     }
 
     private function serialize(RecurringJournal $r): array
     {
         return [
-            'id'              => $r->id,
-            'entity_id'       => $r->entity_id,
-            'template_id'     => $r->template_id,
-            'name'            => $r->name,
-            'frequency'       => $r->frequency,
-            'day'             => $r->day,
-            'month'           => $r->month,
-            'start_date'      => $r->start_date?->toDateString(),
-            'end_date'        => $r->end_date?->toDateString(),
-            'next_run_at'     => $r->next_run_at?->toDateString(),
-            'last_run_at'     => $r->last_run_at?->toIso8601String(),
+            'id' => $r->id,
+            'entity_id' => $r->entity_id,
+            'template_id' => $r->template_id,
+            'name' => $r->name,
+            'frequency' => $r->frequency,
+            'day' => $r->day,
+            'month' => $r->month,
+            'start_date' => $r->start_date?->toDateString(),
+            'end_date' => $r->end_date?->toDateString(),
+            'next_run_at' => $r->next_run_at?->toDateString(),
+            'last_run_at' => $r->last_run_at?->toIso8601String(),
             'last_journal_id' => $r->last_journal_id,
-            'status'          => $r->status,
-            'auto_post'       => $r->auto_post,
+            'status' => $r->status,
+            'auto_post' => $r->auto_post,
         ];
     }
 }

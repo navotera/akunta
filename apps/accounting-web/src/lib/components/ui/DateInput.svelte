@@ -42,7 +42,10 @@
   function open() {
     if (disabled) return;
     if (inputEl && typeof inputEl.showPicker === 'function') {
-      try { inputEl.showPicker(); return; } catch {}
+      try {
+        inputEl.showPicker();
+        return;
+      } catch {}
     }
     inputEl?.focus();
     inputEl?.click();

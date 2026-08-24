@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\ApiToken;
@@ -12,7 +14,19 @@ beforeEach(function () {
     $tenant = Tenant::create(['name' => 'Auto Mapping Tenant', 'slug' => 'am-'.uniqid()]);
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Auto Mapping Entity']);
     $this->user = User::create(['name' => 'Integration User', 'email' => 'am-'.uniqid().'@example.test', 'password_hash' => bcrypt('secret')]);
-    [$this->token, $this->plain] = ApiToken::issue(['name' => 'Auto mapping', 'user_id' => $this->user->id, 'permissions' => ['journal.create', 'journal.post']]);
+    $app = RbacApp::create(['code' => 'poso-'.uniqid(), 'name' => 'POSO', 'version' => '1.0', 'enabled' => true]);
+    $role = Role::create(['code' => 'integration-'.uniqid(), 'name' => 'Integration', 'is_preset' => false]);
+    $this->user->assignments()->create([
+        'entity_id' => $this->entity->id,
+        'app_id' => $app->id,
+        'role_id' => $role->id,
+    ]);
+    [$this->token, $this->plain] = ApiToken::issue([
+        'name' => 'Auto mapping',
+        'user_id' => $this->user->id,
+        'app_id' => $app->id,
+        'permissions' => ['journal.create', 'journal.post'],
+    ]);
 });
 
 it('stores an unmapped external payload before matching', function () {

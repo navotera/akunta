@@ -2,10 +2,7 @@ import { tokens } from '../../packages/akunta-ui/src/tokens/index.ts';
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    './src/**/*.{html,js,svelte,ts}',
-    '../../packages/akunta-ui/src/**/*.{js,ts,svelte}',
-  ],
+  content: ['./src/**/*.{html,js,svelte,ts}', '../../packages/akunta-ui/src/**/*.{js,ts,svelte}'],
   theme: {
     extend: {
       colors: {

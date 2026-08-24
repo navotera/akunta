@@ -4,6 +4,7 @@
   import { auth } from '$lib/stores/auth.svelte.js';
   import { periodApi, type Period, type PeriodInput } from '$lib/api/period.js';
   import { period } from '$lib/stores/period.svelte.js';
+  import { tenant } from '$lib/stores/tenant.svelte.js';
   import { ApiError } from '$lib/api/client.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { formatDate } from '$lib/utils/date.js';
@@ -22,6 +23,9 @@
   let totalPages = $derived(Math.max(1, Math.ceil(items.length / pageSize)));
   let visibleItems = $derived(items.slice((currentPage - 1) * pageSize, currentPage * pageSize));
   const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
+  const isNativeFake = $derived(
+    tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
+  );
 
   async function load() {
     loading = true;
@@ -150,14 +154,27 @@
       <p class="text-xs font-medium text-text-muted">Master / Periode</p>
       <h1 class="text-2xl font-bold">Periode Akuntansi</h1>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-      onclick={openCreate}
-    >
-      + Periode Baru
-    </button>
+    {#if !isNativeFake}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={openCreate}
+      >
+        + Periode Baru
+      </button>
+    {/if}
   </header>
+
+  {#if isNativeFake}
+    <div
+      class="mb-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
+      data-testid="native-demo-period-lock"
+    >
+      <strong>Periode Demo 2026 terkunci.</strong> Penambahan, perubahan, penutupan, dan penghapusan periode
+      dinonaktifkan untuk menjaga dataset simulasi tetap konsisten. Gunakan Reset Dataset Demo pada Settings
+      jika ingin memulihkan data bawaan.
+    </div>
+  {/if}
 
   {#if loading}
     <div class="text-text-muted">Memuat…</div>
@@ -180,8 +197,10 @@
         <tbody>
           {#each visibleItems as p, index (p.id)}
             <tr
-              class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-              onclick={() => openEdit(p)}
+              class="border-t border-border-soft {isNativeFake
+                ? ''
+                : 'cursor-pointer hover:bg-page-bg'}"
+              onclick={() => !isNativeFake && openEdit(p)}
             >
               <td class="px-4 py-2 text-text-muted">{(currentPage - 1) * pageSize + index + 1}</td>
               <td class="px-4 py-2 font-medium">{p.name}</td>
@@ -197,7 +216,7 @@
                     p.status,
                   )}"
                   onclick={(event) => togglePeriod(p, event)}
-                  disabled={!isAdmin || p.status === 'closing'}
+                  disabled={isNativeFake || !isAdmin || p.status === 'closing'}
                 >
                   <span
                     class="relative h-4 w-7 rounded-full {p.status === 'open'

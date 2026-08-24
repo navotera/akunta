@@ -14,6 +14,7 @@ use App\Models\AutoMappingRawData;
 use App\Models\AutoMappingRule;
 use App\Models\Branch;
 use App\Models\CostCenter;
+use App\Models\FakeDataRecord;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
 use App\Models\JournalEntry;
@@ -25,13 +26,17 @@ use App\Models\TaxCode;
 use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
+use App\Services\NativeFakeDataProvisioner;
+use App\Services\Reporting\CashFlowService;
+use App\Services\Reporting\IncomeStatementService;
 use App\Services\RequiredAccountService;
+use Database\Seeders\EcosystemBootstrapSeeder;
 use Database\Seeders\FakeDataEntitySeeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
-    Carbon::setTestNow('2026-08-21 10:00:00');
+    Carbon::setTestNow('2028-08-21 10:00:00');
     Storage::fake('local');
     config()->set('filesystems.default', 'local');
 
@@ -57,10 +62,13 @@ it('provisions PT. Fake Data as a complete native database-backed environment', 
         ->and($entity->is_fake_data)->toBeTrue()
         ->and($entity->is_active)->toBeTrue()
         ->and(data_get($entity->workspace_settings, 'bookkeeping_mode'))->toBe('independent_books')
+        ->and(data_get($entity->workspace_settings, 'native_fake_data_version'))->toBe(NativeFakeDataProvisioner::DATASET_VERSION)
         ->and(UserAppAssignment::query()->where('user_id', $owner->id)->where('entity_id', $entity->id)->exists())->toBeTrue()
-        ->and(Period::query()->where('entity_id', $entity->id)->count())->toBe(5)
+        ->and(Period::query()->where('entity_id', $entity->id)->count())->toBe(1)
         ->and(Period::query()->where('entity_id', $entity->id)->where('status', Period::STATUS_OPEN)->count())->toBe(1)
-        ->and(Period::query()->where('entity_id', $entity->id)->whereRaw('strftime(\'%m-%d\', start_date) = ?', ['01-01'])->count())->toBe(5)
+        ->and(Period::query()->where('entity_id', $entity->id)->value('name'))->toBe('Demo 2026')
+        ->and(Period::query()->where('entity_id', $entity->id)->firstOrFail()->start_date->toDateString())->toBe('2026-01-01')
+        ->and(Period::query()->where('entity_id', $entity->id)->firstOrFail()->end_date->toDateString())->toBe('2026-12-31')
         ->and(Account::query()->where('entity_id', $entity->id)->count())->toBeGreaterThan(80)
         ->and(Account::query()->where('entity_id', $entity->id)->where('system_key', RequiredAccountService::PREPAID_TAX)->value('availability'))->toBe('both')
         ->and(Account::query()->where('entity_id', $entity->id)->where('system_key', RequiredAccountService::CURRENT_TAX_PAYABLE_PROVISION)->value('availability'))->toBe('intern')
@@ -76,7 +84,9 @@ it('provisions PT. Fake Data as a complete native database-backed environment', 
         ->and(Journal::query()->where('entity_id', $entity->id)->where('status', Journal::STATUS_REVERSED)->exists())->toBeTrue()
         ->and(Journal::query()->where('entity_id', $entity->id)->where('type', Journal::TYPE_REVERSING)->exists())->toBeTrue()
         ->and(Journal::query()->where('entity_id', $entity->id)->where('type', Journal::TYPE_ADJUSTMENT)->exists())->toBeTrue()
-        ->and(Journal::query()->where('entity_id', $entity->id)->where('type', Journal::TYPE_CLOSING)->exists())->toBeTrue();
+        ->and(Journal::query()->where('entity_id', $entity->id)->where('type', Journal::TYPE_CLOSING)->exists())->toBeTrue()
+        ->and(Journal::query()->where('entity_id', $entity->id)->whereDate('date', '<', '2026-01-01')->exists())->toBeFalse()
+        ->and(Journal::query()->where('entity_id', $entity->id)->whereDate('date', '>', '2026-12-31')->exists())->toBeFalse();
 
     expect(CostCenter::query()->where('entity_id', $entity->id)->count())->toBe(4)
         ->and(Project::query()->where('entity_id', $entity->id)->count())->toBe(3)
@@ -107,8 +117,24 @@ it('provisions PT. Fake Data as a complete native database-backed environment', 
         ->assertJsonPath('data.entity_id', $entity->id);
 
     expect((float) $response->json('data.revenue.current'))->toBeGreaterThan(0)
-        ->and((float) $response->json('data.revenue.previous'))->toBeGreaterThan(0)
+        ->and($response->json('data.previous_period'))->toBeNull()
         ->and((float) $response->json('data.expenses.current'))->toBeGreaterThan(0);
+
+    $incomeStatement = app(IncomeStatementService::class)->compute(
+        $entity->id,
+        '2026-01-01',
+        '2026-12-31',
+        Journal::MODE_INTERNAL,
+    );
+    $cashFlow = app(CashFlowService::class)->compute(
+        $entity->id,
+        '2026-01-01',
+        '2026-12-31',
+        Journal::MODE_INTERNAL,
+    );
+    expect((float) $incomeStatement['revenue']['total'])->toBeGreaterThan(0)
+        ->and((float) $incomeStatement['expenses']['total'])->toBeGreaterThan(0)
+        ->and((float) $cashFlow['ending_cash'])->not->toBe(0.0);
 });
 
 it('is idempotent and does not reactivate a demo entity disabled by an admin', function () {
@@ -122,6 +148,60 @@ it('is idempotent and does not reactivate a demo entity disabled by an admin', f
     expect($entity->refresh()->is_active)->toBeFalse()
         ->and(Entity::query()->where('workspace_code', 'FAKE-DATA')->count())->toBe(1)
         ->and(Journal::query()->where('entity_id', $entity->id)->count())->toBe($journalCount);
+});
+
+it('is excluded from the generic ecosystem bootstrap on later seed runs', function () {
+    $this->seed(FakeDataEntitySeeder::class);
+    $entity = Entity::query()->where('workspace_code', 'FAKE-DATA')->firstOrFail();
+    $periodId = Period::query()->where('entity_id', $entity->id)->sole()->id;
+    $accountCount = Account::query()->where('entity_id', $entity->id)->count();
+
+    $this->seed(EcosystemBootstrapSeeder::class);
+
+    expect(Period::query()->where('entity_id', $entity->id)->count())->toBe(1)
+        ->and(Period::query()->where('entity_id', $entity->id)->sole()->id)->toBe($periodId)
+        ->and(Account::query()->where('entity_id', $entity->id)->count())->toBe($accountCount);
+});
+
+it('migrates legacy marked demo periods and journals into the sole 2026 period', function () {
+    $this->seed(FakeDataEntitySeeder::class);
+    $entity = Entity::query()->where('workspace_code', 'FAKE-DATA')->firstOrFail();
+    $target = Period::query()->where('entity_id', $entity->id)->sole();
+    $legacy = Period::create([
+        'entity_id' => $entity->id,
+        'name' => 'Demo 2025',
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-12-31',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+    FakeDataRecord::create([
+        'entity_id' => $entity->id,
+        'group_key' => 'periods',
+        'model_type' => Period::class,
+        'model_id' => $legacy->id,
+    ]);
+    $journal = Journal::create([
+        'entity_id' => $entity->id,
+        'period_id' => $legacy->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'LEGACY-DEMO-2025',
+        'date' => '2025-05-10',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+    FakeDataRecord::create([
+        'entity_id' => $entity->id,
+        'group_key' => 'journals',
+        'model_type' => Journal::class,
+        'model_id' => $journal->id,
+    ]);
+
+    $migration = require database_path('migrations/2026_08_24_000700_consolidate_native_fake_data_to_2026_period.php');
+    $migration->up();
+
+    expect(Period::query()->where('entity_id', $entity->id)->count())->toBe(1)
+        ->and($journal->refresh()->period_id)->toBe($target->id)
+        ->and($journal->date->toDateString())->toBe('2026-05-10');
 });
 
 it('repairs stale marked fake provision accounts without changing a manual account', function () {

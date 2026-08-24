@@ -1184,9 +1184,14 @@ export const documentationArticles: DocumentationArticle[] = [
       {
         title: 'Fake Data',
         paragraphs: [
-          'Gunakan data demo untuk belajar tanpa mengganggu transaksi manual. Data demo memiliki marker asal yang eksplisit.',
+          'PT. Fake Data menyediakan dataset lengkap dan berversi pada periode Demo 2026. Pada entitas biasa, import dibatasi ke COA dan akun impersonation.',
         ],
         bullets: [
+          'Saat berpindah ke PT. Fake Data, periode aktif otomatis menggunakan Demo 2026.',
+          'Jurnal berulang PT. Fake Data hanya contoh dan tidak dijalankan scheduler.',
+          'Periode serta jurnal Tersimpan/dibalik bersifat read-only di backend dan UI.',
+          'Gunakan Tinjau Reset Dataset untuk melihat data bertanda yang akan dibangun ulang dan data manual yang tetap dipertahankan.',
+          'Reset memerlukan frasa konfirmasi, menolak preview yang sudah berubah, dan dicatat di audit log.',
           'Clear Fake Data hanya menghapus record yang terbukti dibuat importer fake pada entitas yang sama.',
           'Data manual pengguna tidak boleh ikut terhapus.',
         ],

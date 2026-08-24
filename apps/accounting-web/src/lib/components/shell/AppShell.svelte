@@ -201,6 +201,7 @@
   );
   const currentEntity = $derived(tenant.available.find((item) => item.id === tenant.id));
   const currentEntityIsFake = $derived(currentEntity?.is_fake_data ?? false);
+  const currentDemoVersion = $derived(currentEntity?.demo_dataset_version ?? 'legacy');
   const issueReportUrl = $derived(currentEntity?.issue_report_url ?? null);
   const visibleGroups = $derived(
     isInspector
@@ -368,6 +369,10 @@
       goto('/settings');
       return;
     }
+    // A period selection belongs to exactly one entity. Clear it before the
+    // hard reload so switching from (for example) a 2028 workspace to the
+    // native demo deterministically selects its sole Demo 2026 period.
+    period.clear();
     tenant.switch(id);
     entityMenuOpen = false;
     // Force a hard reload so every onMount() refetches with the new tenant.
@@ -643,7 +648,7 @@
               {#if currentEntityIsFake}
                 <span
                   class="rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
-                  >Fake data</span
+                  data-testid="active-demo-version">Demo 2026 · v{currentDemoVersion}</span
                 >
               {/if}
               <span class="text-text-muted text-xs">▾</span>
@@ -670,6 +675,7 @@
                       onclick={() => pickEntity(t.id)}
                       role="option"
                       aria-selected={tenant.id === t.id}
+                      data-testid={`entity-option-${t.id}`}
                     >
                       <span
                         class="flex h-6 w-6 items-center justify-center rounded bg-primary-light text-xs font-bold text-primary"
@@ -686,7 +692,7 @@
                         {#if t.is_fake_data}
                           <span
                             class="rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
-                            >Fake data</span
+                            >Demo 2026 · v{t.demo_dataset_version ?? 'legacy'}</span
                           >
                         {/if}
                         {#if tenant.id === t.id}<span class="text-primary">✓</span>{/if}

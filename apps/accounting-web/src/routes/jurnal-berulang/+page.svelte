@@ -2,7 +2,12 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
-  import { recurringApi, type RecurringJournal, type RecurringInput, type Frequency } from '$lib/api/recurring.js';
+  import {
+    recurringApi,
+    type RecurringJournal,
+    type RecurringInput,
+    type Frequency,
+  } from '$lib/api/recurring.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
   import Combobox from '$lib/components/ui/Combobox.svelte';
@@ -17,33 +22,41 @@
   let editing = $state<RecurringJournal | null>(null);
   let creating = $state(false);
   let form = $state<RecurringInput>({
-    template_id: '', name: '', frequency: 'monthly', day: 1,
+    template_id: '',
+    name: '',
+    frequency: 'monthly',
+    day: 1,
     start_date: new Date().toISOString().slice(0, 10),
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
 
   async function load() {
-    loading = true; error = null;
+    loading = true;
+    error = null;
     try {
-      [items, templates] = await Promise.all([
-        recurringApi.list(),
-        templateApi.list(50),
-      ]);
-    } catch (e) { error = e instanceof Error ? e.message : String(e); }
-    finally { loading = false; }
+      [items, templates] = await Promise.all([recurringApi.list(), templateApi.list(50)]);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      loading = false;
+    }
   }
 
   onMount(async () => {
     if (!auth.user) {
       const u = await auth.refresh();
-      if (!u) { goto('/login', { replaceState: true }); return; }
+      if (!u) {
+        goto('/login', { replaceState: true });
+        return;
+      }
     }
     await load();
   });
 
   function openCreate() {
-    creating = true; editing = null;
+    creating = true;
+    editing = null;
     form = {
       template_id: templates[0]?.id ?? '',
       name: '',
@@ -55,7 +68,8 @@
   }
 
   function openEdit(r: RecurringJournal) {
-    creating = false; editing = r;
+    creating = false;
+    editing = r;
     form = {
       template_id: r.template_id,
       name: r.name,
@@ -70,10 +84,15 @@
     formErrors = null;
   }
 
-  function closeForm() { editing = null; creating = false; formErrors = null; }
+  function closeForm() {
+    editing = null;
+    creating = false;
+    formErrors = null;
+  }
 
   async function save() {
-    saving = true; formErrors = null;
+    saving = true;
+    formErrors = null;
     try {
       if (editing) await recurringApi.update(editing.id, form);
       else await recurringApi.create(form);
@@ -84,16 +103,28 @@
         const body = e.body as { errors?: Record<string, string[]> } | null;
         formErrors = body?.errors ?? null;
       } else formErrors = { _: [(e as Error).message] };
-    } finally { saving = false; }
+    } finally {
+      saving = false;
+    }
   }
 
   async function pause(r: RecurringJournal) {
-    try { await recurringApi.pause(r.id); closeForm(); await load(); }
-    catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    try {
+      await recurringApi.pause(r.id);
+      closeForm();
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   }
   async function resume(r: RecurringJournal) {
-    try { await recurringApi.resume(r.id); closeForm(); await load(); }
-    catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    try {
+      await recurringApi.resume(r.id);
+      closeForm();
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   }
   async function run(r: RecurringJournal) {
     if (!confirm(`Jalankan ${r.name} sekarang?`)) return;
@@ -103,18 +134,27 @@
       await load();
       if (res.journal_id) goto(`/journals/${res.journal_id}`);
       else alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
-    } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   }
   async function destroy(r: RecurringJournal) {
     if (!confirm(`Hapus ${r.name}?`)) return;
-    try { await recurringApi.destroy(r.id); closeForm(); await load(); }
-    catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    try {
+      await recurringApi.destroy(r.id);
+      closeForm();
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
   }
 
   function statusColor(s: RecurringJournal['status']): string {
-    return s === 'active' ? 'bg-paid-light text-paid'
-      : s === 'paused' ? 'bg-warning-light text-warning'
-      : 'bg-page-bg text-text-muted';
+    return s === 'active'
+      ? 'bg-paid-light text-paid'
+      : s === 'paused'
+        ? 'bg-warning-light text-warning'
+        : 'bg-page-bg text-text-muted';
   }
 
   function fieldErr(name: string): string | null {
@@ -143,7 +183,9 @@
   {#if loading}
     <div class="text-text-muted">Memuat…</div>
   {:else if error}
-    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">{error}</div>
+    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">
+      {error}
+    </div>
   {:else}
     <div class="overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs">
       <table class="w-full text-sm">
@@ -159,20 +201,33 @@
         </thead>
         <tbody>
           {#each items as r (r.id)}
-            <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => openEdit(r)}>
+            <tr
+              class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+              onclick={() => openEdit(r)}
+            >
               <td class="px-4 py-2 font-medium">{r.name}</td>
-              <td class="px-4 py-2 font-mono text-xs">{r.template_code ?? r.template_id.slice(0, 8)}</td>
+              <td class="px-4 py-2 font-mono text-xs"
+                >{r.template_code ?? r.template_id.slice(0, 8)}</td
+              >
               <td class="px-4 py-2 capitalize">{r.frequency}</td>
               <td class="px-4 py-2">{formatDate(r.start_date)}</td>
               <td class="px-4 py-2">{r.next_run_at ?? '—'}</td>
               <td class="px-4 py-2">
-                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(r.status)}">
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold {statusColor(
+                    r.status,
+                  )}"
+                >
                   {r.status}
                 </span>
               </td>
             </tr>
           {:else}
-            <tr><td colspan="6" class="px-4 py-10 text-center text-text-muted">Belum ada schedule.</td></tr>
+            <tr
+              ><td colspan="6" class="px-4 py-10 text-center text-text-muted"
+                >Belum ada schedule.</td
+              ></tr
+            >
           {/each}
         </tbody>
       </table>
@@ -181,28 +236,48 @@
 </div>
 
 {#if creating || editing}
-  <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4" onclick={closeForm}>
-    <div class="w-full max-w-lg rounded-lg bg-card-bg p-6 shadow-lg" onclick={(e) => e.stopPropagation()} role="dialog">
+  <div
+    class="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4"
+    onclick={closeForm}
+  >
+    <div
+      class="w-full max-w-lg rounded-lg bg-card-bg p-6 shadow-lg"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+    >
       <h2 class="mb-4 text-lg font-bold">{editing ? `Edit ${editing.name}` : 'Schedule Baru'}</h2>
       <div class="grid grid-cols-2 gap-3 text-sm">
         <label class="col-span-2">
           <span class="block font-medium mb-1">Template <span class="text-danger">*</span></span>
           <Combobox
-            options={templates.map((t) => ({ id: t.id, label: t.name, code: t.code, sublabel: t.description ?? null }))}
+            options={templates.map((t) => ({
+              id: t.id,
+              label: t.name,
+              code: t.code,
+              sublabel: t.description ?? null,
+            }))}
             value={form.template_id}
             placeholder="Cari template (kode atau nama)…"
             onSelect={(id) => (form.template_id = id)}
           />
-          {#if fieldErr('template_id')}<span class="text-xs text-danger">{fieldErr('template_id')}</span>{/if}
+          {#if fieldErr('template_id')}<span class="text-xs text-danger"
+              >{fieldErr('template_id')}</span
+            >{/if}
         </label>
         <label class="col-span-2">
           <span class="block font-medium mb-1">Nama <span class="text-danger">*</span></span>
-          <input class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.name} />
+          <input
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.name}
+          />
           {#if fieldErr('name')}<span class="text-xs text-danger">{fieldErr('name')}</span>{/if}
         </label>
         <label>
           <span class="block font-medium mb-1">Frekuensi</span>
-          <select class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.frequency}>
+          <select
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.frequency}
+          >
             <option value="daily">Harian</option>
             <option value="weekly">Mingguan</option>
             <option value="monthly">Bulanan</option>
@@ -212,7 +287,13 @@
         </label>
         <label>
           <span class="block font-medium mb-1">Tgl/Hari</span>
-          <input type="number" min="1" max="31" class="w-full rounded-md border border-border-default px-2 py-1.5" bind:value={form.day} />
+          <input
+            type="number"
+            min="1"
+            max="31"
+            class="w-full rounded-md border border-border-default px-2 py-1.5"
+            bind:value={form.day}
+          />
         </label>
         <label>
           <span class="block font-medium mb-1">Mulai <span class="text-danger">*</span></span>
@@ -220,7 +301,10 @@
         </label>
         <label>
           <span class="block font-medium mb-1">Selesai (opsional)</span>
-          <DateInput value={form.end_date ?? ''} onChange={(iso) => (form.end_date = iso || null)} />
+          <DateInput
+            value={form.end_date ?? ''}
+            onChange={(iso) => (form.end_date = iso || null)}
+          />
         </label>
         <label class="col-span-2 flex items-center gap-2">
           <input type="checkbox" bind:checked={form.auto_post} />
@@ -265,7 +349,11 @@
           {/if}
         </div>
         <div class="flex gap-2">
-          <button type="button" class="text-sm text-text-muted hover:text-text-default" onclick={closeForm}>Batal</button>
+          <button
+            type="button"
+            class="text-sm text-text-muted hover:text-text-default"
+            onclick={closeForm}>Batal</button
+          >
           <button
             type="button"
             class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"

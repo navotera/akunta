@@ -25,10 +25,15 @@ use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 final class NativeFakeDataProvisioner
 {
+    public const DATASET_VERSION = '2026.1.0';
+
+    public const DATASET_LABEL = 'Demo 2026';
+
     private const PROVENANCE_GROUP = 'native_fake_entity';
 
     public function __construct(
@@ -55,37 +60,38 @@ final class NativeFakeDataProvisioner
         $counts['users'] = $this->fakeData->import($entity, 'users');
         $counts['journal_templates'] = $this->fakeData->import($entity, 'journal_templates');
 
-        $periods = Period::query()
+        $demoPeriod = Period::query()
             ->where('entity_id', $entity->id)
-            ->orderBy('start_date')
-            ->get();
-        $currentPeriod = $periods->first(fn (Period $period): bool => now()->betweenIncluded($period->start_date, $period->end_date));
-        if (! $currentPeriod) {
-            throw new \RuntimeException('Periode berjalan PT. Fake Data tidak tersedia.');
-        }
+            ->whereDate('start_date', FakeDataService::NATIVE_DEMO_START)
+            ->whereDate('end_date', FakeDataService::NATIVE_DEMO_END)
+            ->firstOrFail();
+        $anchor = Carbon::parse(FakeDataService::NATIVE_DEMO_ANCHOR);
 
-        $counts['recurring_journals'] = $this->fakeData->import($entity, 'recurring_journals', $currentPeriod);
-        $counts['journals'] = 0;
-        foreach ($periods as $period) {
-            if ($period->start_date->isAfter(now()->endOfMonth())) {
-                continue;
-            }
-            $counts['journals'] += $this->fakeData->import($entity, 'journals', $period);
-        }
-        $counts['journal_lifecycle'] = $this->seedJournalLifecycle($entity, $owner);
+        $counts['recurring_journals'] = $this->fakeData->import($entity, 'recurring_journals', $demoPeriod);
+        $counts['journals'] = $this->fakeData->import($entity, 'journals', $demoPeriod);
+        $counts['journal_lifecycle'] = $this->seedJournalLifecycle($entity, $demoPeriod, $anchor, $owner);
         $counts['auto_mapping'] = $this->fakeData->import($entity, 'auto_mapping');
-        $counts['master_data'] = $this->seedMasterData($entity);
+        $counts['master_data'] = $this->seedMasterData($entity, $demoPeriod);
         $counts['integrations'] = $this->seedIntegrations($entity, $owner);
-        $counts['attachments'] = $this->seedAttachments($entity, $owner);
+        $counts['attachments'] = $this->seedAttachments($entity, $demoPeriod, $owner);
 
         $this->enrichJournalEntries($entity);
         $this->enrichAutoMapping($entity, $owner);
-        $this->setRepresentativeStatuses($entity, $owner);
+        $this->setRepresentativeStatuses($entity, $demoPeriod, $owner);
+
+        $workspaceSettings = is_array($entity->workspace_settings) ? $entity->workspace_settings : [];
+        $entity->forceFill([
+            'workspace_settings' => [
+                ...$workspaceSettings,
+                'native_fake_data' => true,
+                'native_fake_data_version' => self::DATASET_VERSION,
+            ],
+        ])->save();
 
         return $counts;
     }
 
-    private function seedMasterData(Entity $entity): int
+    private function seedMasterData(Entity $entity, Period $period): int
     {
         $before = FakeDataRecord::query()
             ->where('entity_id', $entity->id)
@@ -111,9 +117,9 @@ final class NativeFakeDataProvisioner
         }
 
         foreach ([
-            ['ERP-001', 'Implementasi ERP PT Maju Digital', now()->startOfYear(), now()->endOfYear(), Project::STATUS_ACTIVE],
-            ['SAAS-002', 'Pengembangan Produk SaaS Akunta', now()->startOfYear(), null, Project::STATUS_ACTIVE],
-            ['LEGACY-003', 'Migrasi Sistem Legacy', now()->subYear()->startOfYear(), now()->subYear()->endOfYear(), Project::STATUS_CLOSED],
+            ['ERP-001', 'Implementasi ERP PT Maju Digital', $period->start_date, $period->end_date, Project::STATUS_ACTIVE],
+            ['SAAS-002', 'Pengembangan Produk SaaS Akunta', $period->start_date, null, Project::STATUS_ACTIVE],
+            ['LEGACY-003', 'Migrasi Sistem Legacy', $period->start_date, Carbon::create(FakeDataService::NATIVE_DEMO_YEAR, 6, 30), Project::STATUS_CLOSED],
         ] as [$code, $name, $start, $end, $status]) {
             $project = Project::firstOrCreate(
                 ['entity_id' => $entity->id, 'code' => $code],
@@ -254,16 +260,12 @@ final class NativeFakeDataProvisioner
             ->count() - $before;
     }
 
-    private function seedAttachments(Entity $entity, ?User $owner): int
+    private function seedAttachments(Entity $entity, Period $period, ?User $owner): int
     {
         $targets = collect();
         $journal = Journal::query()
             ->where('entity_id', $entity->id)
-            ->where('period_id', Period::query()
-                ->where('entity_id', $entity->id)
-                ->whereDate('start_date', '<=', today())
-                ->whereDate('end_date', '>=', today())
-                ->value('id'))
+            ->where('period_id', $period->id)
             ->where('journal_mode', Journal::MODE_INTERNAL)
             ->where('status', Journal::STATUS_POSTED)
             ->first();
@@ -313,19 +315,14 @@ final class NativeFakeDataProvisioner
         return $created;
     }
 
-    private function seedJournalLifecycle(Entity $entity, ?User $owner): int
+    private function seedJournalLifecycle(Entity $entity, Period $period, Carbon $anchor, ?User $owner): int
     {
-        $period = Period::query()
-            ->where('entity_id', $entity->id)
-            ->whereDate('start_date', '<=', today())
-            ->whereDate('end_date', '>=', today())
-            ->first();
         $accounts = Account::query()
             ->where('entity_id', $entity->id)
             ->whereIn('code', ['1501', '2101', '3201', '4101', '6202'])
             ->get()
             ->keyBy('code');
-        if (! $period || $accounts->count() < 5) {
+        if ($accounts->count() < 5) {
             return 0;
         }
 
@@ -339,7 +336,7 @@ final class NativeFakeDataProvisioner
                 'journal_mode' => Journal::MODE_INTERNAL,
                 'number' => 'DEMO-LIFECYCLE-ORIGINAL',
                 'transaction_code' => 'DEMO-LIFECYCLE-REVERSAL',
-                'date' => today(),
+                'date' => $anchor->toDateString(),
                 'reference' => 'FAKE-REVERSAL',
                 'memo' => 'Pembelian perangkat yang kemudian dibatalkan',
                 'source_app' => 'fake-data',
@@ -365,7 +362,7 @@ final class NativeFakeDataProvisioner
                 'journal_mode' => Journal::MODE_INTERNAL,
                 'number' => 'DEMO-LIFECYCLE-REVERSING',
                 'transaction_code' => 'DEMO-LIFECYCLE-REVERSING',
-                'date' => today(),
+                'date' => $anchor->toDateString(),
                 'reference' => 'FAKE-REVERSAL-R',
                 'memo' => 'Pembatalan pembelian perangkat demo',
                 'source_app' => 'fake-data',
@@ -400,7 +397,7 @@ final class NativeFakeDataProvisioner
                     'journal_mode' => Journal::MODE_INTERNAL,
                     'number' => 'DEMO-LIFECYCLE-'.$suffix,
                     'transaction_code' => 'DEMO-LIFECYCLE-'.$suffix,
-                    'date' => today(),
+                    'date' => $anchor->toDateString(),
                     'reference' => 'FAKE-'.$suffix,
                     'memo' => $memo,
                     'source_app' => 'fake-data',
@@ -430,7 +427,7 @@ final class NativeFakeDataProvisioner
                 [
                     'journal_id' => $fiscalJournal->id,
                     'account_id' => $accounts['6202']->id,
-                    'date' => today(),
+                    'date' => $anchor->toDateString(),
                     'direction' => FiscalAdjustment::DIRECTION_NEGATIVE,
                     'amount' => 1_500_000,
                     'reason' => 'Simulasi pengurang penghasilan neto fiskal yang telah didukung bukti.',
@@ -535,16 +532,13 @@ final class NativeFakeDataProvisioner
             ])->save();
     }
 
-    private function setRepresentativeStatuses(Entity $entity, ?User $owner): void
+    private function setRepresentativeStatuses(Entity $entity, Period $period, ?User $owner): void
     {
-        Period::query()
-            ->where('entity_id', $entity->id)
-            ->whereDate('end_date', '<', now()->startOfMonth())
-            ->update([
-                'status' => Period::STATUS_CLOSED,
-                'closed_at' => now(),
-                'closed_by' => $owner?->id,
-            ]);
+        $period->forceFill([
+            'status' => Period::STATUS_OPEN,
+            'closed_at' => null,
+            'closed_by' => null,
+        ])->save();
 
         RecurringJournal::query()
             ->where('entity_id', $entity->id)

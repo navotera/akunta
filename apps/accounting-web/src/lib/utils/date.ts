@@ -34,7 +34,7 @@ export function formatDate(iso: string, format = getDateFormat()): string {
         ? `${month}/${day}/${year}`
         : format === 'YYYY-MM-DD'
           ? `${year}-${month}-${day}`
-        : `${day} ${monthShort} ${year}`;
+          : `${day} ${monthShort} ${year}`;
 }
 
 export function formatDateTime(iso: string, format = getDateFormat()): string {

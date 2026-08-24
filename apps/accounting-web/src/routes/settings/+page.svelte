@@ -5,16 +5,21 @@
   import { isEcopaIntegrationEnabled } from '$lib/api/client.js';
   import { DEFAULT_DATE_FORMAT, formatDate } from '$lib/utils/date.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
+  import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { workspaceApi, type WorkspaceRecord } from '$lib/api/workspace.js';
   import FormatTokenInput from '$lib/components/ui/FormatTokenInput.svelte';
-  import { fakeDataApi, type FakeDataGroup, type FakeUser } from '$lib/api/fake-data.js';
-  import { periodApi, type Period } from '$lib/api/period.js';
+  import {
+    fakeDataApi,
+    type FakeDataGroup,
+    type FakeDatasetInfo,
+    type FakeDatasetResetPreview,
+    type FakeUser,
+  } from '$lib/api/fake-data.js';
   import {
     getWorkspaceTheme,
     applyWorkspaceTheme,
     workspaceThemes,
-    type WorkspaceTheme,
   } from '$lib/stores/theme.svelte.js';
 
   type SettingSection =
@@ -93,20 +98,30 @@
   let issueReportUrl = $state('');
   let issueReportSaving = $state(false);
   let workspaceError = $state<string | null>(null);
-  let isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
+  let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
   let fakeDataBusy = $state<string | null>(null);
   let fakeDataMessage = $state<string | null>(null);
   let fakeUsers = $state<FakeUser[]>([]);
-  let openPeriods = $state<Period[]>([]);
-  let fakePeriodModalOpen = $state(false);
-  let pendingFakeImport = $state<'all' | string | null>(null);
-  let selectedFakePeriodId = $state('');
+  let fakeDataset = $state<FakeDatasetInfo | null>(null);
+  let resetPreview = $state<FakeDatasetResetPreview | null>(null);
+  let resetPreviewLoading = $state(false);
+  let resetConfirmation = $state('');
+  let resetBusy = $state(false);
   let displayedWorkspaces = $derived(
     isAdmin && workspaceRecords.length > 0 ? workspaceRecords : tenant.available,
   );
   let currentWorkspaceIsFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
+  );
+  let canManageFakeData = $derived(
+    Boolean(
+      auth.user?.is_sso_admin ||
+      auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
+    ),
+  );
+  let visibleSections = $derived(
+    sections.filter((section) => section.id !== 'fake-data' || canManageFakeData),
   );
 
   function selectLogo(event: Event) {
@@ -155,16 +170,7 @@
       applyWorkspaceTheme(tenant.id, themeColor);
     }
     if (isAdmin) void loadWorkspaces();
-    void loadFakeData();
-    void loadOpenPeriods();
-  }
-
-  async function loadOpenPeriods() {
-    try {
-      openPeriods = await periodApi.list('open', tenant.id);
-    } catch (error) {
-      fakeDataMessage = error instanceof Error ? error.message : 'Gagal memuat periode terbuka.';
-    }
+    if (canManageFakeData) void loadFakeData();
   }
 
   async function loadFakeData() {
@@ -172,6 +178,7 @@
       const result = await fakeDataApi.list(tenant.id);
       fakeDataGroups = result.groups;
       fakeUsers = result.users;
+      fakeDataset = result.dataset;
 
       // Older demo imports predate the Inspector account. Re-run the scoped
       // users importer once when the demo group already exists so the account
@@ -181,7 +188,7 @@
         user.roles.some((role) => role.toLowerCase() === 'inspector'),
       );
       if (usersGroup && usersGroup.count > 0 && !hasInspector) {
-        const refreshed = await fakeDataApi.import('users', null, tenant.id);
+        const refreshed = await fakeDataApi.import('users', tenant.id);
         fakeDataGroups = refreshed.groups;
         fakeUsers = refreshed.users;
       }
@@ -190,45 +197,59 @@
     }
   }
 
-  function requestFakeDataImport(group?: string) {
-    const requiresPeriod = group
-      ? (fakeDataGroups.find((item) => item.key === group)?.requires_period ?? false)
-      : true;
-    if (!requiresPeriod) {
-      void importFakeData(group);
-      return;
-    }
-    if (openPeriods.length === 0) {
-      fakeDataMessage = 'Buat atau import periode akuntansi terbuka terlebih dahulu.';
-      return;
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    selectedFakePeriodId =
-      openPeriods.find((period) => period.start_date <= today && period.end_date >= today)?.id ??
-      openPeriods[0].id;
-    pendingFakeImport = group ?? 'all';
-    fakePeriodModalOpen = true;
-  }
-
-  async function confirmFakeDataImport() {
-    if (!pendingFakeImport || !selectedFakePeriodId) return;
-    const target = pendingFakeImport;
-    fakePeriodModalOpen = false;
-    pendingFakeImport = null;
-    await importFakeData(target === 'all' ? undefined : target, selectedFakePeriodId);
-  }
-
-  async function importFakeData(group?: string, periodId?: string | null) {
-    fakeDataBusy = group ?? 'all';
+  async function previewDatasetReset() {
+    resetPreviewLoading = true;
     fakeDataMessage = null;
     try {
-      const result = group
-        ? await fakeDataApi.import(group, periodId, tenant.id)
-        : await fakeDataApi.importAll(periodId ?? '', tenant.id);
+      resetPreview = await fakeDataApi.resetPreview(tenant.id);
+      resetConfirmation = '';
+    } catch (error) {
+      fakeDataMessage = error instanceof Error ? error.message : 'Preview reset dataset gagal.';
+    } finally {
+      resetPreviewLoading = false;
+    }
+  }
+
+  async function resetNativeDataset() {
+    if (!resetPreview || resetConfirmation !== resetPreview.confirmation_phrase) return;
+    resetBusy = true;
+    fakeDataMessage = null;
+    try {
+      const result = await fakeDataApi.reset(
+        {
+          confirmation: resetConfirmation,
+          expected_version: resetPreview.target_version,
+          preview_token: resetPreview.preview_token,
+        },
+        tenant.id,
+      );
+      resetPreview = null;
+      resetConfirmation = '';
+      fakeDataMessage = `${result.message} ${result.deleted} record dikeluarkan dan ${result.created} record dibangun ulang.`;
+      period.clear();
+      await Promise.all([loadFakeData(), auth.refresh()]);
+      await period.refresh();
+    } catch (error) {
+      fakeDataMessage = error instanceof Error ? error.message : 'Reset dataset gagal.';
+    } finally {
+      resetBusy = false;
+    }
+  }
+
+  function fakeGroupLabel(key: string): string {
+    return (
+      fakeDataGroups.find((group) => group.key === key)?.label ??
+      (key === 'native_fake_entity' ? 'Master Data, Integrasi & Lampiran' : key)
+    );
+  }
+
+  async function importFakeData(group: string) {
+    fakeDataBusy = group;
+    fakeDataMessage = null;
+    try {
+      const result = await fakeDataApi.import(group, tenant.id);
       fakeDataGroups = result.groups;
       fakeUsers = result.users;
-      if (group === 'periods') await loadOpenPeriods();
       fakeDataMessage = `Berhasil mengimpor ${result.created ?? 0} data fake.`;
     } catch (error) {
       fakeDataMessage = error instanceof Error ? error.message : 'Import fake data gagal.';
@@ -579,7 +600,7 @@
 
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-[16rem_1fr]">
     <nav class="ak-card h-fit p-2" aria-label="Kategori pengaturan">
-      {#each sections as section (section.id)}
+      {#each visibleSections as section (section.id)}
         <button
           type="button"
           class="ak-settings-nav-item flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors {activeSection ===
@@ -588,6 +609,7 @@
             : 'text-text-muted hover:text-primary-active'}"
           onclick={() => selectSection(section.id)}
           aria-current={activeSection === section.id ? 'page' : undefined}
+          data-testid={`settings-nav-${section.id}`}
         >
           <span class="w-5 text-center text-base" aria-hidden="true">{section.icon}</span>
           <span class="min-w-0">
@@ -1370,26 +1392,54 @@
           <div
             class="mt-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
           >
-            <strong>Dataset bawaan aktif.</strong> PT. Fake Data sudah berisi data native untuk seluruh
-            alur aplikasi. Import dan Clear Fake Data dinonaktifkan agar dataset demo ini tetap utuh.
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <strong>Dataset bawaan aktif.</strong>
+                  <span
+                    class="rounded-full border border-warning/30 bg-card-bg px-2.5 py-1 text-xs font-bold text-warning"
+                    data-testid="demo-dataset-version"
+                  >
+                    {fakeDataset?.label ?? 'Demo 2026'} · v{fakeDataset?.version ?? 'legacy'}
+                  </span>
+                </div>
+                <p class="mt-2 leading-6">
+                  PT. Fake Data berisi satu periode Demo 2026. Periode dan jurnal Tersimpan bersifat
+                  read-only. Jurnal berulang hanya contoh dan tidak diproses scheduler.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-md border border-warning/40 bg-card-bg px-3 py-2 text-sm font-semibold text-warning hover:border-warning disabled:opacity-50"
+                onclick={previewDatasetReset}
+                disabled={resetPreviewLoading || resetBusy}
+                data-testid="preview-demo-reset"
+              >
+                {resetPreviewLoading ? 'Menyiapkan preview…' : 'Tinjau Reset Dataset'}
+              </button>
+            </div>
+          </div>
+          <div class="mt-4 grid gap-3 sm:grid-cols-3">
+            <div class="rounded-md border border-border-soft bg-card-bg p-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Periode</p>
+              <p class="mt-1 text-sm font-bold">Demo 2026 terkunci</p>
+            </div>
+            <div class="rounded-md border border-border-soft bg-card-bg p-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Jurnal</p>
+              <p class="mt-1 text-sm font-bold">Tersimpan read-only</p>
+            </div>
+            <div class="rounded-md border border-border-soft bg-card-bg p-3">
+              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Pemulihan</p>
+              <p class="mt-1 text-sm font-bold">Marker-only &amp; diaudit</p>
+            </div>
           </div>
         {:else}
           <div
             class="mt-5 rounded-md border border-[#c27a00]/60 bg-[#fff4cc] p-4 text-sm font-medium text-[#6b3f00]"
           >
-            Semua data yang diimpor dari halaman ini memiliki penanda khusus di database. Tombol
-            hapus hanya menghapus record bertanda fake; data yang dimasukkan manual oleh user tidak
-            akan dihapus.
-          </div>
-          <div class="mt-5 flex justify-end">
-            <button
-              type="button"
-              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-              onclick={() => requestFakeDataImport()}
-              disabled={fakeDataBusy !== null}
-            >
-              {fakeDataBusy === 'all' ? 'Mengimpor…' : 'Import All'}
-            </button>
+            Import dataset keuangan demo telah dinonaktifkan untuk entitas biasa. Halaman ini hanya
+            menyediakan COA Teknologi &amp; IT dan akun khusus untuk menguji impersonation. Tombol
+            hapus tetap mengikuti marker provenance sehingga data manual user tidak ikut terhapus.
           </div>
           <div class="mt-4 space-y-3">
             {#each fakeDataGroups as group (group.key)}
@@ -1399,12 +1449,6 @@
                 <div>
                   <h3 class="text-sm font-semibold">{group.label}</h3>
                   <p class="mt-1 text-sm text-text-muted">{group.description}</p>
-                  {#if group.requires_period}
-                    <span
-                      class="mt-2 mr-2 inline-flex rounded-full bg-warning-light px-2 py-1 text-xs font-medium text-warning"
-                      >Pilih periode saat import</span
-                    >
-                  {/if}
                   <span
                     class="mt-2 inline-flex rounded-full bg-page-bg px-2 py-1 text-xs text-text-muted"
                     >{group.count} data fake tersimpan</span
@@ -1420,13 +1464,136 @@
                   <button
                     type="button"
                     class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                    onclick={() => requestFakeDataImport(group.key)}
+                    onclick={() => importFakeData(group.key)}
                     disabled={fakeDataBusy !== null}
-                    >{fakeDataBusy === group.key ? 'Mengimpor…' : 'Import Now'}</button
+                    >{fakeDataBusy === group.key
+                      ? 'Mengimpor…'
+                      : group.key === 'users'
+                        ? 'Siapkan Akun'
+                        : 'Import COA'}</button
                   >
                 </div>
               </div>
             {/each}
+          </div>
+        {/if}
+        {#if resetPreview}
+          <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            role="presentation"
+            onclick={(event) =>
+              event.currentTarget === event.target && !resetBusy && (resetPreview = null)}
+          >
+            <div
+              class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-card-bg p-6 shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reset-demo-title"
+              data-testid="demo-reset-dialog"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-warning">
+                    Preview operasi destructive terkontrol
+                  </p>
+                  <h3 id="reset-demo-title" class="mt-1 text-xl font-bold">
+                    Reset Dataset Demo 2026
+                  </h3>
+                  <p class="mt-2 text-sm leading-6 text-text-muted">
+                    Hanya record dengan marker provenance PT. Fake Data yang dihapus. Record manual
+                    tetap dipertahankan, lalu dataset versi {resetPreview.target_version} dibangun ulang
+                    dan dicatat pada audit log.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="rounded-md px-2 py-1 text-xl text-text-muted hover:bg-page-bg"
+                  onclick={() => (resetPreview = null)}
+                  disabled={resetBusy}
+                  aria-label="Tutup preview reset">×</button
+                >
+              </div>
+
+              <div class="mt-5 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-md bg-page-bg p-3">
+                  <p class="text-xs text-text-muted">Versi saat ini</p>
+                  <p class="mt-1 font-bold">v{resetPreview.current_version}</p>
+                </div>
+                <div class="rounded-md bg-page-bg p-3">
+                  <p class="text-xs text-text-muted">Versi tujuan</p>
+                  <p class="mt-1 font-bold">v{resetPreview.target_version}</p>
+                </div>
+                <div class="rounded-md bg-page-bg p-3">
+                  <p class="text-xs text-text-muted">Record bermarker</p>
+                  <p class="mt-1 font-bold">{resetPreview.managed_records.total}</p>
+                </div>
+              </div>
+
+              <div class="mt-5 grid gap-5 md:grid-cols-2">
+                <div>
+                  <h4 class="text-sm font-semibold">Record yang dikelola reset</h4>
+                  <div class="mt-2 space-y-1.5">
+                    {#each Object.entries(resetPreview.managed_records.groups) as [key, count]}
+                      <div class="flex justify-between rounded-md bg-page-bg px-3 py-2 text-sm">
+                        <span>{fakeGroupLabel(key)}</span><strong>{count}</strong>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+                <div>
+                  <h4 class="text-sm font-semibold">Record manual yang dipertahankan</h4>
+                  <div class="mt-2 space-y-1.5">
+                    {#each Object.entries(resetPreview.preserved_manual_records) as [key, count]}
+                      <div class="flex justify-between rounded-md bg-page-bg px-3 py-2 text-sm">
+                        <span>{fakeGroupLabel(key)}</span><strong>{count}</strong>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+
+              {#if resetPreview.managed_records.stale_markers > 0}
+                <p
+                  class="mt-4 rounded-md border border-warning/30 bg-warning-light p-3 text-sm text-warning"
+                >
+                  {resetPreview.managed_records.stale_markers} marker lama tidak lagi memiliki record
+                  sumber dan akan dibersihkan.
+                </p>
+              {/if}
+
+              <label class="mt-5 block">
+                <span class="text-sm font-semibold">
+                  Ketik <code class="rounded bg-page-bg px-1.5 py-0.5"
+                    >{resetPreview.confirmation_phrase}</code
+                  >
+                  untuk mengonfirmasi
+                </span>
+                <input
+                  class="mt-2 w-full rounded-md border border-border-default px-3 py-2 text-sm"
+                  bind:value={resetConfirmation}
+                  autocomplete="off"
+                  data-testid="demo-reset-confirmation"
+                />
+              </label>
+
+              <div class="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-4 py-2 text-sm font-semibold"
+                  onclick={() => (resetPreview = null)}
+                  disabled={resetBusy}>Batal</button
+                >
+                <button
+                  type="button"
+                  class="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  onclick={resetNativeDataset}
+                  disabled={resetBusy || resetConfirmation !== resetPreview.confirmation_phrase}
+                  data-testid="execute-demo-reset"
+                >
+                  {resetBusy ? 'Mereset dataset…' : 'Reset dan Bangun Ulang'}
+                </button>
+              </div>
+            </div>
           </div>
         {/if}
         {#if fakeDataMessage}<p class="mt-4 text-sm text-paid" role="status">
@@ -1459,8 +1626,8 @@
               </div>
             {:else}
               <p class="text-sm text-text-muted">
-                Klik <span class="font-semibold">Import Now</span> pada kelompok User &amp; Roles Demo
-                terlebih dahulu untuk menambahkan akun Inspector.
+                Klik <span class="font-semibold">Siapkan Akun</span> pada kelompok User &amp; Roles Demo
+                untuk menambahkan akun operator, supervisor, dan Inspector.
               </p>
             {/each}
           </div>
@@ -1550,56 +1717,3 @@
     </section>
   </div>
 </div>
-
-{#if fakePeriodModalOpen}
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-    role="presentation"
-    onclick={(event) => {
-      if (event.currentTarget === event.target) fakePeriodModalOpen = false;
-    }}
-  >
-    <div
-      class="w-full max-w-md rounded-xl border border-border-default bg-card-bg p-6 shadow-xl"
-      role="dialog"
-      tabindex="-1"
-      aria-modal="true"
-      aria-labelledby="fake-period-title"
-    >
-      <h2 id="fake-period-title" class="text-lg font-bold">Pilih Periode Fake Data</h2>
-      <p class="mt-1 text-sm text-text-muted">
-        Jurnal, saldo laporan, dan jadwal berulang akan dibuat hanya pada periode yang dipilih. Agar
-        dashboard bulan berjalan terisi, pilih periode yang mencakup hari ini.
-      </p>
-      <label class="mt-5 block text-sm">
-        <span class="mb-1 block font-medium">Periode akuntansi terbuka</span>
-        <select
-          class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2"
-          bind:value={selectedFakePeriodId}
-        >
-          {#each openPeriods as period (period.id)}
-            <option value={period.id}>
-              {period.name} · {formatDate(period.start_date)} – {formatDate(period.end_date)}
-            </option>
-          {/each}
-        </select>
-      </label>
-      <div class="mt-6 flex justify-end gap-2">
-        <button
-          type="button"
-          class="rounded-md border border-border-default px-4 py-2 text-sm font-semibold"
-          onclick={() => {
-            fakePeriodModalOpen = false;
-            pendingFakeImport = null;
-          }}>Batal</button
-        >
-        <button
-          type="button"
-          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-          disabled={!selectedFakePeriodId}
-          onclick={confirmFakeDataImport}>Import Fake Data</button
-        >
-      </div>
-    </div>
-  </div>
-{/if}

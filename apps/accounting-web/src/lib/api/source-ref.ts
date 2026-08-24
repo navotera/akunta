@@ -45,10 +45,9 @@ export const sourceRefApi = {
     if (filter.ref_type) params.set('ref_type', filter.ref_type);
     if (filter.q) params.set('q', filter.q);
     const qs = params.toString();
-    return api<{ data: SourceRefRegistryItem[] }>(
-      `/api/v1/spa/source-refs${qs ? `?${qs}` : ''}`,
-      { tenantSlug },
-    ).then((r) => r.data);
+    return api<{ data: SourceRefRegistryItem[] }>(`/api/v1/spa/source-refs${qs ? `?${qs}` : ''}`, {
+      tenantSlug,
+    }).then((r) => r.data);
   },
 
   aggregate: (

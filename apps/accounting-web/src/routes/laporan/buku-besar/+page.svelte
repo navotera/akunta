@@ -107,15 +107,27 @@
       accountApi.list('', undefined, true, 'internal'),
       accountApi.list('', undefined, true, 'fiscal'),
     ]);
-    return [...new Map([...internal, ...fiscal].map((account) => [account.id, account])).values()]
-      .sort((a, b) => a.code.localeCompare(b.code));
+    return [
+      ...new Map([...internal, ...fiscal].map((account) => [account.id, account])).values(),
+    ].sort((a, b) => a.code.localeCompare(b.code));
   }
 
   function comparisonLines(internal: GeneralLedgerData, fiscal: GeneralLedgerData) {
     return [
-      ...internal.lines.map((line) => ({ key: `internal-${line.line_id}`, book: 'internal' as const, line })),
-      ...fiscal.lines.map((line) => ({ key: `fiscal-${line.line_id}`, book: 'fiscal' as const, line })),
-    ].sort((a, b) => a.line.date.localeCompare(b.line.date) || a.line.number.localeCompare(b.line.number));
+      ...internal.lines.map((line) => ({
+        key: `internal-${line.line_id}`,
+        book: 'internal' as const,
+        line,
+      })),
+      ...fiscal.lines.map((line) => ({
+        key: `fiscal-${line.line_id}`,
+        book: 'fiscal' as const,
+        line,
+      })),
+    ].sort(
+      (a, b) =>
+        a.line.date.localeCompare(b.line.date) || a.line.number.localeCompare(b.line.number),
+    );
   }
 
   async function deriveKnownPairs(): Promise<void> {
@@ -320,8 +332,14 @@
         </tr>
         <tr>
           {#each ['Debit', 'Kredit', 'Saldo'] as group (group)}
-            <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
-            <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
+            <th
+              class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]"
+              >Intern</th
+            >
+            <th
+              class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]"
+              >Fiskal</th
+            >
           {/each}
         </tr>
       </thead>
@@ -332,20 +350,39 @@
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.opening)}</td>
         </tr>
         {#each comparisonLines(report, fiscal) as item (item.key)}
-          <tr class="cursor-pointer border-t border-border-soft hover:bg-page-bg" onclick={() => goto(`/journals/${item.line.journal_id}`)}>
+          <tr
+            class="cursor-pointer border-t border-border-soft hover:bg-page-bg"
+            onclick={() => goto(`/journals/${item.line.journal_id}`)}
+          >
             <td class="px-4 py-2">{formatDate(item.line.date)}</td>
             <td class="px-4 py-2 font-mono">{item.line.number}</td>
             <td class="px-4 py-2">{item.line.line_memo ?? item.line.journal_memo ?? '—'}</td>
             <td class="px-4 py-2 text-text-muted">{fmtSourceCell(item.line)}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.debit : '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.debit : '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.credit : '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.credit : '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'internal' ? item.line.balance : '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(item.book === 'fiscal' ? item.line.balance : '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'internal' ? item.line.debit : '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'fiscal' ? item.line.debit : '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'internal' ? item.line.credit : '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'fiscal' ? item.line.credit : '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'internal' ? item.line.balance : '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(item.book === 'fiscal' ? item.line.balance : '0')}</td
+            >
           </tr>
         {:else}
-          <tr><td colspan="10" class="px-4 py-10 text-center text-text-muted">Tidak ada transaksi pada rentang ini.</td></tr>
+          <tr
+            ><td colspan="10" class="px-4 py-10 text-center text-text-muted"
+              >Tidak ada transaksi pada rentang ini.</td
+            ></tr
+          >
         {/each}
       </tbody>
       <tfoot class="bg-page-bg font-semibold">

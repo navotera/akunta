@@ -24,6 +24,18 @@ trait ResolvesTenant
             throw ValidationException::withMessages(['tenant' => 'Tenant not resolvable.']);
         }
 
+        $user = Auth::user();
+        $canAccess = $user?->assignments()
+            ->whereNull('revoked_at')
+            ->where(function ($query) use ($entity): void {
+                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+            })
+            ->exists() ?? false;
+
+        if (! $canAccess) {
+            throw ValidationException::withMessages(['tenant' => 'Tenant is not accessible.']);
+        }
+
         return $entity;
     }
 }

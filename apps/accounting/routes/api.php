@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Spa\OnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
 use App\Http\Controllers\Api\Spa\ReportingController;
 use App\Http\Controllers\Api\Spa\SourceRefController;
+use App\Http\Controllers\Api\Spa\TaxProvisionController;
 use App\Http\Controllers\Api\Spa\Widgets\EcosystemController;
 use App\Http\Controllers\Api\Spa\Widgets\FinancialPulseController;
 use App\Http\Controllers\Api\Spa\Widgets\RecentJournalsController;
@@ -108,11 +109,13 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::post('fiscal-adjustments/{id}/approve', [FiscalAdjustmentController::class, 'approve']);
         Route::delete('fiscal-adjustments/{id}', [FiscalAdjustmentController::class, 'destroy']);
 
-        Route::get('tax-provisions/current', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'show']);
-        Route::post('tax-provisions/preview', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'preview']);
-        Route::post('tax-provisions', [App\Http\Controllers\Api\Spa\TaxProvisionController::class, 'store']);
+        Route::get('tax-provisions/current', [TaxProvisionController::class, 'show']);
+        Route::post('tax-provisions/preview', [TaxProvisionController::class, 'preview']);
+        Route::post('tax-provisions', [TaxProvisionController::class, 'store']);
 
         Route::get('fake-data', [FakeDataController::class, 'index']);
+        Route::get('fake-data/reset-preview', [FakeDataController::class, 'resetPreview']);
+        Route::post('fake-data/reset', [FakeDataController::class, 'reset']);
         Route::post('fake-data/import-all', [FakeDataController::class, 'importAll']);
         Route::post('fake-data/{group}/import', [FakeDataController::class, 'import']);
         Route::delete('fake-data/{group}', [FakeDataController::class, 'destroy']);

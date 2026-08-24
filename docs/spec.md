@@ -746,11 +746,12 @@ Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
 
 ### 8.8 Fake Data Lengkap dan Aman
 
-Instalasi development menyediakan satu entitas bawaan `PT. Fake Data` dengan
+Instalasi aplikasi yang menjalankan seeder menyediakan satu entitas bawaan `PT. Fake Data` dengan
 penanda entity-level `is_fake_data`. Entitas ini diprovision secara idempotent
 oleh seeder, bukan melalui aksi import di UI. Datasetnya adalah record domain
-normal yang mencakup profil entitas, COA, periode, jurnal Intern/Fiskal lintas
-periode dan status workflow, template, jurnal berulang, koreksi fiskal beserta
+normal yang mencakup profil entitas, COA, satu periode tahunan `Demo 2026`,
+jurnal Intern/Fiskal dan seluruh status workflow, template, jurnal berulang,
+koreksi fiskal beserta
 bukti, source-ref, dimensi, pajak simulasi, auto-mapping, integrasi webhook dan
 log, serta user-role demo. Dashboard dan laporan wajib menghitung record tersebut
 melalui query database yang sama dengan entitas biasa; tidak boleh memakai angka
@@ -761,19 +762,43 @@ mengirim ID keduanya, backend wajib memastikan periode tersebut dimiliki oleh
 entitas aktif, dan hanya jurnal pada pasangan entity-periode itu yang boleh masuk
 ke metrik periode. Saldo neraca ditampilkan sampai tanggal akhir periode aktif.
 Pergantian entitas atau periode wajib memuat ulang seluruh ringkasan agar data
-dari konteks sebelumnya tidak tertinggal di UI.
+dari konteks sebelumnya tidak tertinggal di UI. Pilihan periode dari entitas
+sebelumnya wajib dibuang ketika workspace diganti; karena PT. Fake Data hanya
+memiliki periode native 2026, periode itulah yang aktif walaupun user berpindah
+dari entitas dengan periode 2028 atau tahun lain.
 
 `PT. Fake Data` dapat diaktifkan atau dinonaktifkan secara independen dari
 Settings. Entitas nonaktif tetap tampil di daftar Settings tetapi tidak muncul
-di pemilih entitas pada toolbar. Entitas demo aktif diberi badge `Fake data`.
-Import dan Clear Fake Data tidak tersedia pada entitas demo bawaan agar dataset
-native tidak dapat dihapus melalui flow importer.
+di pemilih entitas pada toolbar. Entitas demo aktif diberi badge dataset dan
+versi, misalnya `Demo 2026 · v2026.1.0`, agar user dapat membedakan dataset
+native dari data operasional. Import dan Clear Fake Data generik tidak tersedia
+pada entitas demo bawaan.
 
-Settings menyediakan import fake data per kelompok dan Import All. Import data
-keuangan wajib meminta satu periode terbuka milik entitas aktif. Dataset demo
-Teknologi & IT mengisi buku Intern dan Fiskal, dashboard, neraca saldo, neraca,
-buku besar, buku pembantu berbasis source-ref, template jurnal, jurnal berulang,
-serta contoh koreksi fiskal.
+Admin dapat mengembalikan dataset native melalui action `Reset Dataset` khusus
+PT. Fake Data. Sebelum reset, backend memberikan preview versi saat ini/target,
+jumlah marker per kelompok, marker stale, dan jumlah record manual yang akan
+dipertahankan. Eksekusi memerlukan frasa konfirmasi eksplisit dan token preview;
+token ditolak jika isi dataset berubah setelah preview. Reset hanya boleh
+menghapus record yang memiliki provenance marker pada entitas demo yang sama,
+membangun ulang versi dataset secara atomik, membersihkan attachment obsolete
+setelah commit, dan menulis audit log. Record manual atau provenance yang tidak
+dapat diverifikasi wajib dipertahankan.
+
+Periode native PT. Fake Data bersifat immutable: create, update, close, reopen,
+dan delete ditolak backend serta tidak ditawarkan UI. Jurnal demo berstatus
+`posted` atau `reversed`, termasuk attachment-nya, juga read-only. Draft dan
+contoh workflow lain tetap dapat dipakai untuk simulasi sesuai permission;
+perubahan resmi terhadap baseline dilakukan melalui Reset Dataset.
+
+Pada entitas non-demo, Settings hanya menyediakan import COA Teknologi & IT dan
+penyiapan user-role fake yang diperlukan untuk impersonation. Import All serta
+import periode, jurnal, template, jurnal berulang, dan raw auto-mapping tidak
+tersedia. Dataset lengkap hanya dimiliki PT. Fake Data.
+
+Jurnal berulang native tetap ditampilkan sebagai contoh dengan status yang
+representatif, tetapi command background `accounting:run-recurring` wajib
+mengecualikan seluruh entitas `is_fake_data`; contoh tersebut tidak boleh
+membuat jurnal baru melalui scheduler.
 
 Setiap model yang benar-benar dibuat importer dicatat di `fake_data_records`.
 Record yang sudah ada atau dibuat manual tidak boleh diadopsi sebagai fake.

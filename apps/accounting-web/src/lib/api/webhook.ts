@@ -38,13 +38,20 @@ export interface WebhookDeliveryLog {
 
 export const webhookApi = {
   list: (tenantSlug?: string | null) =>
-    api<{ data: WebhookSubscription[] }>(`/api/v1/spa/webhooks`, { tenantSlug }).then((r) => r.data),
+    api<{ data: WebhookSubscription[] }>(`/api/v1/spa/webhooks`, { tenantSlug }).then(
+      (r) => r.data,
+    ),
 
   logs: (tenantSlug?: string | null) =>
-    api<{ data: WebhookDeliveryLog[]; retention_months: number }>(`/api/v1/spa/webhooks/logs`, { tenantSlug }),
+    api<{ data: WebhookDeliveryLog[]; retention_months: number }>(`/api/v1/spa/webhooks/logs`, {
+      tenantSlug,
+    }),
 
   subscriptionLogs: (id: string, tenantSlug?: string | null) =>
-    api<{ data: WebhookDeliveryLog[]; retention_months: number }>(`/api/v1/spa/webhooks/${id}/logs`, { tenantSlug }),
+    api<{ data: WebhookDeliveryLog[]; retention_months: number }>(
+      `/api/v1/spa/webhooks/${id}/logs`,
+      { tenantSlug },
+    ),
 
   create: (input: WebhookCreateInput, tenantSlug?: string | null) =>
     api<WebhookCreateResponse>(`/api/v1/spa/webhooks`, {

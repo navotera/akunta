@@ -119,11 +119,7 @@
     .filter((line) => line.side === 'credit')
     .map((line) => ({ account_id: line.account_id, amount: line.amount, memo: line.memo }));
 
-  let date = $state(
-    templateMode
-      ? ''
-      : (restoredDraft?.date || initial?.date || getTodayIso()),
-  );
+  let date = $state(templateMode ? '' : restoredDraft?.date || initial?.date || getTodayIso());
   let number = $state(templateMode ? '' : (restoredDraft?.number ?? initial?.number ?? ''));
   let transactionCode = $state(
     templateMode ? '' : (restoredDraft?.transaction_code ?? initial?.transaction_code ?? ''),

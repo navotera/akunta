@@ -18,16 +18,47 @@
   const PAGES: Item[] = [
     { id: 'p:dashboard', label: 'Dashboard', href: '/dashboard', icon: '⌂', group: 'Halaman' },
     { id: 'p:journals', label: 'Jurnal', href: '/journals', icon: '✎', group: 'Halaman' },
-    { id: 'p:journal-new', label: 'Buat Jurnal', sub: 'Tambah jurnal baru', href: '/journals/new', icon: '+', group: 'Halaman' },
-    { id: 'p:recurring', label: 'Jurnal Berulang', href: '/jurnal-berulang', icon: '↻', group: 'Halaman' },
+    {
+      id: 'p:journal-new',
+      label: 'Buat Jurnal',
+      sub: 'Tambah jurnal baru',
+      href: '/journals/new',
+      icon: '+',
+      group: 'Halaman',
+    },
+    {
+      id: 'p:recurring',
+      label: 'Jurnal Berulang',
+      href: '/jurnal-berulang',
+      icon: '↻',
+      group: 'Halaman',
+    },
     { id: 'p:akun', label: 'Bagan Akun', href: '/akun', icon: '⊞', group: 'Halaman' },
     { id: 'p:periode', label: 'Periode', href: '/periode', icon: '⌚', group: 'Halaman' },
-    { id: 'p:template', label: 'Template Jurnal', href: '/template-jurnal', icon: '☰', group: 'Halaman' },
-    { id: 'p:tb', label: 'Neraca Saldo', href: '/laporan/neraca-saldo', icon: '∑', group: 'Laporan' },
+    {
+      id: 'p:template',
+      label: 'Template Jurnal',
+      href: '/template-jurnal',
+      icon: '☰',
+      group: 'Halaman',
+    },
+    {
+      id: 'p:tb',
+      label: 'Neraca Saldo',
+      href: '/laporan/neraca-saldo',
+      icon: '∑',
+      group: 'Laporan',
+    },
     { id: 'p:is', label: 'Laba Rugi', href: '/laporan/laba-rugi', icon: '↗', group: 'Laporan' },
     { id: 'p:bs', label: 'Neraca', href: '/laporan/neraca', icon: '⚖', group: 'Laporan' },
     { id: 'p:gl', label: 'Buku Besar', href: '/laporan/buku-besar', icon: '☐', group: 'Laporan' },
-    { id: 'p:bp', label: 'Buku Pembantu', href: '/laporan/buku-pembantu', icon: '⌬', group: 'Laporan' },
+    {
+      id: 'p:bp',
+      label: 'Buku Pembantu',
+      href: '/laporan/buku-pembantu',
+      icon: '⌬',
+      group: 'Laporan',
+    },
   ];
 
   let { open = $bindable(false) } = $props<{ open?: boolean }>();
@@ -63,7 +94,9 @@
     return false;
   }
 
-  const filteredPages = $derived(PAGES.filter((p) => fuzzy(p.label, query) || (p.sub ? fuzzy(p.sub, query) : false)));
+  const filteredPages = $derived(
+    PAGES.filter((p) => fuzzy(p.label, query) || (p.sub ? fuzzy(p.sub, query) : false)),
+  );
 
   $effect(() => {
     const q = query.trim();
@@ -108,7 +141,7 @@
           items.push({
             id: `pe:${p.id}`,
             label: p.name,
-    sub: `${formatDate(p.start_date)} → ${formatDate(p.end_date)} · ${p.status}`,
+            sub: `${formatDate(p.start_date)} → ${formatDate(p.end_date)} · ${p.status}`,
             href: `/periode?focus=${encodeURIComponent(p.id)}`,
             icon: '⌚',
             group: 'Periode',
@@ -210,21 +243,22 @@
         {#if loading}
           <span class="text-xs text-text-muted">…</span>
         {/if}
-        <kbd class="rounded border border-border-soft bg-page-bg px-1.5 py-0.5 text-[0.65rem] font-medium text-text-muted">Esc</kbd>
+        <kbd
+          class="rounded border border-border-soft bg-page-bg px-1.5 py-0.5 text-[0.65rem] font-medium text-text-muted"
+          >Esc</kbd
+        >
       </div>
 
-      <ul
-        bind:this={listEl}
-        class="max-h-[55vh] overflow-y-auto py-1"
-        role="listbox"
-      >
+      <ul bind:this={listEl} class="max-h-[55vh] overflow-y-auto py-1" role="listbox">
         {#if all.length === 0}
           <li class="px-4 py-6 text-center text-sm text-text-muted">
             {query.trim().length === 0 ? 'Mulai mengetik untuk mencari…' : 'Tidak ada hasil.'}
           </li>
         {/if}
         {#each grouped as g (g.group)}
-          <li class="px-4 pt-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-text-muted">
+          <li
+            class="px-4 pt-2 pb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-text-muted"
+          >
             {g.group}
           </li>
           {#each g.items as it (it.id)}
@@ -234,13 +268,18 @@
               <button
                 type="button"
                 data-cursor-index={idx}
-                class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm {active ? 'bg-primary-light text-primary-active' : 'text-text-default hover:bg-page-bg'}"
+                class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm {active
+                  ? 'bg-primary-light text-primary-active'
+                  : 'text-text-default hover:bg-page-bg'}"
                 onclick={() => pick(it)}
                 onmouseenter={() => (cursor = idx)}
                 role="option"
                 aria-selected={active}
               >
-                <span class="flex h-6 w-6 items-center justify-center text-text-muted" aria-hidden="true">{it.icon}</span>
+                <span
+                  class="flex h-6 w-6 items-center justify-center text-text-muted"
+                  aria-hidden="true">{it.icon}</span
+                >
                 <span class="min-w-0 flex-1">
                   <span class="block truncate font-medium">{it.label}</span>
                   {#if it.sub}
@@ -254,12 +293,24 @@
         {/each}
       </ul>
 
-      <div class="flex items-center justify-between border-t border-border-default bg-page-bg/60 px-4 py-2 text-[0.7rem] text-text-muted">
+      <div
+        class="flex items-center justify-between border-t border-border-default bg-page-bg/60 px-4 py-2 text-[0.7rem] text-text-muted"
+      >
         <span class="flex items-center gap-3">
-          <span><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">↑</kbd><kbd class="ml-0.5 rounded border border-border-soft bg-card-bg px-1 py-0.5">↓</kbd> navigasi</span>
-          <span><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">↵</kbd> buka</span>
+          <span
+            ><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">↑</kbd><kbd
+              class="ml-0.5 rounded border border-border-soft bg-card-bg px-1 py-0.5">↓</kbd
+            > navigasi</span
+          >
+          <span
+            ><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">↵</kbd> buka</span
+          >
         </span>
-        <span><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">⌘</kbd>+<kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">K</kbd></span>
+        <span
+          ><kbd class="rounded border border-border-soft bg-card-bg px-1 py-0.5">⌘</kbd>+<kbd
+            class="rounded border border-border-soft bg-card-bg px-1 py-0.5">K</kbd
+          ></span
+        >
       </div>
     </div>
   </div>

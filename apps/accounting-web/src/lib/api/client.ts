@@ -58,7 +58,9 @@ export function redirectToEcopaLogin(): void {
 
 function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(new RegExp('(^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'));
+  const match = document.cookie.match(
+    new RegExp('(^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'),
+  );
   return match ? decodeURIComponent(match[2]) : null;
 }
 
@@ -76,7 +78,13 @@ export async function ensureCsrfCookie(): Promise<void> {
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-async function performFetch(path: string, opts: ApiOptions, method: string, body: BodyInit | null | undefined, baseHeaders: Headers): Promise<Response> {
+async function performFetch(
+  path: string,
+  opts: ApiOptions,
+  method: string,
+  body: BodyInit | null | undefined,
+  baseHeaders: Headers,
+): Promise<Response> {
   const headers = new Headers(baseHeaders);
   if (MUTATING.has(method)) {
     const xsrf = getCookie('XSRF-TOKEN');

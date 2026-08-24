@@ -8,7 +8,14 @@
     strokeW?: number;
   }
 
-  let { data, w = 88, h = 32, color = 'var(--m-primary)', fill = true, strokeW = 1.6 }: Props = $props();
+  let {
+    data,
+    w = 88,
+    h = 32,
+    color = 'var(--m-primary)',
+    fill = true,
+    strokeW = 1.6,
+  }: Props = $props();
 
   const path = $derived.by(() => {
     if (data.length === 0) return '';
@@ -38,5 +45,12 @@
     </defs>
     <path d={areaPath} fill={`url(#${gradId})`} />
   {/if}
-  <path d={path} fill="none" stroke={color} stroke-width={strokeW} stroke-linecap="round" stroke-linejoin="round" />
+  <path
+    d={path}
+    fill="none"
+    stroke={color}
+    stroke-width={strokeW}
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

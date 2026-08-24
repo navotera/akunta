@@ -56,9 +56,15 @@ final class FakeDataEntitySeeder extends Seeder
                 'native_fake_data' => true,
             ],
         ]);
+        $workspaceSettings = is_array($entity->workspace_settings) ? $entity->workspace_settings : [];
         $entity->forceFill([
             'name' => 'PT. Fake Data',
             'is_fake_data' => true,
+            'workspace_settings' => [
+                ...$workspaceSettings,
+                'bookkeeping_mode' => 'independent_books',
+                'native_fake_data' => true,
+            ],
         ])->save();
 
         $owner = User::query()

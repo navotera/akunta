@@ -48,11 +48,11 @@ it('marks postable expense accounts and creates posted fiscal journals for every
     expect($journals)->toHaveCount(6);
 
     expect($journals->where('journal_mode', Journal::MODE_FISCAL))->toHaveCount(3)
-        ->and($journals->where('journal_mode', Journal::MODE_INTERNAL))->toHaveCount(3);
+        ->and($journals->where('journal_mode', Journal::MODE_INTERNAL))->toHaveCount(3)
+        ->and($journals->pluck('number')->unique())->toHaveCount(6);
 
     foreach ($journals as $journal) {
-        $prefix = $journal->journal_mode === Journal::MODE_FISCAL ? 'JF' : 'JI';
-        expect($journal->number)->toMatch('/^'.$prefix.'-'.Carbon::today()->format('Ym').'\-\d{4}$/')
+        expect($journal->number)->toMatch('/^JU\/'.Carbon::today()->format('y').'\/'.Carbon::today()->format('n').'\/\d+$/')
             ->and($journal->status)->toBe(Journal::STATUS_POSTED)
             ->and($journal->entries()->sum('debit'))->toBe($journal->entries()->sum('credit'));
     }

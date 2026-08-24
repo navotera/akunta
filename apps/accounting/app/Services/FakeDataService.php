@@ -29,8 +29,16 @@ use Illuminate\Support\Str;
 
 class FakeDataService
 {
+    public const NATIVE_DEMO_YEAR = 2026;
+
+    public const NATIVE_DEMO_START = '2026-01-01';
+
+    public const NATIVE_DEMO_END = '2026-12-31';
+
+    public const NATIVE_DEMO_ANCHOR = '2026-08-21';
+
     public const GROUPS = [
-        'periods' => ['label' => 'Periode Akuntansi', 'description' => 'Periode bulanan tahun berjalan untuk simulasi pembukuan.'],
+        'periods' => ['label' => 'Periode Akuntansi', 'description' => 'Satu periode tahunan 2026 untuk seluruh simulasi pembukuan PT. Fake Data.'],
         'accounts' => ['label' => 'COA Teknologi & IT', 'description' => 'COA untuk custom software, SaaS, hosting, hardware/software IT, konsultasi, dan managed services.'],
         'journal_templates' => ['label' => 'Template Jurnal IT', 'description' => 'Template SaaS, hosting, cloud, payroll, dan penyusutan untuk latihan.'],
         'recurring_journals' => ['label' => 'Jurnal Berulang', 'description' => 'Jadwal berulang untuk SaaS, cloud, dan payroll pada periode pilihan.', 'requires_period' => true],
@@ -166,6 +174,10 @@ class FakeDataService
 
     private function importPeriods(Entity $entity): int
     {
+        if ($entity->is_fake_data) {
+            return $this->importNativePeriod($entity);
+        }
+
         // Never create overlapping demo periods around periods configured by
         // the user. The period importer is only a bootstrap for an empty entity.
         if (Period::where('entity_id', $entity->id)->exists()) {
@@ -190,6 +202,100 @@ class FakeDataService
         }
 
         $this->synchronizeFakePeriodStatuses($entity);
+
+        return $created;
+    }
+
+    private function importNativePeriod(Entity $entity): int
+    {
+        $periodMarkers = FakeDataRecord::query()
+            ->where('entity_id', $entity->id)
+            ->where('group_key', 'periods')
+            ->where('model_type', Period::class)
+            ->get();
+
+        $target = Period::query()
+            ->where('entity_id', $entity->id)
+            ->whereDate('start_date', self::NATIVE_DEMO_START)
+            ->first();
+        $created = 0;
+
+        if (! $target) {
+            $target = Period::create([
+                'entity_id' => $entity->id,
+                'name' => 'Demo '.self::NATIVE_DEMO_YEAR,
+                'start_date' => self::NATIVE_DEMO_START,
+                'end_date' => self::NATIVE_DEMO_END,
+                'status' => Period::STATUS_OPEN,
+            ]);
+            $this->mark($entity, 'periods', $target);
+            $periodMarkers->push(FakeDataRecord::query()
+                ->where('entity_id', $entity->id)
+                ->where('group_key', 'periods')
+                ->where('model_type', Period::class)
+                ->where('model_id', $target->id)
+                ->firstOrFail());
+            $created++;
+        } elseif (! $periodMarkers->contains(fn (FakeDataRecord $marker): bool => $marker->model_id === $target->id)) {
+            throw new \RuntimeException('Periode 2026 PT. Fake Data sudah ada tanpa provenance fake; provisioning dihentikan agar data manual tidak diambil alih.');
+        }
+
+        foreach ($periodMarkers as $marker) {
+            if ($marker->model_id === $target->id) {
+                continue;
+            }
+
+            $source = Period::query()
+                ->where('entity_id', $entity->id)
+                ->find($marker->model_id);
+            if (! $source) {
+                $marker->delete();
+
+                continue;
+            }
+
+            $journals = Journal::query()
+                ->where('entity_id', $entity->id)
+                ->where('period_id', $source->id)
+                ->get();
+            $markedJournalIds = FakeDataRecord::query()
+                ->where('entity_id', $entity->id)
+                ->where('model_type', Journal::class)
+                ->whereIn('model_id', $journals->pluck('id'))
+                ->pluck('model_id');
+
+            // A period containing even one unverifiable journal is retained.
+            // The seeder never treats entity/date matching as deletion proof.
+            if ($journals->pluck('id')->diff($markedJournalIds)->isNotEmpty()) {
+                continue;
+            }
+
+            foreach ($journals as $journal) {
+                $mappedDate = $this->dateInNativeDemoYear($journal->date);
+                $journal->forceFill([
+                    'period_id' => $target->id,
+                    'date' => $mappedDate,
+                ])->saveQuietly();
+                FiscalAdjustment::query()
+                    ->where('entity_id', $entity->id)
+                    ->where('journal_id', $journal->id)
+                    ->update(['date' => $mappedDate]);
+            }
+
+            if (! Journal::query()->where('period_id', $source->id)->exists()) {
+                $marker->delete();
+                $source->delete();
+            }
+        }
+
+        $target->forceFill([
+            'name' => 'Demo '.self::NATIVE_DEMO_YEAR,
+            'start_date' => self::NATIVE_DEMO_START,
+            'end_date' => self::NATIVE_DEMO_END,
+            'status' => Period::STATUS_OPEN,
+            'closed_at' => null,
+            'closed_by' => null,
+        ])->save();
 
         return $created;
     }
@@ -359,7 +465,9 @@ class FakeDataService
             return;
         }
 
-        $currentStart = now()->startOfYear()->toDateString();
+        $currentStart = $entity->is_fake_data
+            ? self::NATIVE_DEMO_START
+            : now()->startOfYear()->toDateString();
         Period::query()
             ->where('entity_id', $entity->id)
             ->whereIn('id', $periodIds)
@@ -438,9 +546,11 @@ class FakeDataService
             throw new \RuntimeException('Import COA Teknologi & IT terlebih dahulu. Akun tidak ditemukan: '.$missing->implode(', '));
         }
 
-        $anchor = now()->betweenIncluded(Carbon::parse($period->start_date), Carbon::parse($period->end_date))
-            ? now()
-            : Carbon::parse($period->end_date);
+        $anchor = $entity->is_fake_data
+            ? Carbon::parse(self::NATIVE_DEMO_ANCHOR)
+            : (now()->betweenIncluded(Carbon::parse($period->start_date), Carbon::parse($period->end_date))
+                ? now()
+                : Carbon::parse($period->end_date));
         $date = fn (int $daysAgo): string => $this->clampDateToPeriod($period, $anchor->copy()->subDays($daysAgo));
 
         $common = [
@@ -626,6 +736,16 @@ class FakeDataService
         $end = Carbon::parse($period->end_date);
 
         return $date->max($start)->min($end)->toDateString();
+    }
+
+    private function dateInNativeDemoYear(Carbon|string $date): string
+    {
+        $source = Carbon::parse($date);
+        $monthStart = Carbon::create(self::NATIVE_DEMO_YEAR, $source->month, 1);
+
+        return $monthStart
+            ->day(min($source->day, $monthStart->daysInMonth))
+            ->toDateString();
     }
 
     private function importUsers(Entity $entity): int

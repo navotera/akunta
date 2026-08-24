@@ -26,7 +26,8 @@
     '{bln}',
     '{incremented_number}',
   ];
-  const tokenPattern = /(\{tahun_full\}|\{tahun\}|\{bulan\}|\{numbering\}|\{tipe_jurnal\}|\{thn\}|\{bln\}|\{incremented_number\})/g;
+  const tokenPattern =
+    /(\{tahun_full\}|\{tahun\}|\{bulan\}|\{numbering\}|\{tipe_jurnal\}|\{thn\}|\{bln\}|\{incremented_number\})/g;
 
   function createPart(type: Part['type'], partValue: string): Part {
     return { id: nextId++, type, value: partValue };
@@ -97,12 +98,17 @@
 
   function insertToken(event: DragEvent, token: string) {
     const target = event.target;
-    const element = target instanceof HTMLElement ? target.closest<HTMLElement>('[data-part-id]') : null;
+    const element =
+      target instanceof HTMLElement ? target.closest<HTMLElement>('[data-part-id]') : null;
     const targetId = Number(element?.dataset.partId);
     const targetIndex = parts.findIndex((part) => part.id === targetId);
     const nextParts = [...parts];
 
-    if (targetIndex >= 0 && parts[targetIndex].type === 'text' && element instanceof HTMLInputElement) {
+    if (
+      targetIndex >= 0 &&
+      parts[targetIndex].type === 'text' &&
+      element instanceof HTMLInputElement
+    ) {
       const caret = element.selectionStart ?? element.value.length;
       const textPart = parts[targetIndex];
       const before = createPart('text', textPart.value.slice(0, caret));

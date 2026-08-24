@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
@@ -16,6 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 class PeriodController extends Controller
 {
+    use ProtectsNativeFakeData;
     use ResolvesTenant;
 
     public function index(Request $request): JsonResponse
@@ -46,6 +48,7 @@ class PeriodController extends Controller
     public function store(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->assertNativeFakePeriodMutable($entity);
         $data = $this->validatePayload($request);
 
         $this->assertNoOverlap($entity->id, $data['start_date'], $data['end_date'], null);
@@ -69,6 +72,7 @@ class PeriodController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         if ($period->status !== Period::STATUS_OPEN) {
@@ -88,6 +92,7 @@ class PeriodController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         if (Journal::where('period_id', $period->id)->exists()) {
@@ -104,6 +109,7 @@ class PeriodController extends Controller
     public function close(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         if ($period->status === Period::STATUS_CLOSED) {
@@ -131,6 +137,7 @@ class PeriodController extends Controller
     public function reopen(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         $this->assertAdminCanActivate();

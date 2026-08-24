@@ -14,6 +14,8 @@ export interface AuthUser {
     logo_url: string | null;
     is_active: boolean;
     is_fake_data: boolean;
+    demo_dataset_version: string | null;
+    can_manage_fake_data: boolean;
     bookkeeping_mode: 'independent_books' | 'internal_only';
     issue_report_url: string | null;
   }>;

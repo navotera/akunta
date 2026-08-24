@@ -44,11 +44,7 @@
 
   const selected = $derived(options.find((o) => o.id === value) ?? null);
   const display = $derived(
-    selected
-      ? selected.code
-        ? `${selected.code} — ${selected.label}`
-        : selected.label
-      : '',
+    selected ? (selected.code ? `${selected.code} — ${selected.label}` : selected.label) : '',
   );
 
   const filtered = $derived.by(() => {
@@ -111,9 +107,15 @@
   }
 
   function clickOutside(node: HTMLElement, cb: () => void) {
-    function onDoc(e: MouseEvent) { if (!node.contains(e.target as Node)) cb(); }
+    function onDoc(e: MouseEvent) {
+      if (!node.contains(e.target as Node)) cb();
+    }
     document.addEventListener('mousedown', onDoc);
-    return { destroy() { document.removeEventListener('mousedown', onDoc); } };
+    return {
+      destroy() {
+        document.removeEventListener('mousedown', onDoc);
+      },
+    };
   }
 </script>
 
@@ -121,7 +123,9 @@
   {#if !open}
     <button
       type="button"
-      class="w-full rounded-md border border-border-default px-2 py-1.5 text-sm text-left bg-white focus:outline-none focus:border-primary {selected ? 'text-text-default' : 'text-text-muted'}"
+      class="w-full rounded-md border border-border-default px-2 py-1.5 text-sm text-left bg-white focus:outline-none focus:border-primary {selected
+        ? 'text-text-default'
+        : 'text-text-muted'}"
       onclick={openList}
       data-testid={testId}
     >
@@ -180,7 +184,12 @@
                 : o.availability === 'intern'
                   ? 'bg-paid-light text-paid'
                   : 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'}"
-            >{o.availability === 'fiskal' ? 'Fiskal' : o.availability === 'intern' ? 'Intern' : 'Intern & Fiskal'}</span>
+              >{o.availability === 'fiskal'
+                ? 'Fiskal'
+                : o.availability === 'intern'
+                  ? 'Intern'
+                  : 'Intern & Fiskal'}</span
+            >
           {/if}
           {#if o.tag}
             <span class="text-[0.6rem] uppercase tracking-wider text-text-muted">{o.tag}</span>

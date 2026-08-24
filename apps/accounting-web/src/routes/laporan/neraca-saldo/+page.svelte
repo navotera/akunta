@@ -90,17 +90,39 @@
         <tr>
           <th class="px-4 py-3 text-left" rowspan="2">Kode</th>
           <th class="px-4 py-3 text-left" rowspan="2">Nama Akun</th>
-          <th class="w-[16%] px-4 py-2 text-center align-middle text-[#16a34a]" colspan="2">Debit</th>
-          <th class="w-[16%] px-4 py-2 text-center align-middle text-[#f87171]" colspan="2">Kredit</th>
+          <th class="w-[16%] px-4 py-2 text-center align-middle text-[#16a34a]" colspan="2"
+            >Debit</th
+          >
+          <th class="w-[16%] px-4 py-2 text-center align-middle text-[#f87171]" colspan="2"
+            >Kredit</th
+          >
           <th class="w-[16%] px-4 py-2 text-center align-middle" colspan="2">Saldo</th>
         </tr>
         <tr>
-          <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
-          <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
-          <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
-          <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
-          <th class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]">Intern</th>
-          <th class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]">Fiskal</th>
+          <th
+            class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]"
+            >Intern</th
+          >
+          <th
+            class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]"
+            >Fiskal</th
+          >
+          <th
+            class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]"
+            >Intern</th
+          >
+          <th
+            class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]"
+            >Fiskal</th
+          >
+          <th
+            class="bg-gradient-to-r from-[#f0fdf4] to-[#dcfce7] px-4 py-2 text-center text-[#166534]"
+            >Intern</th
+          >
+          <th
+            class="bg-gradient-to-r from-[#fffbeb] to-[#fef9c3] px-4 py-2 text-center text-[#854d0e]"
+            >Fiskal</th
+          >
         </tr>
       </thead>
       <tbody>
@@ -108,15 +130,30 @@
           {@const internal = internalRows.get(id)}
           {@const fiscal = fiscalRows.get(id)}
           {@const row = internal ?? fiscal}
-          <tr class="border-t border-border-soft hover:bg-page-bg cursor-pointer" onclick={() => goto(`/laporan/buku-besar?account_id=${id}`)}>
+          <tr
+            class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+            onclick={() => goto(`/laporan/buku-besar?account_id=${id}`)}
+          >
             <td class="px-4 py-2 font-mono">{row?.code}</td>
             <td class="px-4 py-2">{row?.name}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(internal?.total_debit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal?.total_debit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(internal?.total_credit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal?.total_credit ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(internal?.balance ?? '0')}</td>
-            <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal?.balance ?? '0')}</td>
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(internal?.total_debit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(fiscal?.total_debit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(internal?.total_credit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(fiscal?.total_credit ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(internal?.balance ?? '0')}</td
+            >
+            <td class="px-4 py-2 text-right font-mono tabnum"
+              >{formatRupiah(fiscal?.balance ?? '0')}</td
+            >
           </tr>
         {/each}
       </tbody>

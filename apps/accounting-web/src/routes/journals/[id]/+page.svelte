@@ -3,6 +3,7 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { tenant } from '$lib/stores/tenant.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
   import { journalApi, type JournalDetail } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
@@ -28,7 +29,13 @@
       ),
     ),
   );
-  let isStoredLocked = $derived(detail?.status === 'posted' && !isSupervisor);
+  let isNativeFake = $derived(
+    tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
+  );
+  let isStoredLocked = $derived(
+    (detail?.status === 'posted' || detail?.status === 'reversed') &&
+      (isNativeFake || !isSupervisor),
+  );
 
   async function refreshAccounts() {
     const request = ++accountsRequest;
@@ -218,11 +225,18 @@
   <div class="flex min-h-screen items-center justify-center text-text-muted">Memuat jurnal…</div>
 {:else if isStoredLocked}
   <div class="mx-auto max-w-4xl space-y-4 p-6">
-    <div class="rounded-xl border border-paid/30 bg-paid-light p-5">
+    <div
+      class="rounded-xl border border-paid/30 bg-paid-light p-5"
+      data-testid="recorded-journal-lock"
+    >
       <div class="flex items-center justify-between gap-3">
         <div>
           <h1 class="text-xl font-bold">Jurnal {detail.number}</h1>
-          <p class="mt-1 text-sm text-text-muted">Jurnal Tersimpan dan terkunci untuk operator.</p>
+          <p class="mt-1 text-sm text-text-muted">
+            {isNativeFake
+              ? 'Jurnal demo Tersimpan bersifat read-only untuk semua role. Gunakan Reset Dataset Demo untuk memulihkan data bawaan.'
+              : 'Jurnal Tersimpan dan terkunci untuk operator.'}
+          </p>
         </div>
         <span class="rounded-full bg-paid px-3 py-1 text-xs font-semibold text-white"
           >Tersimpan</span

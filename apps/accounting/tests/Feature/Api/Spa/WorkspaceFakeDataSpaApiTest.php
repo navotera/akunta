@@ -72,6 +72,7 @@ it('exposes the fake badge contract and independently deactivates the demo works
             'id' => $this->fake->id,
             'is_active' => false,
             'is_fake_data' => true,
+            'can_manage_fake_data' => true,
         ]);
 
     expect($this->regular->refresh()->is_active)->toBeTrue();

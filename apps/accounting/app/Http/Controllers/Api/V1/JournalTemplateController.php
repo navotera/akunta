@@ -31,9 +31,10 @@ class JournalTemplateController extends Controller
         ]);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
-        $template = JournalTemplate::with('lines')->findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $template = JournalTemplate::where('entity_id', $entityId)->with('lines')->findOrFail($id);
 
         return response()->json($this->serialize($template));
     }
@@ -104,9 +105,10 @@ class JournalTemplateController extends Controller
         return response()->json($this->serialize($template), 201);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
-        $t = JournalTemplate::findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $t = JournalTemplate::where('entity_id', $entityId)->findOrFail($id);
         $t->delete();
 
         return response()->json(['deleted' => true]);
@@ -133,7 +135,8 @@ class JournalTemplateController extends Controller
         /** @var ApiToken $token */
         $token = $request->attributes->get('api_token');
 
-        $template = JournalTemplate::with('lines')->findOrFail($id);
+        $entityId = $request->validate(['entity_id' => 'required|string|size:26'])['entity_id'];
+        $template = JournalTemplate::where('entity_id', $entityId)->with('lines')->findOrFail($id);
 
         try {
             $journal = $this->instantiate->execute(

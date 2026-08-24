@@ -12,6 +12,7 @@ use App\Actions\RejectJournalAction;
 use App\Actions\ReverseJournalAction;
 use App\Actions\SubmitJournalAction;
 use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
+use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Journal;
@@ -29,6 +30,7 @@ use Throwable;
 class JournalController extends Controller
 {
     use AuthorizesBookAccess;
+    use ProtectsNativeFakeData;
 
     public function __construct(
         private readonly PostJournalAction $postJournal,
@@ -198,6 +200,7 @@ class JournalController extends Controller
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
         $this->requirePermission('journal.update', $entity);
+        $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
         $reviewEditable = $journal->status === Journal::STATUS_SUBMITTED
             && $this->isSupervisorLevel($request, $entity);
         $storedEditableBySupervisor = $journal->status === Journal::STATUS_POSTED
@@ -367,6 +370,7 @@ class JournalController extends Controller
         $data = $request->validate(['reason' => 'nullable|string|max:500']);
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+        $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
 
         try {
             $this->reverseJournal->execute($journal, Auth::user(), $data['reason'] ?? null);

@@ -77,8 +77,13 @@
             <tr>
               <th class="w-20 px-3 py-2 text-left font-semibold">Kode</th>
               <th class="px-3 py-2 text-left font-semibold">Nama Akun</th>
-              <th class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal' ? fiscalHeader : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th>
-              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th>{/if}
+              <th
+                class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal'
+                  ? fiscalHeader
+                  : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th
+              >
+              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th
+                >{/if}
             </tr>
           </thead>
           <tbody>
@@ -127,8 +132,13 @@
             <tr>
               <th class="w-20 px-3 py-2 text-left font-semibold">Kode</th>
               <th class="px-3 py-2 text-left font-semibold">Nama Akun</th>
-              <th class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal' ? fiscalHeader : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th>
-              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th>{/if}
+              <th
+                class="px-3 py-2 text-center font-semibold {primaryBook === 'fiscal'
+                  ? fiscalHeader
+                  : internHeader}">{primaryBook === 'fiscal' ? 'Fiskal' : 'Intern'}</th
+              >
+              {#if fiscal}<th class="px-3 py-2 text-center font-semibold {fiscalHeader}">Fiskal</th
+                >{/if}
             </tr>
           </thead>
           <tbody>

@@ -72,7 +72,9 @@
 
 {#if loggedOut}
   <div class="flex min-h-screen items-center justify-center px-4">
-    <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
+    <div
+      class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
+    >
       <h1 class="mb-1 text-xl font-bold">Anda telah logout</h1>
       <p class="mb-5 text-sm text-text-muted">Sesi Akunta sudah ditutup.</p>
       <button
@@ -87,7 +89,9 @@
   </div>
 {:else if localMode}
   <div class="flex min-h-screen items-center justify-center px-4">
-    <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
+    <div
+      class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
+    >
       <h1 class="mb-1 text-xl font-bold">Akunta</h1>
       {#if submitting}
         <p class="text-sm text-text-muted">Menyiapkan akun lokal…</p>
@@ -106,7 +110,9 @@
 {:else if !useLocalForm}
   {#if ssoErrorMessage}
     <div class="flex min-h-screen items-center justify-center px-4">
-      <div class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md">
+      <div
+        class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
+      >
         <h1 class="mb-1 text-xl font-bold">Login Akunta gagal</h1>
         <p class="mb-5 text-sm text-text-muted">{ssoErrorMessage}</p>
         <div

@@ -158,6 +158,9 @@ class WorkspaceController extends Controller
             'workspace_code' => $entity->workspace_code,
             'is_active' => $entity->is_active,
             'is_fake_data' => (bool) $entity->is_fake_data,
+            'demo_dataset_version' => $entity->is_fake_data
+                ? data_get($entity->workspace_settings, 'native_fake_data_version', 'legacy')
+                : null,
             'theme_color' => $entity->theme_color,
             'logo_url' => $entity->logo_path ? Storage::disk('public')->url($entity->logo_path) : null,
             'logo_size' => (int) data_get($entity->workspace_settings, 'logo_size', 96),

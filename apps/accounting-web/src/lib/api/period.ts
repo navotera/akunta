@@ -20,10 +20,9 @@ export interface PeriodInput {
 
 export const periodApi = {
   list: (status?: PeriodStatus, tenantSlug?: string | null) =>
-    api<{ data: Period[] }>(
-      `/api/v1/spa/periods${status ? `?status=${status}` : ''}`,
-      { tenantSlug },
-    ).then((r) => r.data),
+    api<{ data: Period[] }>(`/api/v1/spa/periods${status ? `?status=${status}` : ''}`, {
+      tenantSlug,
+    }).then((r) => r.data),
 
   show: (id: string, tenantSlug?: string | null) =>
     api<{ data: Period }>(`/api/v1/spa/periods/${id}`, { tenantSlug }).then((r) => r.data),
@@ -42,8 +41,12 @@ export const periodApi = {
     api<void>(`/api/v1/spa/periods/${id}`, { method: 'DELETE', tenantSlug }),
 
   close: (id: string, tenantSlug?: string | null) =>
-    api<{ data: Period }>(`/api/v1/spa/periods/${id}/close`, { json: {}, tenantSlug }).then((r) => r.data),
+    api<{ data: Period }>(`/api/v1/spa/periods/${id}/close`, { json: {}, tenantSlug }).then(
+      (r) => r.data,
+    ),
 
   reopen: (id: string, tenantSlug?: string | null) =>
-    api<{ data: Period }>(`/api/v1/spa/periods/${id}/reopen`, { json: {}, tenantSlug }).then((r) => r.data),
+    api<{ data: Period }>(`/api/v1/spa/periods/${id}/reopen`, { json: {}, tenantSlug }).then(
+      (r) => r.data,
+    ),
 };

@@ -11,20 +11,21 @@ use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
 use App\Models\Period;
 use App\Models\RecurringJournal;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
 
 beforeEach(function () {
-    Gate::define('journal.post', fn (?\Illuminate\Contracts\Auth\Authenticatable $u = null) => true);
-    Gate::define('journal.reverse', fn (?\Illuminate\Contracts\Auth\Authenticatable $u = null) => true);
+    Gate::define('journal.post', fn (?Authenticatable $u = null) => true);
+    Gate::define('journal.reverse', fn (?Authenticatable $u = null) => true);
 
     $tenant = Tenant::create(['name' => 'PT C', 'slug' => 'c-'.uniqid()]);
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'C']);
     $this->period = Period::create([
-        'entity_id'  => $this->entity->id, 'name' => 'Apr 2026',
+        'entity_id' => $this->entity->id, 'name' => 'Apr 2026',
         'start_date' => '2026-04-01', 'end_date' => '2026-04-30',
     ]);
     Period::create([
-        'entity_id'  => $this->entity->id, 'name' => 'May 2026',
+        'entity_id' => $this->entity->id, 'name' => 'May 2026',
         'start_date' => '2026-05-01', 'end_date' => '2026-05-31',
     ]);
 
@@ -79,6 +80,22 @@ it('dry-run does not instantiate any journals', function () {
         ->assertSuccessful();
 
     expect(Journal::where('template_id', $this->tmpl->id)->count())->toBe(0);
+});
+
+it('excludes native fake entity schedules from the background command', function () {
+    $this->entity->update(['is_fake_data' => true]);
+    $schedule = RecurringJournal::create([
+        'entity_id' => $this->entity->id, 'template_id' => $this->tmpl->id,
+        'name' => 'Demo only', 'frequency' => 'monthly',
+        'start_date' => '2026-04-15', 'next_run_at' => '2026-04-15', 'status' => 'active',
+    ]);
+
+    $this->artisan('accounting:run-recurring', ['--date' => '2026-04-20'])
+        ->expectsOutput('No recurring journals due on 2026-04-20.')
+        ->assertSuccessful();
+
+    expect(Journal::where('template_id', $this->tmpl->id)->count())->toBe(0)
+        ->and($schedule->fresh()->next_run_at->toDateString())->toBe('2026-04-15');
 });
 
 it('runs the run-auto-reversals command', function () {

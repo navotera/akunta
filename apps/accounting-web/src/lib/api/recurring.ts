@@ -35,13 +35,20 @@ export interface RecurringInput {
 
 export const recurringApi = {
   list: (tenantSlug?: string | null) =>
-    api<{ data: RecurringJournal[] }>(`/api/v1/spa/recurring-journals`, { tenantSlug }).then((r) => r.data),
+    api<{ data: RecurringJournal[] }>(`/api/v1/spa/recurring-journals`, { tenantSlug }).then(
+      (r) => r.data,
+    ),
 
   show: (id: string, tenantSlug?: string | null) =>
-    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}`, { tenantSlug }).then((r) => r.data),
+    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}`, { tenantSlug }).then(
+      (r) => r.data,
+    ),
 
   create: (input: RecurringInput, tenantSlug?: string | null) =>
-    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals`, { json: input, tenantSlug }).then((r) => r.data),
+    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals`, {
+      json: input,
+      tenantSlug,
+    }).then((r) => r.data),
 
   update: (id: string, input: RecurringInput, tenantSlug?: string | null) =>
     api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}`, {
@@ -54,10 +61,16 @@ export const recurringApi = {
     api<void>(`/api/v1/spa/recurring-journals/${id}`, { method: 'DELETE', tenantSlug }),
 
   pause: (id: string, tenantSlug?: string | null) =>
-    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}/pause`, { json: {}, tenantSlug }).then((r) => r.data),
+    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}/pause`, {
+      json: {},
+      tenantSlug,
+    }).then((r) => r.data),
 
   resume: (id: string, tenantSlug?: string | null) =>
-    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}/resume`, { json: {}, tenantSlug }).then((r) => r.data),
+    api<{ data: RecurringJournal }>(`/api/v1/spa/recurring-journals/${id}/resume`, {
+      json: {},
+      tenantSlug,
+    }).then((r) => r.data),
 
   run: (id: string, today: string | null = null, tenantSlug?: string | null) =>
     api<{ data: RecurringJournal; journal_id: string | null }>(

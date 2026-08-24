@@ -9,19 +9,15 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: process.env.SPA_BASE_URL ?? 'http://accounting.akunta.local:5173',
+    baseURL: process.env.SPA_BASE_URL ?? 'http://localhost:5175',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-  ],
-  webServer: process.env.CI
-    ? {
-        command: 'pnpm dev',
-        url: 'http://accounting.akunta.local:5173',
-        reuseExistingServer: false,
-        timeout: 60_000,
-      }
-    : undefined,
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  webServer: {
+    command: 'bun run dev',
+    url: 'http://localhost:5175',
+    reuseExistingServer: !process.env.CI,
+    timeout: 60_000,
+  },
 });

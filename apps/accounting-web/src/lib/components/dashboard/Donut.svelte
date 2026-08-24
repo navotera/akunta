@@ -1,5 +1,8 @@
 <script lang="ts">
-  interface Slice { value: number; color: string; }
+  interface Slice {
+    value: number;
+    color: string;
+  }
 
   interface Props {
     data: Slice[];
@@ -26,12 +29,19 @@
 </script>
 
 <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-  <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--m-bg-page)" stroke-width={thickness} />
+  <circle
+    cx={size / 2}
+    cy={size / 2}
+    {r}
+    fill="none"
+    stroke="var(--m-bg-page)"
+    stroke-width={thickness}
+  />
   {#each slices as s, i (i)}
     <circle
       cx={size / 2}
       cy={size / 2}
-      r={r}
+      {r}
       fill="none"
       stroke={s.color}
       stroke-width={thickness}

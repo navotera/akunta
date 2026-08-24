@@ -15,16 +15,99 @@ const CUSTOM_COLOR_PREFIX = 'akunta.workspace.theme.custom.';
 
 type PresetTheme = Exclude<WorkspaceTheme, 'custom'>;
 
-const themes: Record<PresetTheme, { label: string; primary: string; light: string; active: string; sidebar: string; sidebarGradient: string; gradient: string }> = {
-  blue: { label: 'Ocean', primary: '#1b84ff', light: '#eff6ff', active: '#056ee9', sidebar: '#081f45', sidebarGradient: 'linear-gradient(145deg, #061633 0%, #064e6b 100%)', gradient: 'linear-gradient(135deg, #2563eb, #06b6d4)' },
-  emerald: { label: 'Forest', primary: '#10b981', light: '#ecfdf5', active: '#047857', sidebar: '#022c22', sidebarGradient: 'linear-gradient(145deg, #022c22 0%, #365314 100%)', gradient: 'linear-gradient(135deg, #059669, #84cc16)' },
-  violet: { label: 'Aurora', primary: '#8b5cf6', light: '#f5f3ff', active: '#6d28d9', sidebar: '#250441', sidebarGradient: 'linear-gradient(145deg, #18002e 0%, #701a4d 100%)', gradient: 'linear-gradient(135deg, #7c3aed, #ec4899)' },
-  orange: { label: 'Sunset', primary: '#f97316', light: '#fff7ed', active: '#c2410c', sidebar: '#431407', sidebarGradient: 'linear-gradient(145deg, #431407 0%, #713f12 100%)', gradient: 'linear-gradient(135deg, #f97316, #facc15)' },
-  rose: { label: 'Berry', primary: '#f43f5e', light: '#fff1f2', active: '#be123c', sidebar: '#4c0519', sidebarGradient: 'linear-gradient(145deg, #4c0519 0%, #3b0764 100%)', gradient: 'linear-gradient(135deg, #e11d48, #a855f7)' },
-  cyan: { label: 'Lagoon', primary: '#0891b2', light: '#ecfeff', active: '#0e7490', sidebar: '#083344', sidebarGradient: 'linear-gradient(145deg, #083344 0%, #172554 100%)', gradient: 'linear-gradient(135deg, #0891b2, #3b82f6)' },
-  indigo: { label: 'Indigo', primary: '#6366f1', light: '#eef2ff', active: '#4338ca', sidebar: '#1e1b4b', sidebarGradient: 'linear-gradient(145deg, #1e1b4b 0%, #3b0764 100%)', gradient: 'linear-gradient(135deg, #4f46e5, #9333ea)' },
-  teal: { label: 'Teal', primary: '#0d9488', light: '#f0fdfa', active: '#0f766e', sidebar: '#042f2e', sidebarGradient: 'linear-gradient(145deg, #042f2e 0%, #052e16 100%)', gradient: 'linear-gradient(135deg, #0f766e, #14b8a6)' },
-  amber: { label: 'Amber', primary: '#d97706', light: '#fffbeb', active: '#b45309', sidebar: '#451a03', sidebarGradient: 'linear-gradient(145deg, #451a03 0%, #78350f 100%)', gradient: 'linear-gradient(135deg, #d97706, #f59e0b)' },
+const themes: Record<
+  PresetTheme,
+  {
+    label: string;
+    primary: string;
+    light: string;
+    active: string;
+    sidebar: string;
+    sidebarGradient: string;
+    gradient: string;
+  }
+> = {
+  blue: {
+    label: 'Ocean',
+    primary: '#1b84ff',
+    light: '#eff6ff',
+    active: '#056ee9',
+    sidebar: '#081f45',
+    sidebarGradient: 'linear-gradient(145deg, #061633 0%, #064e6b 100%)',
+    gradient: 'linear-gradient(135deg, #2563eb, #06b6d4)',
+  },
+  emerald: {
+    label: 'Forest',
+    primary: '#10b981',
+    light: '#ecfdf5',
+    active: '#047857',
+    sidebar: '#022c22',
+    sidebarGradient: 'linear-gradient(145deg, #022c22 0%, #365314 100%)',
+    gradient: 'linear-gradient(135deg, #059669, #84cc16)',
+  },
+  violet: {
+    label: 'Aurora',
+    primary: '#8b5cf6',
+    light: '#f5f3ff',
+    active: '#6d28d9',
+    sidebar: '#250441',
+    sidebarGradient: 'linear-gradient(145deg, #18002e 0%, #701a4d 100%)',
+    gradient: 'linear-gradient(135deg, #7c3aed, #ec4899)',
+  },
+  orange: {
+    label: 'Sunset',
+    primary: '#f97316',
+    light: '#fff7ed',
+    active: '#c2410c',
+    sidebar: '#431407',
+    sidebarGradient: 'linear-gradient(145deg, #431407 0%, #713f12 100%)',
+    gradient: 'linear-gradient(135deg, #f97316, #facc15)',
+  },
+  rose: {
+    label: 'Berry',
+    primary: '#f43f5e',
+    light: '#fff1f2',
+    active: '#be123c',
+    sidebar: '#4c0519',
+    sidebarGradient: 'linear-gradient(145deg, #4c0519 0%, #3b0764 100%)',
+    gradient: 'linear-gradient(135deg, #e11d48, #a855f7)',
+  },
+  cyan: {
+    label: 'Lagoon',
+    primary: '#0891b2',
+    light: '#ecfeff',
+    active: '#0e7490',
+    sidebar: '#083344',
+    sidebarGradient: 'linear-gradient(145deg, #083344 0%, #172554 100%)',
+    gradient: 'linear-gradient(135deg, #0891b2, #3b82f6)',
+  },
+  indigo: {
+    label: 'Indigo',
+    primary: '#6366f1',
+    light: '#eef2ff',
+    active: '#4338ca',
+    sidebar: '#1e1b4b',
+    sidebarGradient: 'linear-gradient(145deg, #1e1b4b 0%, #3b0764 100%)',
+    gradient: 'linear-gradient(135deg, #4f46e5, #9333ea)',
+  },
+  teal: {
+    label: 'Teal',
+    primary: '#0d9488',
+    light: '#f0fdfa',
+    active: '#0f766e',
+    sidebar: '#042f2e',
+    sidebarGradient: 'linear-gradient(145deg, #042f2e 0%, #052e16 100%)',
+    gradient: 'linear-gradient(135deg, #0f766e, #14b8a6)',
+  },
+  amber: {
+    label: 'Amber',
+    primary: '#d97706',
+    light: '#fffbeb',
+    active: '#b45309',
+    sidebar: '#451a03',
+    sidebarGradient: 'linear-gradient(145deg, #451a03 0%, #78350f 100%)',
+    gradient: 'linear-gradient(135deg, #d97706, #f59e0b)',
+  },
 };
 
 function storageKey(workspaceId: string): string {
@@ -49,18 +132,23 @@ export function getWorkspaceTheme(workspaceId: string | null): WorkspaceTheme {
   return value === 'custom' || (value && value in themes) ? value : 'blue';
 }
 
-export function applyWorkspaceTheme(workspaceId: string | null, value: string = getWorkspaceTheme(workspaceId)): void {
+export function applyWorkspaceTheme(
+  workspaceId: string | null,
+  value: string = getWorkspaceTheme(workspaceId),
+): void {
   if (typeof document === 'undefined') return;
-  const customColor = workspaceId && typeof localStorage !== 'undefined'
-    ? localStorage.getItem(customColorKey(workspaceId))
-    : null;
-  const theme = value === 'custom' && customColor
-    ? createCustomTheme(customColor)
-    : /^#[0-9a-f]{6}$/i.test(value)
-      ? createCustomTheme(value)
-      : value in themes
-        ? themes[value as PresetTheme]
-        : themes.blue;
+  const customColor =
+    workspaceId && typeof localStorage !== 'undefined'
+      ? localStorage.getItem(customColorKey(workspaceId))
+      : null;
+  const theme =
+    value === 'custom' && customColor
+      ? createCustomTheme(customColor)
+      : /^#[0-9a-f]{6}$/i.test(value)
+        ? createCustomTheme(value)
+        : value in themes
+          ? themes[value as PresetTheme]
+          : themes.blue;
   document.documentElement.style.setProperty('--m-primary', theme.primary);
   document.documentElement.style.setProperty('--m-primary-light', theme.light);
   document.documentElement.style.setProperty('--m-primary-active', theme.active);
@@ -70,7 +158,10 @@ export function applyWorkspaceTheme(workspaceId: string | null, value: string = 
   document.documentElement.style.setProperty('--m-sidebar-muted', 'rgba(255, 255, 255, 0.72)');
 }
 
-export function setWorkspaceTheme(workspaceId: string | null, value: WorkspaceTheme | string): void {
+export function setWorkspaceTheme(
+  workspaceId: string | null,
+  value: WorkspaceTheme | string,
+): void {
   if (!workspaceId) return;
   if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey(workspaceId), value);
   applyWorkspaceTheme(workspaceId, value);
@@ -87,7 +178,13 @@ export function setWorkspaceCustomColor(workspaceId: string | null, color: strin
   setWorkspaceTheme(workspaceId, 'custom');
 }
 
-function createCustomTheme(color: string): { primary: string; light: string; active: string; sidebar: string; sidebarGradient: string } {
+function createCustomTheme(color: string): {
+  primary: string;
+  light: string;
+  active: string;
+  sidebar: string;
+  sidebarGradient: string;
+} {
   const { r, g, b } = hexToRgb(color);
   const mix = (target: number, amount: number) => Math.round(target + (255 - target) * amount);
   const shade = (target: number, amount: number) => Math.round(target * (1 - amount));

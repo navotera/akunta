@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
@@ -24,6 +25,9 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'at-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'at-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    $role->permissions()->attach(collect(['journal.read', 'journal.update'])->map(
+        fn (string $code) => Permission::create(['app_id' => $app->id, 'code' => $code])->id,
+    ));
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
