@@ -26,7 +26,7 @@ class AkuntaAppMetadataController extends Controller
         $callbackBase = rtrim((string) (config('app.spa_url') ?: config('app.url')), '/');
 
         return response()->json([
-            'slug'    => 'akunta-accounting',
+            'slug'    => 'accounting',
             'name'    => 'Akunta Accounting',
             'version' => '1.2.0',
             'url'     => config('app.url') . '/admin-accounting',
