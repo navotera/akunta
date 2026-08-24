@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
 use App\Http\Controllers\Controller;
+use App\Services\WorkspaceActivityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(private readonly WorkspaceActivityService $workspaceActivity) {}
+
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -92,32 +95,38 @@ class AuthController extends Controller
 
     private function userPayload(User $user): array
     {
-        $tenants = Entity::query()
+        $entities = Entity::query()
             ->whereIn('id', $user->assignments()
                 ->whereNull('revoked_at')
                 ->pluck('entity_id')
                 ->filter()
                 ->unique()
                 ->values())
+            ->whereNull('archived_at')
             ->orderBy('name')
-            ->get(['id', 'tenant_id', 'name', 'is_active', 'is_fake_data', 'workspace_settings', 'theme_color', 'logo_path'])
-            ->map(fn (Entity $e) => [
-                'id' => $e->id,
-                'tenant_id' => $e->tenant_id,
-                'name' => $e->name,
-                'slug' => null,
-                'theme_color' => $e->theme_color,
-                'logo_url' => $e->logo_path ? Storage::disk('public')->url($e->logo_path) : null,
-                'is_active' => (bool) $e->is_active,
-                'is_fake_data' => (bool) $e->is_fake_data,
-                'demo_dataset_version' => $e->is_fake_data
-                    ? data_get($e->workspace_settings, 'native_fake_data_version', 'legacy')
-                    : null,
-                'can_manage_fake_data' => session('ecopa.app_role') === 'admin'
-                    || $user->hasPermission('settings.fake_data.manage', $e->id),
-                'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
-                'issue_report_url' => data_get($e->workspace_settings, 'issue_report_url'),
-            ])
+            ->get(['id', 'tenant_id', 'name', 'is_active', 'is_fake_data', 'workspace_settings', 'theme_color', 'logo_path', 'updated_at']);
+        $lastActivities = $this->workspaceActivity->latestByEntity($entities);
+        $tenants = $entities->map(fn (Entity $e) => [
+            'id' => $e->id,
+            'tenant_id' => $e->tenant_id,
+            'name' => $e->name,
+            'slug' => null,
+            'theme_color' => $e->theme_color,
+            'logo_url' => $e->logo_path ? Storage::disk('public')->url($e->logo_path) : null,
+            'is_active' => (bool) $e->is_active,
+            'archived_at' => null,
+            'scheduled_deletion_at' => null,
+            'is_fake_data' => (bool) $e->is_fake_data,
+            'demo_dataset_version' => $e->is_fake_data
+                ? data_get($e->workspace_settings, 'native_fake_data_version', 'legacy')
+                : null,
+            'can_manage_fake_data' => session('ecopa.app_role') === 'admin'
+                || $user->hasPermission('settings.fake_data.manage', $e->id),
+            'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
+            'date_format' => data_get($e->workspace_settings, 'date_format', 'DD MMM YYYY'),
+            'issue_report_url' => data_get($e->workspace_settings, 'issue_report_url'),
+            'last_activity_at' => $lastActivities->get($e->id),
+        ])
             ->all();
 
         return [

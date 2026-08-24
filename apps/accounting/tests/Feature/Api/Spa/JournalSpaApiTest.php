@@ -160,6 +160,46 @@ it('uses the configured number formats for the workspace', function () {
         ->assertJsonPath('data.transaction_code', 'JR-202605-1');
 });
 
+it('uses entity-scoped increment starts without moving backward from existing numbers', function () {
+    $this->entity->update([
+        'workspace_settings' => [
+            'journal_number_formats' => ['general' => 'J/{numbering}'],
+            'journal_number_starts' => ['general' => 500],
+            'transaction_number_format' => 'T/{numbering}',
+            'transaction_number_start' => 900,
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.number', 'J/500');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-transaction-code?date=2026-05-04')
+        ->assertOk()
+        ->assertJsonPath('data.transaction_code', 'T/900');
+
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'J/700',
+        'date' => '2026-05-04',
+        'memo' => 'Existing higher sequence',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.number', 'J/701');
+});
+
 it('creates a balanced draft journal via SPA endpoint', function () {
     $payload = [
         'transaction_code' => 'TRX-2026-05-010',

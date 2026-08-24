@@ -7,7 +7,6 @@
     type IncomeStatementData,
     type IncomeStatementSection,
   } from '$lib/api/reporting.js';
-  import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -37,7 +36,7 @@
       const res = await reportingApi.incomeStatement(periodStart, periodEnd, journalMode);
       report = res.data;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       loading = false;
     }

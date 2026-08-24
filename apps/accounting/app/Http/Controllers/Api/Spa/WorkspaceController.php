@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Controller;
+use App\Jobs\PurgeArchivedWorkspace;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
 use App\Services\RequiredAccountService;
+use App\Services\WorkspaceActivityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -18,14 +21,29 @@ use Illuminate\Support\Str;
 
 class WorkspaceController extends Controller
 {
-    public function __construct(private readonly RequiredAccountService $requiredAccounts) {}
+    public function __construct(
+        private readonly RequiredAccountService $requiredAccounts,
+        private readonly AuditLoggerContract $auditLogger,
+        private readonly WorkspaceActivityService $workspaceActivity,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
-        $items = Entity::query()->orderBy('name')->get();
+        $items = Entity::query()
+            ->where('tenant_id', $this->managedTenantId($request))
+            ->orderBy('name')
+            ->get();
+        $lastActivities = $this->workspaceActivity->latestByEntity($items);
 
-        return response()->json(['data' => $items->map(fn (Entity $entity): array => $this->payload($entity))->values()]);
+        return response()->json([
+            'data' => $items
+                ->map(fn (Entity $entity): array => $this->payload(
+                    $entity,
+                    $lastActivities->get($entity->id),
+                ))
+                ->values(),
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -49,11 +67,20 @@ class WorkspaceController extends Controller
             'transaction_number_format' => ['nullable', 'string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
             'journal_number_formats' => ['nullable', 'array'],
             'journal_number_formats.*' => ['string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
+            'journal_number_starts' => ['nullable', 'array'],
+            'journal_number_starts.*' => ['integer', 'min:1', 'max:2147483647'],
+            'transaction_number_start' => ['sometimes', 'integer', 'min:1', 'max:2147483647'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
+            'date_format' => ['sometimes', 'in:DD MMM YYYY,DD/MM/YYYY,MM/DD/YYYY,YYYY-MM-DD,d F Y'],
             'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
         $data = $this->normalizeNumberFormats($data);
+        abort_unless(
+            hash_equals($this->managedTenantId($request), $data['tenant_id']),
+            422,
+            'Tenant workspace tidak sesuai dengan workspace aktif.',
+        );
         $data['id'] = (string) Str::ulid();
 
         $workspace = DB::transaction(function () use ($data): Entity {
@@ -86,12 +113,17 @@ class WorkspaceController extends Controller
             'transaction_number_format' => ['nullable', 'string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
             'journal_number_formats' => ['nullable', 'array'],
             'journal_number_formats.*' => ['string', 'max:120', 'regex:/^(?=.*\{(?:numbering|incremented_number)\})[A-Za-z0-9._\/{}-]+$/'],
+            'journal_number_starts' => ['nullable', 'array'],
+            'journal_number_starts.*' => ['integer', 'min:1', 'max:2147483647'],
+            'transaction_number_start' => ['sometimes', 'integer', 'min:1', 'max:2147483647'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
+            'date_format' => ['sometimes', 'in:DD MMM YYYY,DD/MM/YYYY,MM/DD/YYYY,YYYY-MM-DD,d F Y'],
             'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
         $data = $this->normalizeNumberFormats($data);
-        $workspace = Entity::query()->findOrFail($id);
+        $workspace = $this->findManagedWorkspace($request, $id);
+        abort_if($workspace->archived_at !== null, 422, 'Restore workspace sebelum mengubahnya.');
         if (array_key_exists('is_active', $data) && $data['is_active'] === false) {
             $hasOtherActiveWorkspace = Entity::query()
                 ->where('tenant_id', $workspace->tenant_id)
@@ -126,13 +158,119 @@ class WorkspaceController extends Controller
     {
         $this->authorizeAdmin($request);
         $request->validate(['logo' => ['required', 'image', 'max:5120']]);
-        $workspace = Entity::query()->findOrFail($id);
+        $workspace = $this->findManagedWorkspace($request, $id);
+        abort_if($workspace->archived_at !== null, 422, 'Restore workspace sebelum mengubahnya.');
         /** @var UploadedFile $file */
         $file = $request->file('logo');
         $path = $file->store('workspace-logos', 'public');
         $workspace->forceFill(['logo_path' => $path])->save();
 
         return response()->json(['data' => $this->payload($workspace->refresh())]);
+    }
+
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'confirmation_name' => ['required', 'string', 'max:255'],
+        ]);
+        $workspace = $this->findManagedWorkspace($request, $id);
+
+        abort_if($workspace->is_active, 422, 'Nonaktifkan workspace sebelum menghapusnya.');
+        abort_if($workspace->archived_at !== null, 422, 'Workspace ini sudah diarsipkan.');
+        abort_if($workspace->is_fake_data, 422, 'Workspace PT. Fake Data bawaan tidak dapat dihapus.');
+        abort_unless(
+            hash_equals($workspace->name, $data['confirmation_name']),
+            422,
+            'Nama workspace tidak sesuai.',
+        );
+
+        DB::transaction(function () use ($request, $workspace): void {
+            $this->auditLogger->record(
+                action: 'workspace.archive',
+                resourceType: Entity::class,
+                resourceId: $workspace->id,
+                metadata: [
+                    'name' => $workspace->name,
+                    'tenant_id' => $workspace->tenant_id,
+                    'deleted_by' => $request->user()?->id,
+                ],
+                entityId: $workspace->id,
+            );
+            $workspace->forceFill([
+                'is_active' => false,
+                'archived_at' => now(),
+            ])->save();
+        });
+
+        return response()->json([
+            'message' => 'Workspace berhasil diarsipkan.',
+            'data' => $this->payload($workspace->refresh()),
+        ]);
+    }
+
+    public function restore(Request $request, string $id): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $workspace = $this->findManagedWorkspace($request, $id);
+        abort_if($workspace->archived_at === null, 422, 'Workspace ini tidak sedang diarsipkan.');
+
+        DB::transaction(function () use ($workspace): void {
+            $this->auditLogger->record(
+                action: 'workspace.restore',
+                resourceType: Entity::class,
+                resourceId: $workspace->id,
+                entityId: $workspace->id,
+                metadata: [
+                    'name' => $workspace->name,
+                    'tenant_id' => $workspace->tenant_id,
+                ],
+            );
+            $workspace->forceFill([
+                'is_active' => false,
+                'archived_at' => null,
+            ])->save();
+        });
+
+        return response()->json([
+            'message' => 'Workspace berhasil di-restore dalam status nonaktif.',
+            'data' => $this->payload($workspace->refresh()),
+        ]);
+    }
+
+    public function purge(Request $request, string $id): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+        $data = $request->validate([
+            'confirmation_name' => ['required', 'string', 'max:255'],
+        ]);
+        $workspace = $this->findManagedWorkspace($request, $id);
+
+        abort_if($workspace->archived_at === null, 422, 'Arsipkan workspace sebelum menghapusnya permanen.');
+        abort_if($workspace->is_fake_data, 422, 'Workspace PT. Fake Data bawaan tidak dapat dihapus permanen.');
+        abort_unless(
+            hash_equals($workspace->name, $data['confirmation_name']),
+            422,
+            'Nama workspace tidak sesuai.',
+        );
+
+        $this->auditLogger->record(
+            action: 'workspace.purge_requested',
+            resourceType: Entity::class,
+            resourceId: $workspace->id,
+            entityId: $workspace->id,
+            metadata: [
+                'name' => $workspace->name,
+                'tenant_id' => $workspace->tenant_id,
+                'archived_at' => $workspace->archived_at?->toIso8601String(),
+            ],
+        );
+
+        PurgeArchivedWorkspace::dispatch($workspace->id, ignoreRetention: true);
+
+        return response()->json([
+            'message' => 'Penghapusan permanen workspace telah masuk antrean background.',
+        ], 202);
     }
 
     private function authorizeAdmin(Request $request): void
@@ -148,8 +286,23 @@ class WorkspaceController extends Controller
         );
     }
 
+    private function managedTenantId(Request $request): string
+    {
+        $selectedEntityId = trim((string) $request->header('X-Tenant-Slug'));
+        abort_if($selectedEntityId === '', 400, 'Workspace aktif belum dipilih.');
+
+        return (string) Entity::query()->findOrFail($selectedEntityId)->tenant_id;
+    }
+
+    private function findManagedWorkspace(Request $request, string $id): Entity
+    {
+        return Entity::query()
+            ->where('tenant_id', $this->managedTenantId($request))
+            ->findOrFail($id);
+    }
+
     /** @return array<string, mixed> */
-    private function payload(Entity $entity): array
+    private function payload(Entity $entity, mixed $auditedActivity = null): array
     {
         return [
             'id' => $entity->id,
@@ -157,6 +310,8 @@ class WorkspaceController extends Controller
             'name' => $entity->name,
             'workspace_code' => $entity->workspace_code,
             'is_active' => $entity->is_active,
+            'archived_at' => $entity->archived_at?->toIso8601String(),
+            'scheduled_deletion_at' => $entity->archived_at?->copy()->addYear()->toIso8601String(),
             'is_fake_data' => (bool) $entity->is_fake_data,
             'demo_dataset_version' => $entity->is_fake_data
                 ? data_get($entity->workspace_settings, 'native_fake_data_version', 'legacy')
@@ -174,8 +329,14 @@ class WorkspaceController extends Controller
             'journal_number_format' => data_get($entity->workspace_settings, 'journal_number_format'),
             'transaction_number_format' => data_get($entity->workspace_settings, 'transaction_number_format'),
             'journal_number_formats' => data_get($entity->workspace_settings, 'journal_number_formats', []),
+            'journal_number_starts' => data_get($entity->workspace_settings, 'journal_number_starts', []),
+            'transaction_number_start' => (int) data_get($entity->workspace_settings, 'transaction_number_start', 1),
             'bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books'),
+            'date_format' => data_get($entity->workspace_settings, 'date_format', 'DD MMM YYYY'),
             'issue_report_url' => data_get($entity->workspace_settings, 'issue_report_url'),
+            'last_activity_at' => is_string($auditedActivity)
+                ? $auditedActivity
+                : $entity->updated_at?->toIso8601String(),
         ];
     }
 
@@ -193,7 +354,7 @@ class WorkspaceController extends Controller
     private function normalizeNumberFormats(array $data): array
     {
         $formats = is_array($data['workspace_settings'] ?? null) ? $data['workspace_settings'] : [];
-        foreach (['journal_number_format', 'transaction_number_format', 'bookkeeping_mode', 'issue_report_url'] as $key) {
+        foreach (['journal_number_format', 'transaction_number_format', 'transaction_number_start', 'bookkeeping_mode', 'date_format', 'issue_report_url'] as $key) {
             if (array_key_exists($key, $data)) {
                 $formats[$key] = $data[$key] ?: null;
                 unset($data[$key]);
@@ -209,6 +370,13 @@ class WorkspaceController extends Controller
                 $data['journal_number_formats'],
             );
             unset($data['journal_number_formats']);
+        }
+        if (isset($data['journal_number_starts'])) {
+            $formats['journal_number_starts'] = array_merge(
+                is_array($formats['journal_number_starts'] ?? null) ? $formats['journal_number_starts'] : [],
+                $data['journal_number_starts'],
+            );
+            unset($data['journal_number_starts']);
         }
         if ($formats !== []) {
             $data['workspace_settings'] = $formats;

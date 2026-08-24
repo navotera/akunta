@@ -7,7 +7,6 @@
     type SourceRefAggregateRow,
     type SourceRefAggregateMeta,
   } from '$lib/api/source-ref.js';
-  import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -92,7 +91,7 @@
         fiscalMeta = null;
       }
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       loading = false;
     }

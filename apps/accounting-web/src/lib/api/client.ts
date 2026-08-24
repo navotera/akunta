@@ -20,17 +20,48 @@ export class ApiError extends Error {
   status: number;
   body: unknown;
   constructor(status: number, body: unknown, message?: string) {
-    super(message ?? `API error ${status}`);
+    super(message ?? extractApiErrorMessage(body) ?? `API error ${status}`);
     this.status = status;
     this.body = body;
   }
+}
+
+/**
+ * Prefer the server's actionable business message over a technical status
+ * label. Laravel validation responses may also provide useful field errors,
+ * so use the first one when no top-level message is available.
+ */
+function extractApiErrorMessage(body: unknown): string | null {
+  if (typeof body === 'string' && body.trim().length > 0) return body.trim();
+  if (!body || typeof body !== 'object') return null;
+
+  const payload = body as { message?: unknown; errors?: unknown };
+  if (typeof payload.message === 'string' && payload.message.trim().length > 0) {
+    return payload.message.trim();
+  }
+
+  if (payload.errors && typeof payload.errors === 'object') {
+    for (const value of Object.values(payload.errors as Record<string, unknown>)) {
+      if (Array.isArray(value)) {
+        const message = value.find(
+          (item): item is string => typeof item === 'string' && item.trim().length > 0,
+        );
+        if (message) return message.trim();
+      } else if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+  }
+
+  return null;
 }
 
 const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
 
 export function isEcopaIntegrationEnabled(): boolean {
   if (typeof localStorage === 'undefined') return !import.meta.env.DEV;
-  const value = localStorage.getItem('akunta.ecopa.integration');
+  const entityId = readActiveTenantId();
+  const value = entityId ? localStorage.getItem(`akunta.ecopa.integration.${entityId}`) : null;
   return value === null ? !import.meta.env.DEV : value === 'on';
 }
 

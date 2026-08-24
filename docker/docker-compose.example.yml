@@ -86,6 +86,65 @@ services:
       start_period: 30s
     restart: unless-stopped
     logging: *default-logging
+  accounting-worker:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in .env}
+      LOG_CHANNEL: stderr
+      LOG_STACK: stderr
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_QUEUE_RETRY_AFTER: "360"
+    working_dir: /var/www/html/apps/accounting
+    command: ["php", "artisan", "queue:work", "redis", "--sleep=3", "--tries=3", "--timeout=300"]
+    volumes:
+      - ./accounting_storage:/var/www/html/apps/accounting/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - postgres_db
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+  accounting-scheduler:
+    image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting:${AKUNTA_IMAGE_TAG:-latest}
+    pull_policy: always
+    env_file:
+      - ./.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY:?APP_KEY must be set in .env}
+      LOG_CHANNEL: stderr
+      LOG_STACK: stderr
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    working_dir: /var/www/html/apps/accounting
+    command: ["php", "artisan", "schedule:work", "--verbose", "--no-interaction"]
+    volumes:
+      - ./accounting_storage:/var/www/html/apps/accounting/storage
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - postgres_db
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
   accounting-web:
     image: ghcr.io/${GHCR_NAMESPACE:-navotera/akunta}/accounting-web:${AKUNTA_IMAGE_TAG:-latest}
     pull_policy: always

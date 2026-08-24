@@ -28,8 +28,9 @@ class JournalNumberGenerator
         $format = data_get($settings, 'journal_number_formats.'.$type)
             ?: data_get($settings, 'journal_number_format')
             ?: $defaultFormat;
+        $start = max(1, (int) data_get($settings, 'journal_number_starts.'.$type, 1));
 
-        return $this->nextFromFormat($entityId, $date, $format, 'number', $mode);
+        return $this->nextFromFormat($entityId, $date, $format, 'number', $mode, $start);
     }
 
     public function nextTransactionCode(string $entityId, string $date): string
@@ -37,8 +38,9 @@ class JournalNumberGenerator
         $entity = Entity::query()->find($entityId);
         $format = data_get($entity?->workspace_settings, 'transaction_number_format')
             ?: 'TRX/{tahun}/{bulan}/{numbering}';
+        $start = max(1, (int) data_get($entity?->workspace_settings, 'transaction_number_start', 1));
 
-        return $this->nextFromFormat($entityId, $date, $format, 'transaction_code');
+        return $this->nextFromFormat($entityId, $date, $format, 'transaction_code', Journal::MODE_INTERNAL, $start);
     }
 
     private function nextFromFormat(
@@ -47,6 +49,7 @@ class JournalNumberGenerator
         string $format,
         string $column = 'number',
         string $mode = Journal::MODE_INTERNAL,
+        int $start = 1,
     ): string {
         $carbon = Carbon::parse($date);
         $likePrefix = $this->formatPrefix($format, $carbon, $mode);
@@ -55,7 +58,7 @@ class JournalNumberGenerator
             ->where($column, 'like', $likePrefix.'%')
             ->pluck($column);
 
-        $next = 1;
+        $next = max(1, $start);
         foreach ($lastValues as $value) {
             if (preg_match('/(\d+)$/', (string) $value, $matches)) {
                 $next = max($next, (int) $matches[1] + 1);

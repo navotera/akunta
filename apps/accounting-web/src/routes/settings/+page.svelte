@@ -3,7 +3,14 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { isEcopaIntegrationEnabled } from '$lib/api/client.js';
-  import { DEFAULT_DATE_FORMAT, formatDate } from '$lib/utils/date.js';
+  import {
+    DEFAULT_DATE_FORMAT,
+    formatDate,
+    formatDateTime,
+    formatRelativeDateTime,
+    getDateFormat,
+    setDateFormat,
+  } from '$lib/utils/date.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -25,6 +32,7 @@
   type SettingSection =
     | 'general'
     | 'workspace'
+    | 'number-formats'
     | 'entity-profile'
     | 'notification'
     | 'fake-data'
@@ -64,6 +72,25 @@
     description: 'Data simulasi untuk demo',
     icon: '🧪',
   });
+  sections.splice(2, 0, {
+    id: 'number-formats',
+    label: 'Format Kode',
+    description: 'Nomor jurnal dan transaksi',
+    icon: '#',
+  });
+
+  const DEFAULT_JOURNAL_NUMBER_FORMATS: Record<string, string> = {
+    general: 'JU/{tahun}/{bulan}/{numbering}',
+    adjustment: 'JP/{tahun}/{bulan}/{numbering}',
+    reversing: 'JK/{tahun}/{bulan}/{numbering}',
+    closing: 'JP/{tahun}/{bulan}/{numbering}',
+  };
+  const DEFAULT_JOURNAL_NUMBER_STARTS: Record<string, number> = {
+    general: 1,
+    adjustment: 1,
+    reversing: 1,
+    closing: 1,
+  };
 
   let activeSection = $state<SettingSection>('general');
   let ecopaEnabled = $state(true);
@@ -81,22 +108,29 @@
   let logoPreviewUrl = $state<string | null>(null);
   let logoPreviewOpen = $state(false);
   let logoSize = $state(96);
-  let journalNumberFormat = $state('JU/{tahun}/{bulan}/{numbering}');
   let journalNumberFormats = $state<Record<string, string>>({
-    general: 'JU/{tahun}/{bulan}/{numbering}',
-    adjustment: 'JP/{tahun}/{bulan}/{numbering}',
-    reversing: 'JK/{tahun}/{bulan}/{numbering}',
-    closing: 'JP/{tahun}/{bulan}/{numbering}',
+    ...DEFAULT_JOURNAL_NUMBER_FORMATS,
   });
   let transactionNumberFormat = $state('TRX/{tahun}/{bulan}/{numbering}');
+  let transactionNumberStart = $state(1);
+  let journalNumberStarts = $state<Record<string, number>>({
+    ...DEFAULT_JOURNAL_NUMBER_STARTS,
+  });
   let workspaceSaving = $state(false);
   let workspaceToggling = $state<string | null>(null);
+  let workspaceTab = $state<'active' | 'archive'>('active');
+  let deletingWorkspace = $state<WorkspaceRecord | null>(null);
+  let deleteConfirmation = $state('');
+  let workspaceDeleting = $state(false);
+  let workspaceRestoring = $state<string | null>(null);
+  let purgingWorkspace = $state<WorkspaceRecord | null>(null);
+  let purgeConfirmation = $state('');
+  let workspacePurging = $state(false);
   let themePickerWorkspaceId = $state<string | null>(null);
   let numberFormatSaving = $state(false);
   let bookkeepingMode = $state<'independent_books' | 'internal_only'>('independent_books');
-  let bookkeepingModeSaving = $state(false);
   let issueReportUrl = $state('');
-  let issueReportSaving = $state(false);
+  let generalSaving = $state(false);
   let workspaceError = $state<string | null>(null);
   let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
@@ -108,8 +142,19 @@
   let resetPreviewLoading = $state(false);
   let resetConfirmation = $state('');
   let resetBusy = $state(false);
-  let displayedWorkspaces = $derived(
+  let availableWorkspaceRecords = $derived(
     isAdmin && workspaceRecords.length > 0 ? workspaceRecords : tenant.available,
+  );
+  let displayedWorkspaces = $derived(
+    availableWorkspaceRecords.filter((item) =>
+      workspaceTab === 'archive' ? item.archived_at !== null : item.archived_at === null,
+    ),
+  );
+  let activeWorkspaceCount = $derived(
+    availableWorkspaceRecords.filter((item) => item.archived_at === null).length,
+  );
+  let archivedWorkspaceCount = $derived(
+    availableWorkspaceRecords.filter((item) => item.archived_at !== null).length,
   );
   let currentWorkspaceIsFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
@@ -161,7 +206,7 @@
     }
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
     ecopaEnabled = isEcopaIntegrationEnabled();
-    dateFormat = localStorage.getItem('akunta.date.format') ?? DEFAULT_DATE_FORMAT;
+    dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
     const activeWorkspace = tenant.available.find((item) => item.id === tenant.id);
     issueReportUrl = activeWorkspace?.issue_report_url ?? '';
@@ -284,7 +329,7 @@
       const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
       if (activeWorkspace) {
         journalNumberFormats = {
-          ...journalNumberFormats,
+          ...DEFAULT_JOURNAL_NUMBER_FORMATS,
           ...(activeWorkspace.journal_number_formats ?? {}),
         };
         if (
@@ -293,10 +338,16 @@
         ) {
           journalNumberFormats.general = activeWorkspace.journal_number_format;
         }
-        journalNumberFormat = journalNumberFormats.general ?? 'JU/{tahun}/{bulan}/{numbering}';
         transactionNumberFormat =
           activeWorkspace.transaction_number_format ?? 'TRX/{tahun}/{bulan}/{numbering}';
+        transactionNumberStart = activeWorkspace.transaction_number_start ?? 1;
+        journalNumberStarts = {
+          ...DEFAULT_JOURNAL_NUMBER_STARTS,
+          ...(activeWorkspace.journal_number_starts ?? {}),
+        };
         bookkeepingMode = activeWorkspace.bookkeeping_mode ?? 'independent_books';
+        dateFormat = activeWorkspace.date_format ?? DEFAULT_DATE_FORMAT;
+        setDateFormat(dateFormat, activeWorkspace.id);
         issueReportUrl = activeWorkspace.issue_report_url ?? '';
       }
     } catch (error) {
@@ -304,23 +355,30 @@
     }
   }
 
-  async function saveBookkeepingMode() {
-    const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
-    if (!activeWorkspace || bookkeepingModeSaving) return;
-    bookkeepingModeSaving = true;
+  async function saveGeneralSettings() {
+    if (generalSaving) return;
+    generalSaving = true;
     workspaceError = null;
     try {
+      const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
+      if (!isAdmin || !activeWorkspace) throw new Error('Workspace aktif tidak ditemukan.');
+
       await workspaceApi.update(activeWorkspace.id, {
         name: activeWorkspace.name,
         bookkeeping_mode: bookkeepingMode,
+        date_format: dateFormat,
+        issue_report_url: issueReportUrl.trim() || null,
       });
-      savedMessage = 'Mode pembukuan disimpan untuk entitas aktif.';
+      setDateFormat(dateFormat, activeWorkspace.id);
+      await Promise.all([loadWorkspaces(), auth.refresh()]);
+
+      savedMessage = 'Pengaturan General berhasil disimpan.';
       window.setTimeout(() => (savedMessage = null), 3000);
-      await loadWorkspaces();
     } catch (error) {
-      workspaceError = error instanceof Error ? error.message : 'Mode pembukuan gagal disimpan.';
+      workspaceError =
+        error instanceof Error ? error.message : 'Pengaturan General gagal disimpan.';
     } finally {
-      bookkeepingModeSaving = false;
+      generalSaving = false;
     }
   }
 
@@ -333,8 +391,10 @@
       await workspaceApi.update(activeWorkspace.id, {
         name: activeWorkspace.name,
         journal_number_formats: journalNumberFormats,
+        journal_number_starts: journalNumberStarts,
         journal_number_format: journalNumberFormats.general.trim(),
         transaction_number_format: transactionNumberFormat.trim(),
+        transaction_number_start: transactionNumberStart,
       });
       savedMessage = 'Format kode jurnal dan transaksi disimpan.';
       window.setTimeout(() => (savedMessage = null), 3000);
@@ -343,29 +403,6 @@
       workspaceError = error instanceof Error ? error.message : 'Format kode gagal disimpan.';
     } finally {
       numberFormatSaving = false;
-    }
-  }
-
-  async function saveIssueReportUrl() {
-    const activeWorkspace =
-      workspaceRecords.find((item) => item.id === tenant.id) ??
-      tenant.available.find((item) => item.id === tenant.id);
-    if (!isAdmin || !activeWorkspace || issueReportSaving) return;
-    issueReportSaving = true;
-    workspaceError = null;
-    try {
-      await workspaceApi.update(activeWorkspace.id, {
-        name: activeWorkspace.name,
-        issue_report_url: issueReportUrl.trim() || null,
-      });
-      savedMessage = 'URL Laporan Issue disimpan.';
-      window.setTimeout(() => (savedMessage = null), 3000);
-      await loadWorkspaces();
-      await auth.refresh();
-    } catch (error) {
-      workspaceError = error instanceof Error ? error.message : 'URL Laporan Issue gagal disimpan.';
-    } finally {
-      issueReportSaving = false;
     }
   }
 
@@ -399,6 +436,93 @@
     }
   }
 
+  function openWorkspaceDelete(workspaceItem: WorkspaceRecord) {
+    if (!isAdmin || workspaceItem.is_active || workspaceItem.is_fake_data) return;
+    deletingWorkspace = workspaceItem;
+    deleteConfirmation = '';
+    workspaceError = null;
+  }
+
+  function closeWorkspaceDelete() {
+    if (workspaceDeleting) return;
+    deletingWorkspace = null;
+    deleteConfirmation = '';
+  }
+
+  async function deleteWorkspace() {
+    if (!deletingWorkspace || workspaceDeleting || deleteConfirmation !== deletingWorkspace.name)
+      return;
+
+    workspaceDeleting = true;
+    workspaceError = null;
+    try {
+      await workspaceApi.delete(deletingWorkspace.id, deleteConfirmation);
+      deletingWorkspace = null;
+      deleteConfirmation = '';
+      workspaceTab = 'archive';
+      savedMessage = 'Workspace berhasil diarsipkan.';
+      window.setTimeout(() => (savedMessage = null), 3000);
+      await Promise.all([loadWorkspaces(), auth.refresh()]);
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : 'Workspace gagal dihapus.';
+    } finally {
+      workspaceDeleting = false;
+    }
+  }
+
+  async function restoreWorkspace(workspaceItem: WorkspaceRecord) {
+    if (!isAdmin || workspaceRestoring) return;
+    workspaceRestoring = workspaceItem.id;
+    workspaceError = null;
+    try {
+      await workspaceApi.restore(workspaceItem.id);
+      workspaceTab = 'active';
+      savedMessage = 'Workspace berhasil di-restore dalam status nonaktif.';
+      window.setTimeout(() => (savedMessage = null), 3000);
+      await Promise.all([loadWorkspaces(), auth.refresh()]);
+    } catch (error) {
+      workspaceError = error instanceof Error ? error.message : 'Workspace gagal di-restore.';
+    } finally {
+      workspaceRestoring = null;
+    }
+  }
+
+  function openWorkspacePurge(workspaceItem: WorkspaceRecord) {
+    if (!isAdmin || workspaceItem.archived_at === null || workspaceItem.is_fake_data) return;
+    purgingWorkspace = workspaceItem;
+    purgeConfirmation = '';
+    workspaceError = null;
+  }
+
+  function closeWorkspacePurge() {
+    if (workspacePurging) return;
+    purgingWorkspace = null;
+    purgeConfirmation = '';
+  }
+
+  async function purgeWorkspace() {
+    if (!purgingWorkspace || workspacePurging || purgeConfirmation !== purgingWorkspace.name)
+      return;
+
+    workspacePurging = true;
+    workspaceError = null;
+    const workspaceId = purgingWorkspace.id;
+    try {
+      const response = await workspaceApi.purge(workspaceId, purgeConfirmation);
+      purgingWorkspace = null;
+      purgeConfirmation = '';
+      workspaceRecords = workspaceRecords.filter((item) => item.id !== workspaceId);
+      savedMessage = response.message;
+      window.setTimeout(() => (savedMessage = null), 4000);
+      await auth.refresh();
+    } catch (error) {
+      workspaceError =
+        error instanceof Error ? error.message : 'Workspace gagal masuk antrean penghapusan.';
+    } finally {
+      workspacePurging = false;
+    }
+  }
+
   async function chooseWorkspaceTheme(workspaceItem: WorkspaceRecord, value: string) {
     themePickerWorkspaceId = null;
     workspaceError = null;
@@ -427,19 +551,6 @@
     workspaceLogo = null;
     if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
     logoPreviewUrl = null;
-    journalNumberFormats = {
-      ...journalNumberFormats,
-      ...(workspaceItem?.journal_number_formats ?? {}),
-    };
-    if (!workspaceItem?.journal_number_formats?.general && workspaceItem?.journal_number_format) {
-      journalNumberFormats.general = workspaceItem.journal_number_format;
-    }
-    journalNumberFormat =
-      journalNumberFormats.general ??
-      workspaceItem?.journal_number_format ??
-      'JU/{tahun}/{bulan}/{numbering}';
-    transactionNumberFormat =
-      workspaceItem?.transaction_number_format ?? 'TRX/{tahun}/{bulan}/{numbering}';
     profileLegalForm = workspaceItem?.legal_form ?? '';
     profileNpwp = workspaceItem?.npwp ?? '';
     profileNib = workspaceItem?.nib ?? '';
@@ -470,9 +581,6 @@
           phone: workspaceItemValue('phone'),
           email: workspaceItemValue('email'),
           address: workspaceItemValue('address'),
-          journal_number_formats: journalNumberFormats,
-          journal_number_format: journalNumberFormat.trim(),
-          transaction_number_format: transactionNumberFormat.trim(),
         });
         if (workspaceLogo) await workspaceApi.uploadLogo(updated.id, workspaceLogo);
       } else {
@@ -492,9 +600,6 @@
           phone: workspaceItemValue('phone'),
           email: workspaceItemValue('email'),
           address: workspaceItemValue('address'),
-          journal_number_formats: journalNumberFormats,
-          journal_number_format: journalNumberFormat.trim(),
-          transaction_number_format: transactionNumberFormat.trim(),
         });
         if (workspaceLogo) await workspaceApi.uploadLogo(created.id, workspaceLogo);
       }
@@ -533,16 +638,15 @@
 
   function toggleEcopa() {
     ecopaEnabled = !ecopaEnabled;
-    localStorage.setItem('akunta.ecopa.integration', ecopaEnabled ? 'on' : 'off');
+    if (tenant.id) {
+      localStorage.setItem(`akunta.ecopa.integration.${tenant.id}`, ecopaEnabled ? 'on' : 'off');
+    }
     savedMessage = `Integrasi Ecopa ${ecopaEnabled ? 'diaktifkan' : 'dinonaktifkan'}.`;
     window.setTimeout(() => (savedMessage = null), 3000);
   }
 
   function updateDateFormat(event: Event) {
     dateFormat = (event.currentTarget as HTMLSelectElement).value;
-    localStorage.setItem('akunta.date.format', dateFormat);
-    savedMessage = 'Format tanggal disimpan.';
-    window.setTimeout(() => (savedMessage = null), 3000);
   }
 
   function formatDatePreview(format: string): string {
@@ -562,7 +666,11 @@
   ];
   let activeJournalFormatType = $state('general');
 
-  function formatNumberPreview(format: string, mode: 'internal' | 'fiscal' = 'internal'): string {
+  function formatNumberPreview(
+    format: string,
+    mode: 'internal' | 'fiscal' = 'internal',
+    number = 1,
+  ): string {
     return format.replace(
       /\{(?:tahun|tahun_full|bulan|thn|bln|numbering|incremented_number|tipe_jurnal|journal_type)\}/g,
       (token) =>
@@ -572,8 +680,8 @@
           '{bulan}': '3',
           '{thn}': '2026',
           '{bln}': '03',
-          '{numbering}': '10495',
-          '{incremented_number}': '10495',
+          '{numbering}': String(number),
+          '{incremented_number}': String(number),
           '{tipe_jurnal}': mode === 'fiscal' ? 'F' : 'I',
           '{journal_type}': mode === 'fiscal' ? 'F' : 'I',
         })[token] ?? token,
@@ -582,7 +690,6 @@
 
   function updateJournalFormat(type: string, value: string) {
     journalNumberFormats = { ...journalNumberFormats, [type]: value };
-    if (type === 'general') journalNumberFormat = value;
   }
 
   function startFormatTagDrag(event: DragEvent, tag: string) {
@@ -650,21 +757,11 @@
               <select
                 class="rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
                 bind:value={bookkeepingMode}
-                disabled={!isAdmin || bookkeepingModeSaving}
+                disabled={!isAdmin || generalSaving}
               >
                 <option value="independent_books">Intern dan Fiskal Independen</option>
                 <option value="internal_only">Intern Saja</option>
               </select>
-              {#if isAdmin}
-                <button
-                  type="button"
-                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  onclick={saveBookkeepingMode}
-                  disabled={bookkeepingModeSaving}
-                >
-                  {bookkeepingModeSaving ? 'Menyimpan…' : 'Simpan'}
-                </button>
-              {/if}
             </div>
           </div>
           <div class="flex items-center justify-between gap-4 py-4">
@@ -688,6 +785,7 @@
                 class="rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
                 value={dateFormat}
                 onchange={updateDateFormat}
+                disabled={!isAdmin || generalSaving}
                 aria-label="Format tanggal"
               >
                 <option value="DD MMM YYYY">{formatDatePreview('DD MMM YYYY')}</option>
@@ -711,19 +809,9 @@
                 bind:value={issueReportUrl}
                 placeholder="https://support.example.com/akunta/issues"
                 class="min-w-64 flex-1 rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
-                disabled={!isAdmin || issueReportSaving}
+                disabled={!isAdmin || generalSaving}
                 aria-label="URL redirect Laporan Issue"
               />
-              {#if isAdmin}
-                <button
-                  type="button"
-                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                  onclick={saveIssueReportUrl}
-                  disabled={issueReportSaving}
-                >
-                  {issueReportSaving ? 'Menyimpan…' : 'Simpan'}
-                </button>
-              {/if}
               {#if issueReportUrl.trim()}
                 <a
                   href={issueReportUrl.trim()}
@@ -741,6 +829,18 @@
           {/if}
           {#if savedMessage}
             <p class="py-3 text-xs text-paid" role="status">{savedMessage}</p>
+          {/if}
+          {#if isAdmin}
+            <div class="flex justify-end py-4">
+              <button
+                type="button"
+                class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:cursor-wait disabled:opacity-50"
+                onclick={() => void saveGeneralSettings()}
+                disabled={generalSaving}
+              >
+                {generalSaving ? 'Menyimpan…' : 'Simpan'}
+              </button>
+            </div>
           {/if}
         </div>
       {:else if activeSection === 'workspace'}
@@ -768,12 +868,46 @@
           {/if}
         </div>
 
-        <div class="mt-6 space-y-3">
+        <div class="mt-6 flex items-center gap-1 border-b border-border-soft">
+          <button
+            type="button"
+            class="border-b-2 px-4 py-2.5 text-sm font-semibold {workspaceTab === 'active'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-muted hover:text-text-default'}"
+            aria-current={workspaceTab === 'active' ? 'page' : undefined}
+            onclick={() => (workspaceTab = 'active')}
+          >
+            Active <span class="ml-1 text-xs">({activeWorkspaceCount})</span>
+          </button>
+          <button
+            type="button"
+            class="border-b-2 px-4 py-2.5 text-sm font-semibold {workspaceTab === 'archive'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-text-muted hover:text-text-default'}"
+            aria-current={workspaceTab === 'archive' ? 'page' : undefined}
+            onclick={() => (workspaceTab = 'archive')}
+          >
+            Archive <span class="ml-1 text-xs">({archivedWorkspaceCount})</span>
+          </button>
+        </div>
+
+        {#if workspaceTab === 'archive'}
+          <div
+            class="mt-4 rounded-md border border-border-default bg-page-bg px-4 py-3 text-sm text-text-muted"
+            role="note"
+          >
+            Data yang diarsipkan akan dihapuskan dalam waktu 1 tahun jika tidak di-restore.
+          </div>
+        {/if}
+
+        <div class="mt-4 space-y-3">
           {#if displayedWorkspaces.length === 0}
             <div
               class="rounded-md border border-dashed border-border-default bg-page-bg p-5 text-sm text-text-muted"
             >
-              Belum ada workspace yang dapat diakses.
+              {workspaceTab === 'archive'
+                ? 'Belum ada workspace yang diarsipkan.'
+                : 'Belum ada workspace aktif yang dapat diakses.'}
             </div>
           {:else}
             {#each displayedWorkspaces as workspaceItem (workspaceItem.id)}
@@ -792,6 +926,34 @@
                   <div class="min-w-0">
                     <div class="flex min-w-0 items-center gap-2">
                       <h3 class="truncate text-sm font-semibold">{workspaceItem.name}</h3>
+                      {#if isAdmin && !workspaceItem.is_active && !workspaceItem.is_fake_data && workspaceItem.archived_at === null}
+                        <button
+                          type="button"
+                          class="shrink-0 rounded-md p-1 text-text-muted transition hover:bg-danger-light hover:text-danger"
+                          aria-label={`Hapus workspace ${workspaceItem.name}`}
+                          title="Hapus workspace"
+                          onclick={() => {
+                            const record = workspaceRecords.find(
+                              (item) => item.id === workspaceItem.id,
+                            );
+                            if (record) openWorkspaceDelete(record);
+                          }}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            class="h-4 w-4"
+                            aria-hidden="true"
+                          >
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 10v6M14 10v6" />
+                          </svg>
+                        </button>
+                      {/if}
                       {#if workspaceItem.is_fake_data}
                         <span
                           class="shrink-0 rounded-full bg-warning-light px-2 py-0.5 text-[0.625rem] font-semibold text-warning"
@@ -802,7 +964,22 @@
                     <p class="mt-1 text-xs text-text-muted">ID: {workspaceItem.id}</p>
                   </div>
                 </div>
-                {#if isAdmin}
+                <div class="min-w-40 shrink-0">
+                  <p class="text-[0.625rem] font-semibold uppercase tracking-wider text-text-muted">
+                    Last activity
+                  </p>
+                  <p
+                    class="mt-1 text-xs font-medium text-text-default"
+                    title={workspaceItem.last_activity_at
+                      ? formatDateTime(workspaceItem.last_activity_at)
+                      : 'Belum ada aktivitas'}
+                  >
+                    {workspaceItem.last_activity_at
+                      ? formatRelativeDateTime(workspaceItem.last_activity_at)
+                      : 'Belum ada aktivitas'}
+                  </p>
+                </div>
+                {#if isAdmin && workspaceItem.archived_at === null}
                   {@const currentTheme = workspaceThemes().find(
                     (theme) => theme.value === workspaceItem.theme_color,
                   )}
@@ -858,7 +1035,11 @@
                     {/if}
                   </div>
                 {/if}
-                {#if tenant.id === workspaceItem.id}
+                {#if workspaceItem.archived_at !== null}
+                  <span class="shrink-0 rounded-full bg-page-bg px-3 py-1 text-xs text-text-muted"
+                    >Diarsipkan</span
+                  >
+                {:else if tenant.id === workspaceItem.id}
                   <span
                     class="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-white"
                     >Dipilih</span
@@ -870,7 +1051,51 @@
                 {:else}
                   <span class="shrink-0 text-xs text-text-muted">Tersedia</span>
                 {/if}
-                {#if isAdmin}
+                {#if isAdmin && workspaceItem.archived_at !== null}
+                  <div class="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      class="rounded-md border border-primary/30 bg-primary-light px-3 py-2 text-xs font-semibold text-primary-active hover:border-primary disabled:cursor-wait disabled:opacity-60"
+                      onclick={() => {
+                        const record = workspaceRecords.find(
+                          (item) => item.id === workspaceItem.id,
+                        );
+                        if (record) void restoreWorkspace(record);
+                      }}
+                      disabled={workspaceRestoring !== null || workspacePurging}
+                    >
+                      {workspaceRestoring === workspaceItem.id ? 'Memulihkan…' : 'Restore'}
+                    </button>
+                    {#if !workspaceItem.is_fake_data}
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1.5 rounded-md border border-danger px-3 py-2 text-xs font-semibold text-danger transition hover:bg-danger-light disabled:cursor-wait disabled:opacity-60"
+                        onclick={() => {
+                          const record = workspaceRecords.find(
+                            (item) => item.id === workspaceItem.id,
+                          );
+                          if (record) openWorkspacePurge(record);
+                        }}
+                        disabled={workspacePurging || workspaceRestoring !== null}
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                          class="h-4 w-4"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M8 6V4h8v2" />
+                          <path d="M19 6l-1 14H6L5 6" />
+                          <path d="M10 10v6M14 10v6" />
+                        </svg>
+                        Hapus Permanen
+                      </button>
+                    {/if}
+                  </div>
+                {:else if isAdmin}
                   <button
                     type="button"
                     class="relative h-6 w-11 shrink-0 overflow-hidden rounded-full transition-colors {workspaceItem.is_active
@@ -897,114 +1122,6 @@
             {/each}
           {/if}
         </div>
-
-        {#if isAdmin && workspaceRecords.some((item) => item.id === tenant.id)}
-          <div class="mt-6 rounded-lg border border-border-soft bg-page-bg p-4">
-            <h3 class="text-sm font-bold">Format Kode Jurnal & Transaksi</h3>
-            <p class="mt-1 text-xs text-text-muted">
-              Atur format nomor otomatis untuk workspace aktif. Gunakan token
-              <code>{'{tahun}'}</code>, <code>{'{bulan}'}</code>,
-              <code>{'{numbering}'}</code>, dan <code>{'{tipe_jurnal}'}</code>.
-            </p>
-            <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div class="md:col-span-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label class="block">
-                  <span class="mb-1 block text-sm font-semibold">Kode transaksi — Input</span>
-                  <FormatTokenInput
-                    value={transactionNumberFormat}
-                    onChange={(value) => (transactionNumberFormat = value)}
-                    placeholder={'TRX/{tahun}/{bulan}/{numbering}'}
-                  />
-                  <span class="mt-2 block text-xs text-text-muted">Tag tersedia:</span>
-                  <div class="mt-1 flex flex-wrap gap-1.5">
-                    {#each formatTags as tag}
-                      <button
-                        type="button"
-                        draggable="true"
-                        class="rounded border border-primary/30 bg-primary-light px-2 py-1 font-mono text-xs text-primary-active hover:border-primary"
-                        ondragstart={(event) => startFormatTagDrag(event, tag)}>{tag}</button
-                      >
-                    {/each}
-                  </div>
-                </label>
-                <div class="block">
-                  <span class="mb-1 block text-sm font-semibold">Kode transaksi — Preview</span>
-                  <div
-                    class="rounded-md border border-border-default bg-card-bg px-3 py-2 font-mono text-sm text-primary-active"
-                  >
-                    {formatNumberPreview(transactionNumberFormat)}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-6 border-b border-border-default">
-              <div class="flex flex-wrap gap-1" role="tablist" aria-label="Tipe jurnal">
-                {#each journalTypeOptions as journalTypeOption (journalTypeOption.value)}
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activeJournalFormatType === journalTypeOption.value}
-                    class="rounded-t-md px-3 py-2 text-sm font-semibold {activeJournalFormatType ===
-                    journalTypeOption.value
-                      ? 'border border-b-0 border-border-default bg-card-bg text-primary-active'
-                      : 'text-text-muted hover:bg-card-bg hover:text-primary-active'}"
-                    onclick={() => (activeJournalFormatType = journalTypeOption.value)}
-                  >
-                    {journalTypeOption.label}
-                  </button>
-                {/each}
-              </div>
-            </div>
-
-            <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label class="block">
-                <span class="mb-1 block text-sm font-semibold"
-                  >{journalTypeOptions.find((item) => item.value === activeJournalFormatType)
-                    ?.label} — Input</span
-                >
-                <FormatTokenInput
-                  value={journalNumberFormats[activeJournalFormatType] ?? ''}
-                  onChange={(value) => updateJournalFormat(activeJournalFormatType, value)}
-                  placeholder={'JU/{tahun}/{bulan}/{numbering}'}
-                />
-                <span class="mt-2 block text-xs text-text-muted">Tag tersedia:</span>
-                <div class="mt-1 flex flex-wrap gap-1.5">
-                  {#each formatTags as tag}
-                    <button
-                      type="button"
-                      draggable="true"
-                      class="rounded border border-primary/30 bg-primary-light px-2 py-1 font-mono text-xs text-primary-active hover:border-primary"
-                      ondragstart={(event) => startFormatTagDrag(event, tag)}>{tag}</button
-                    >
-                  {/each}
-                </div>
-              </label>
-              <div class="block">
-                <span class="mb-1 block text-sm font-semibold"
-                  >{journalTypeOptions.find((item) => item.value === activeJournalFormatType)
-                    ?.label} — Preview</span
-                >
-                <div
-                  class="rounded-md border border-border-default bg-card-bg px-3 py-2 font-mono text-sm text-primary-active"
-                >
-                  {formatNumberPreview(journalNumberFormats[activeJournalFormatType] ?? '')}
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-3 flex justify-end">
-              <button
-                type="button"
-                class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-                onclick={() => void saveNumberFormats()}
-                disabled={numberFormatSaving}
-              >
-                {numberFormatSaving ? 'Menyimpan…' : 'Simpan format'}
-              </button>
-            </div>
-          </div>
-        {/if}
 
         <div
           class="mt-5 rounded-md border border-border-soft bg-page-bg p-4 text-xs text-text-muted"
@@ -1175,6 +1292,321 @@
                 </button>
               </div>
             </form>
+          </div>
+        {/if}
+
+        {#if deletingWorkspace}
+          <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="presentation"
+            onclick={(event) => event.currentTarget === event.target && closeWorkspaceDelete()}
+          >
+            <form
+              class="w-full max-w-md rounded-lg bg-card-bg p-6 shadow-xl"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void deleteWorkspace();
+              }}
+            >
+              <div class="flex items-start gap-3">
+                <span
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-light text-danger"
+                  aria-hidden="true"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    class="h-5 w-5"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 10v6M14 10v6" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 class="text-lg font-bold">Arsipkan workspace?</h3>
+                  <p class="mt-1 text-sm leading-6 text-text-muted">
+                    Workspace dan seluruh datanya akan dipindahkan ke Archive. Data baru dihapus
+                    permanen oleh background queue setelah satu tahun jika tidak di-restore.
+                  </p>
+                </div>
+              </div>
+
+              <label class="mt-5 block">
+                <span class="mb-2 block text-sm text-text-muted">
+                  Ketik <strong class="text-text-default">{deletingWorkspace.name}</strong> untuk melanjutkan.
+                </span>
+                <input
+                  class="w-full rounded-md border border-border-default px-3 py-2 text-sm focus:border-danger focus:outline-none"
+                  bind:value={deleteConfirmation}
+                  autocomplete="off"
+                  aria-label="Konfirmasi nama workspace"
+                />
+              </label>
+
+              {#if workspaceError}
+                <p class="mt-3 text-xs text-danger" role="alert">{workspaceError}</p>
+              {/if}
+
+              <div class="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-3 py-2 text-sm"
+                  onclick={closeWorkspaceDelete}
+                  disabled={workspaceDeleting}>Batal</button
+                >
+                <button
+                  type="submit"
+                  class="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={workspaceDeleting || deleteConfirmation !== deletingWorkspace.name}
+                >
+                  {workspaceDeleting ? 'Mengarsipkan…' : 'Arsipkan Workspace'}
+                </button>
+              </div>
+            </form>
+          </div>
+        {/if}
+
+        {#if purgingWorkspace}
+          <div
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="presentation"
+            onclick={(event) => event.currentTarget === event.target && closeWorkspacePurge()}
+          >
+            <form
+              class="w-full max-w-md rounded-lg bg-card-bg p-6 shadow-xl"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void purgeWorkspace();
+              }}
+            >
+              <div class="flex items-start gap-3">
+                <span
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-light text-danger"
+                  aria-hidden="true"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    class="h-5 w-5"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 10v6M14 10v6" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 class="text-lg font-bold">Hapus workspace permanen?</h3>
+                  <p class="mt-1 text-sm leading-6 text-text-muted">
+                    Seluruh data workspace akan dihapus oleh background queue dan tidak dapat
+                    di-restore kembali.
+                  </p>
+                </div>
+              </div>
+
+              <label class="mt-5 block">
+                <span class="mb-2 block text-sm text-text-muted">
+                  Ketik <strong class="text-text-default">{purgingWorkspace.name}</strong> untuk melanjutkan.
+                </span>
+                <input
+                  class="w-full rounded-md border border-border-default px-3 py-2 text-sm focus:border-danger focus:outline-none"
+                  bind:value={purgeConfirmation}
+                  autocomplete="off"
+                  aria-label="Konfirmasi nama workspace untuk penghapusan permanen"
+                />
+              </label>
+
+              {#if workspaceError}
+                <p class="mt-3 text-xs text-danger" role="alert">{workspaceError}</p>
+              {/if}
+
+              <div class="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-3 py-2 text-sm"
+                  onclick={closeWorkspacePurge}
+                  disabled={workspacePurging}>Batal</button
+                >
+                <button
+                  type="submit"
+                  class="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={workspacePurging || purgeConfirmation !== purgingWorkspace.name}
+                >
+                  {workspacePurging ? 'Mengantrekan…' : 'Hapus Permanen'}
+                </button>
+              </div>
+            </form>
+          </div>
+        {/if}
+      {:else if activeSection === 'number-formats'}
+        <h2 class="text-lg font-bold">Format Kode Jurnal & Transaksi</h2>
+        <p class="mt-1 text-sm text-text-muted">
+          Atur format nomor otomatis untuk workspace aktif.
+        </p>
+
+        {#if !isAdmin}
+          <div
+            class="mt-6 rounded-md border border-border-soft bg-page-bg p-4 text-sm text-text-muted"
+          >
+            Anda tidak memiliki izin untuk mengubah format kode workspace.
+          </div>
+        {:else if !workspaceRecords.some((item) => item.id === tenant.id)}
+          <div
+            class="mt-6 rounded-md border border-dashed border-border-default bg-page-bg p-5 text-sm text-text-muted"
+          >
+            Workspace aktif belum tersedia. Pilih workspace terlebih dahulu.
+          </div>
+        {:else}
+          <div class="mt-6 rounded-lg border border-border-soft bg-page-bg p-4">
+            <p class="text-xs text-text-muted">
+              Gunakan token <code>{'{tahun}'}</code>, <code>{'{bulan}'}</code>,
+              <code>{'{numbering}'}</code>, dan <code>{'{tipe_jurnal}'}</code>.
+            </p>
+            <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="block">
+                <span class="mb-1 block text-sm font-semibold">Kode transaksi — Input</span>
+                <FormatTokenInput
+                  value={transactionNumberFormat}
+                  onChange={(value) => (transactionNumberFormat = value)}
+                  placeholder={'TRX/{tahun}/{bulan}/{numbering}'}
+                />
+                <span class="mt-2 block text-xs text-text-muted">Tag tersedia:</span>
+                <div class="mt-1 flex flex-wrap gap-1.5">
+                  {#each formatTags as tag}
+                    <button
+                      type="button"
+                      draggable="true"
+                      class="rounded border border-primary/30 bg-primary-light px-2 py-1 font-mono text-xs text-primary-active hover:border-primary"
+                      ondragstart={(event) => startFormatTagDrag(event, tag)}>{tag}</button
+                    >
+                  {/each}
+                </div>
+                <div class="mt-4 block max-w-56">
+                  <span class="mb-1 block text-xs font-semibold text-text-muted"
+                    >Nilai awal increment</span
+                  >
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    bind:value={transactionNumberStart}
+                    aria-label="Nilai awal increment transaksi"
+                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div class="block">
+                <span class="mb-1 block text-sm font-semibold">Kode transaksi — Preview</span>
+                <div
+                  class="rounded-md border border-border-default bg-card-bg px-3 py-2 font-mono text-sm text-primary-active"
+                >
+                  {formatNumberPreview(transactionNumberFormat, 'internal', transactionNumberStart)}
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6 border-b border-border-default">
+              <div class="flex flex-wrap gap-1" role="tablist" aria-label="Tipe jurnal">
+                {#each journalTypeOptions as journalTypeOption (journalTypeOption.value)}
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeJournalFormatType === journalTypeOption.value}
+                    class="rounded-t-md px-3 py-2 text-sm font-semibold {activeJournalFormatType ===
+                    journalTypeOption.value
+                      ? 'border border-b-0 border-border-default bg-card-bg text-primary-active'
+                      : 'text-text-muted hover:bg-card-bg hover:text-primary-active'}"
+                    onclick={() => (activeJournalFormatType = journalTypeOption.value)}
+                  >
+                    {journalTypeOption.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div class="block">
+                <span class="mb-1 block text-sm font-semibold"
+                  >{journalTypeOptions.find((item) => item.value === activeJournalFormatType)
+                    ?.label} — Input</span
+                >
+                <FormatTokenInput
+                  value={journalNumberFormats[activeJournalFormatType] ?? ''}
+                  onChange={(value) => updateJournalFormat(activeJournalFormatType, value)}
+                  placeholder={'JU/{tahun}/{bulan}/{numbering}'}
+                />
+                <span class="mt-2 block text-xs text-text-muted">Tag tersedia:</span>
+                <div class="mt-1 flex flex-wrap gap-1.5">
+                  {#each formatTags as tag}
+                    <button
+                      type="button"
+                      draggable="true"
+                      class="rounded border border-primary/30 bg-primary-light px-2 py-1 font-mono text-xs text-primary-active hover:border-primary"
+                      ondragstart={(event) => startFormatTagDrag(event, tag)}>{tag}</button
+                    >
+                  {/each}
+                </div>
+                <div class="mt-4 block max-w-56">
+                  <span class="mb-1 block text-xs font-semibold text-text-muted"
+                    >Nilai awal increment</span
+                  >
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={journalNumberStarts[activeJournalFormatType] ?? 1}
+                    oninput={(event) => {
+                      const value = Number((event.currentTarget as HTMLInputElement).value);
+                      journalNumberStarts = {
+                        ...journalNumberStarts,
+                        [activeJournalFormatType]: Math.max(1, value || 1),
+                      };
+                    }}
+                    aria-label={`Nilai awal increment ${activeJournalFormatType}`}
+                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+              <div class="block">
+                <span class="mb-1 block text-sm font-semibold"
+                  >{journalTypeOptions.find((item) => item.value === activeJournalFormatType)
+                    ?.label} — Preview</span
+                >
+                <div
+                  class="rounded-md border border-border-default bg-card-bg px-3 py-2 font-mono text-sm text-primary-active"
+                >
+                  {formatNumberPreview(
+                    journalNumberFormats[activeJournalFormatType] ?? '',
+                    'internal',
+                    journalNumberStarts[activeJournalFormatType] ?? 1,
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {#if workspaceError}
+              <p class="mt-3 text-xs text-danger" role="alert">{workspaceError}</p>
+            {/if}
+            {#if savedMessage}
+              <p class="mt-3 text-xs text-paid" role="status">{savedMessage}</p>
+            {/if}
+
+            <div class="mt-5 flex justify-end">
+              <button
+                type="button"
+                class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+                onclick={() => void saveNumberFormats()}
+                disabled={numberFormatSaving}
+              >
+                {numberFormatSaving ? 'Menyimpan…' : 'Simpan format'}
+              </button>
+            </div>
           </div>
         {/if}
       {:else if activeSection === 'entity-profile'}

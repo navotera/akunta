@@ -3,7 +3,6 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { reportingApi, type TrialBalanceData } from '$lib/api/reporting.js';
-  import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -26,7 +25,7 @@
       const res = await reportingApi.trialBalance(asOf, journalMode);
       report = res.data;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       loading = false;
     }

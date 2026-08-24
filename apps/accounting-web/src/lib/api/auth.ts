@@ -13,11 +13,15 @@ export interface AuthUser {
     theme_color: string;
     logo_url: string | null;
     is_active: boolean;
+    archived_at: string | null;
+    scheduled_deletion_at: string | null;
     is_fake_data: boolean;
     demo_dataset_version: string | null;
     can_manage_fake_data: boolean;
     bookkeeping_mode: 'independent_books' | 'internal_only';
+    date_format: string;
     issue_report_url: string | null;
+    last_activity_at: string | null;
   }>;
   is_sso_admin: boolean;
   is_admin: boolean;

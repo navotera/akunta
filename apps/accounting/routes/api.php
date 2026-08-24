@@ -148,6 +148,9 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::get('workspaces', [WorkspaceController::class, 'index']);
         Route::post('workspaces', [WorkspaceController::class, 'store']);
         Route::patch('workspaces/{id}', [WorkspaceController::class, 'update']);
+        Route::delete('workspaces/{id}', [WorkspaceController::class, 'destroy']);
+        Route::post('workspaces/{id}/restore', [WorkspaceController::class, 'restore']);
+        Route::delete('workspaces/{id}/permanent', [WorkspaceController::class, 'purge']);
         Route::post('workspaces/{id}/logo', [WorkspaceController::class, 'logo']);
 
         Route::get('webhooks', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'index']);

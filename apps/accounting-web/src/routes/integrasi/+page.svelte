@@ -65,7 +65,7 @@
     try {
       webhooks = await webhookApi.list();
     } catch (e) {
-      webhooksError = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      webhooksError = (e as Error).message;
     } finally {
       webhooksLoading = false;
     }
@@ -77,7 +77,7 @@
     try {
       deliveryLogs = (await webhookApi.logs()).data;
     } catch (e) {
-      logsError = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      logsError = (e as Error).message;
     } finally {
       logsLoading = false;
     }
@@ -99,7 +99,7 @@
     try {
       selectedWebhookLogs = (await webhookApi.subscriptionLogs(webhook.id)).data;
     } catch (e) {
-      selectedLogsError = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      selectedLogsError = (e as Error).message;
       selectedWebhookLogs = [];
     } finally {
       selectedLogsLoading = false;

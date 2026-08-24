@@ -3,7 +3,6 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { reportingApi, type BalanceSheetData } from '$lib/api/reporting.js';
-  import { ApiError } from '$lib/api/client.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import BalanceSheetTable from '$lib/components/reporting/BalanceSheetTable.svelte';
@@ -26,7 +25,7 @@
       const res = await reportingApi.balanceSheet(asOf, undefined, false, journalMode);
       report = res.data;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       loading = false;
     }

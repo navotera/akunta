@@ -1,4 +1,5 @@
 import type { AuthUser } from '$lib/api/auth.js';
+import { setDateFormat } from '$lib/utils/date.js';
 import { applyWorkspaceTheme } from './theme.svelte.js';
 
 const STORAGE_KEY = 'akunta.active_entity_id';
@@ -58,6 +59,7 @@ export const tenant = {
     state.slug = chosen?.slug ?? null;
     if (state.id) writeStored(state.id);
     applyWorkspaceTheme(state.id, chosen?.theme_color ?? undefined);
+    if (chosen) setDateFormat(chosen.date_format, chosen.id);
   },
 
   switch(entityId: string): void {
@@ -68,6 +70,7 @@ export const tenant = {
     state.slug = t.slug;
     writeStored(t.id);
     applyWorkspaceTheme(t.id, t.theme_color);
+    setDateFormat(t.date_format, t.id);
   },
 
   clear(): void {

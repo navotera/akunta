@@ -6,7 +6,6 @@
   import { reportingApi, type GeneralLedgerData } from '$lib/api/reporting.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { sourceRefApi, type SourceRefRegistryItem } from '$lib/api/source-ref.js';
-  import { ApiError } from '$lib/api/client.js';
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
@@ -94,7 +93,7 @@
       );
       report = res.data;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       loading = false;
     }

@@ -6,6 +6,8 @@ export interface WorkspaceRecord {
   name: string;
   workspace_code: string | null;
   is_active: boolean;
+  archived_at: string | null;
+  scheduled_deletion_at: string | null;
   is_fake_data: boolean;
   theme_color: string;
   logo_url: string | null;
@@ -20,8 +22,12 @@ export interface WorkspaceRecord {
   journal_number_format: string | null;
   transaction_number_format: string | null;
   journal_number_formats: Record<string, string>;
+  journal_number_starts: Record<string, number>;
+  transaction_number_start: number;
   bookkeeping_mode: 'independent_books' | 'internal_only';
+  date_format: string;
   issue_report_url: string | null;
+  last_activity_at: string | null;
 }
 
 export const workspaceApi = {
@@ -36,6 +42,20 @@ export const workspaceApi = {
       method: 'PATCH',
       json: input,
     }).then((response) => response.data),
+  delete: (id: string, confirmationName: string) =>
+    api<{ message: string; data: WorkspaceRecord }>(`/api/v1/spa/workspaces/${id}`, {
+      method: 'DELETE',
+      json: { confirmation_name: confirmationName },
+    }),
+  restore: (id: string) =>
+    api<{ message: string; data: WorkspaceRecord }>(`/api/v1/spa/workspaces/${id}/restore`, {
+      method: 'POST',
+    }),
+  purge: (id: string, confirmationName: string) =>
+    api<{ message: string }>(`/api/v1/spa/workspaces/${id}/permanent`, {
+      method: 'DELETE',
+      json: { confirmation_name: confirmationName },
+    }),
   uploadLogo: (id: string, file: File) => {
     const form = new FormData();
     form.append('logo', file);
@@ -62,6 +82,9 @@ export interface WorkspaceInput {
   journal_number_format?: string;
   transaction_number_format?: string;
   journal_number_formats?: Record<string, string>;
+  journal_number_starts?: Record<string, number>;
+  transaction_number_start?: number;
   bookkeeping_mode?: 'independent_books' | 'internal_only';
+  date_format?: string;
   issue_report_url?: string | null;
 }

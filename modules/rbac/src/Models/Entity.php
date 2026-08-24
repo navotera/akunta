@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
@@ -16,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $workspace_code
  * @property bool $is_active
  * @property bool $is_fake_data
+ * @property Carbon|null $archived_at
  * @property array<mixed>|null $workspace_settings
  * @property string $theme_color
  * @property string|null $logo_path
@@ -40,6 +42,7 @@ class Entity extends Model
         'address' => 'array',
         'is_active' => 'boolean',
         'is_fake_data' => 'boolean',
+        'archived_at' => 'datetime',
         'workspace_settings' => 'array',
     ];
 

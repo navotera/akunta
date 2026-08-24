@@ -1179,6 +1179,24 @@ Workspace availability is independent from the currently selected workspace.
 An admin may disable `PT. Fake Data` in Settings without disabling other
 entities; disabled entities remain manageable in Settings but are excluded from
 the toolbar selector. At least one workspace per tenant must remain active.
+Settings shows the latest audited activity (falling back to the workspace
+metadata timestamp), rendered relatively for the first year with an absolute
+timestamp tooltip. A normal inactive workspace moves to Archive only after an
+admin types its exact name in the confirmation modal; the backend repeats both
+checks, scopes the target to the selected tenant, and records
+`workspace.archive`. Restore clears the archive timestamp but deliberately
+keeps the workspace inactive. After one year, the scheduler only dispatches a
+unique queue job; the queue worker rechecks retention and archive state before
+permanent deletion and records `workspace.purge`. The native `PT. Fake Data`
+workspace can be deactivated but never archived or deleted.
+Workspace settings are entity-scoped. Backend values live on the target
+entity's `workspace_settings` or entity columns, while browser caches use an
+entity-ID namespace. Switching entities resets format state to defaults plus
+the selected entity's values; it never merges missing keys from the previously
+selected entity.
+Journal and transaction number starts are stored per entity. The configured
+start is a floor, not a counter reset: an existing higher numeric suffix always
+wins and the generator returns that suffix plus one.
 Native demo data cannot be imported over or cleared through the generic fake
 data endpoints. Normal entities no longer receive Import All or any financial,
 period, template, recurring-journal, or auto-mapping demo import; only COA and

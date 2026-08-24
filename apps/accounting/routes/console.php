@@ -42,6 +42,13 @@ Schedule::command('accounting:prune-webhook-logs')
     ->onOneServer()
     ->name('accounting:prune-webhook-logs');
 
+// Daily 00:30 — enqueue permanent deletion after the one-year archive retention period.
+Schedule::command('accounting:queue-workspace-purges')
+    ->dailyAt('00:30')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->name('accounting:queue-workspace-purges');
+
 // Daily 02:30 — reconcile entities + assignments mirror against Ecopa.
 // Catches any webhook drops (cf. docs/cross-app-rbac.md §4).
 Schedule::command('ecopa:reconcile')

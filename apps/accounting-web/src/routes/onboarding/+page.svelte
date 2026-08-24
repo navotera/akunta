@@ -50,7 +50,7 @@
       status = await onboardingApi.status();
       step = 2;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       busy = false;
     }
@@ -65,7 +65,7 @@
       status = await onboardingApi.status();
       step = 3;
     } catch (e) {
-      error = e instanceof ApiError ? `Server ${e.status}` : (e as Error).message;
+      error = (e as Error).message;
     } finally {
       busy = false;
     }

@@ -774,6 +774,34 @@ versi, misalnya `Demo 2026 · v2026.1.0`, agar user dapat membedakan dataset
 native dari data operasional. Import dan Clear Fake Data generik tidak tersedia
 pada entitas demo bawaan.
 
+Daftar Workspace menampilkan aktivitas terakhir berdasarkan audit log terbaru
+atau waktu perubahan metadata workspace jika belum ada audit. Waktu ditampilkan
+relatif hingga satu tahun, berubah menjadi tanggal absolut setelahnya, dan hover
+selalu menampilkan timestamp lengkap. Daftar mempunyai tab Active dan Archive.
+Admin hanya melihat aksi hapus pada workspace normal yang sudah nonaktif. Aksi
+tersebut memerlukan modal konfirmasi dengan nama workspace yang sama persis dan
+memindahkan workspace ke Archive, bukan langsung menghapus datanya. Restore
+memindahkan workspace ke Active dalam status tetap nonaktif. Workspace yang
+tetap diarsipkan selama satu tahun dijadwalkan untuk purge; scheduler hanya
+memasukkan job unik ke queue dan queue worker wajib mengecek ulang status serta
+masa retensi sebelum menghapus permanen dan mencatat audit. Admin juga dapat
+memilih `Hapus Permanen` dari Archive dengan konfirmasi nama workspace; endpoint
+hanya mengantrekan job dengan izin melewati masa retensi, sedangkan worker tetap
+mengecek ulang bahwa workspace masih diarsipkan. `PT. Fake Data`
+tidak dapat diarsipkan atau dihapus.
+
+Seluruh pengaturan bisnis pada Settings berscope entity aktif. Format nomor
+jurnal/transaksi, mode pembukuan, format tanggal, URL laporan issue, tema, dan
+profil tidak boleh diwariskan atau digabung dengan nilai entity sebelumnya.
+Cache preferensi browser yang memang diperlukan wajib memakai namespace ID
+entity. Bahasa dan zona waktu yang hanya berupa informasi sistem statis tidak
+membentuk state entity.
+
+Format kode mendukung nilai awal increment transaksi dan nilai awal per tipe
+jurnal pada entity aktif. Generator memakai nilai awal sebagai batas minimum;
+jika suffix nomor yang sudah tersimpan untuk prefix terkait lebih tinggi,
+generator melanjutkan dari nomor tertinggi ditambah satu dan tidak mundur.
+
 Admin dapat mengembalikan dataset native melalui action `Reset Dataset` khusus
 PT. Fake Data. Sebelum reset, backend memberikan preview versi saat ini/target,
 jumlah marker per kelompok, marker stale, dan jumlah record manual yang akan
