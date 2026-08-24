@@ -235,3 +235,86 @@ available, and otherwise falls back to `php artisan serve` plus the installed
 Vite CLI through Node. Do not start a second copy if ports 8000 or 5175 are
 already serving the application. Keep the launcher process running while
 working and stop it with `Ctrl+C` when the session ends.
+
+## Current handover — 2026-08-24
+
+The latest delivered work is committed and pushed on `main` as
+`c71969e` (`Add versioned native fake data reset workflow`). `origin/main` was
+synced after the push. The working tree was clean at handoff.
+
+### Product state: native PT. Fake Data
+
+`PT. Fake Data` is an installation-time, idempotent demo entity identified by
+`entities.is_fake_data = true` and workspace code `FAKE-DATA`. Its complete
+database-backed fixture is provisioned by `FakeDataEntitySeeder` through
+`NativeFakeDataProvisioner`, not by the generic UI importer. The current fixture
+is version `2026.1.0`, labelled `Demo 2026`, and must contain exactly one open
+period from `2026-01-01` through `2026-12-31`.
+
+The fixture intentionally includes COA, Intern/Fiskal journals in multiple
+workflow statuses, journal templates, recurring-journal examples, fiscal
+adjustments/evidence, dimensions, tax data, auto-mapping raw data/rules,
+webhooks/deliveries, attachments, and demo users/roles. Recurring examples are
+display-only: `RunRecurringJournalsCommand` skips fake entities.
+
+When switching from an entity on period 2028 (or another year) to PT. Fake Data,
+the frontend clears the old period selection and loads the sole Demo 2026
+period. Backend period queries remain entity-scoped and reject cross-entity
+period IDs.
+
+### Import, reset, and immutability contracts
+
+For normal entities, SPA fake-data import is deliberately limited to the COA
+(`accounts`) and impersonation users (`users`). Import All, periods, journals,
+templates, recurring journals, and auto-mapping imports are rejected. The
+native entity cannot use generic import or clear endpoints.
+
+Native reset endpoints are:
+
+- `GET /api/v1/spa/fake-data/reset-preview`
+- `POST /api/v1/spa/fake-data/reset`
+
+`NativeFakeDataResetService` accepts only the exact confirmation phrase
+`RESET DEMO 2026`, the expected dataset version, and a 64-character preview
+fingerprint. It deletes only verified `fake_data_records` markers belonging to
+the same entity, preserves manual/unverifiable/cross-entity records, rebuilds
+the fixture transactionally, and records `fake_data.dataset_reset`. The audit
+row is written before destructive record/storage work so an audit failure aborts
+the reset. Attachment objects are cleaned only after a successful commit.
+
+Native periods reject create/update/delete/close/reopen at the API boundary.
+Native `posted` and `reversed` journals, plus their attachments, are read-only;
+draft examples remain available for permission-appropriate simulation. The
+guard is in `app/Http/Controllers/Api/Spa/Concerns/ProtectsNativeFakeData.php`.
+
+### Frontend handover
+
+Settings shows the dataset/version badge, immutable-period/journal notices, and
+the preview/confirmation/reset modal. The Fake Data menu is shown only when the
+active entity grants `settings.fake_data.manage` or the session is an SSO admin;
+the backend remains the authorization boundary. The auth bootstrap exposes
+`can_manage_fake_data` per entity. AppShell also displays the active dataset
+badge.
+
+Native E2E coverage is in:
+
+- `apps/accounting-web/tests/e2e/native-fake-period-switch.spec.ts`
+- `apps/accounting-web/tests/e2e/native-fake-reset.spec.ts`
+
+Playwright is configured for `http://localhost:5175` and reuses an existing
+frontend locally. Vitest's `bun run test` script uses `vitest run` and excludes
+`tests/e2e/**`; use `bun run test:e2e` for Playwright.
+
+### Verification baseline and continuation notes
+
+At handoff, Accounting Pest completed with 289 passed, 1 skipped, and 1,282
+assertions. The two native fake-data E2E tests passed, frontend unit tests passed,
+the production build passed, `svelte-check` had 0 errors, and frontend lint had
+0 errors. `git diff --check` passed.
+
+There are still advisory Svelte accessibility/state warnings and unrelated
+legacy Pint violations in the repository. Do not treat those warnings as a
+reason to weaken the native fake-data authorization or provenance rules. Before
+new behavior changes, read the native fake-data sections in `docs/spec.md` and
+`docs/decisions.md`, then extend both backend tests and the corresponding SPA/E2E
+test when the behavior is user-visible.
