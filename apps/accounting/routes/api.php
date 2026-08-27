@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\InboundWebhookController;
 use App\Http\Controllers\Api\Spa\AccountController;
 use App\Http\Controllers\Api\Spa\AttachmentController;
 use App\Http\Controllers\Api\Spa\AutoMappingController;
+use App\Http\Controllers\Api\Spa\DocumentationNoteController;
 use App\Http\Controllers\Api\Spa\FakeDataController;
 use App\Http\Controllers\Api\Spa\FiscalAdjustmentController;
 use App\Http\Controllers\Api\Spa\OnboardingController;
@@ -135,6 +136,11 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::get('reports/by-source-ref', [SourceRefController::class, 'bySourceRef']);
 
         Route::get('source-refs', [SourceRefController::class, 'index']);
+
+        Route::get('documentation-notes', [DocumentationNoteController::class, 'index']);
+        Route::post('documentation-notes', [DocumentationNoteController::class, 'store']);
+        Route::patch('documentation-notes/{id}', [DocumentationNoteController::class, 'update']);
+        Route::delete('documentation-notes/{id}', [DocumentationNoteController::class, 'destroy']);
 
         Route::get('onboarding/status', [OnboardingController::class, 'status']);
         Route::get('onboarding/coa-templates', [OnboardingController::class, 'coaTemplates']);
