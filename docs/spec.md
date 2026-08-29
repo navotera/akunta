@@ -1079,9 +1079,11 @@ Item yang sudah didiskusikan tapi keputusannya ditunda. Angkat kembali saat siap
   URL from server configuration.
 - HTTP 200/202 from Ecopa leaves the installation pending. Ecopa completes the
   flow by sending a bootstrap-signed `app.registration.approved` callback to
-  `{base_url}/webhooks/ecopa`, including generated SSO and permanent webhook
-  credentials. Akunta encrypts those credentials and only then writes
-  `integration_status=on`. Rejection returns the wizard to a retryable state.
+  `{base_url}/webhooks/ecopa`, including generated SSO credentials and the
+  exact redirect URI registered by Ecopa. Akunta keeps the permanent webhook
+  secret it generated before submission, encrypts the SSO credentials, and only
+  then writes `integration_status=on`. Rejection returns the wizard to a
+  retryable state.
 - Once active, the registration wizard disappears, Ecopa SSO starts, and the
   first Ecopa admin completes Akunta onboarding: initial entity, bookkeeping
   mode, COA, and period.
@@ -1093,7 +1095,8 @@ Item yang sudah didiskusikan tapi keputusannya ditunda. Angkat kembali saat siap
   preserving the local user row, journals, attachments, and audit attribution.
 - The standard Akunta receiver is exactly `POST {APP_URL}/webhooks/ecopa` and
   accepts `app.registration.approved`, `app.registration.rejected`,
-  `user.assigned`, `user.updated`, `user.revoked`, and `user.deleted`.
+  `app.admin_bootstrap`, `app.access.granted`, `app.access.restored`,
+  `app.access.revoked`, and the user lifecycle aliases.
   Registration callbacks use the Registration Token for HMAC verification;
   active user lifecycle events use the permanent webhook secret.
 - A trusted `user.assigned` webhook provisions the local shadow user and an

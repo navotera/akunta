@@ -25,12 +25,18 @@ use Illuminate\Support\Facades\Hash;
  * resolvable tenants after login. Multiple entities prove tenant-switcher.
  *
  * Production tenant onboarding uses ProvisionTenantAction with its own
- * generated credentials. This seeder is for raw `db:seed` only.
+ * generated credentials. Run this seeder explicitly when local demo entities
+ * are needed: `php artisan db:seed --class=SuperAdminSeeder`.
  */
 class SuperAdminSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call([
+            PresetRolesSeeder::class,
+            AccountingAppSeeder::class,
+        ]);
+
         $email = env('SUPER_ADMIN_EMAIL', 'superadmin@akunta.local');
         $password = env('SUPER_ADMIN_PASSWORD', 'ChangeMe!2026');
         $name = env('SUPER_ADMIN_NAME', 'Super Admin');
@@ -48,10 +54,7 @@ class SuperAdminSeeder extends Seeder
                 ['name' => $tenantName],
             );
 
-            $app = RbacApp::firstOrCreate(
-                ['code' => 'accounting'],
-                ['name' => 'Accounting', 'version' => '0.1', 'enabled' => true],
-            );
+            $app = RbacApp::query()->where('code', 'accounting')->firstOrFail();
 
             $user = User::firstOrCreate(
                 ['email' => $email],

@@ -10,7 +10,7 @@ Monorepo untuk ekosistem aplikasi akuntansi UKM Indonesia (Laravel 11 + Filament
 |------------------------------------------------|-----------------------------|------------------|
 | http://localhost:8765/admin-accounting         | `superadmin@akunta.local`   | `ChangeMe!2026`  |
 
-Created by `php artisan migrate:fresh --seed` → `SuperAdminSeeder`.
+Created only when `SuperAdminSeeder` is run explicitly.
 Override via `.env`: `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`.
 Full detail: [§ Default Super Admin](#default-super-admin-local--dev).
 
@@ -69,8 +69,11 @@ composer install
 # Start seluruh stack (PostgreSQL, Redis, accounting, ecopa, accounting-web)
 docker compose -f docker/docker-compose.yml up -d --build
 
-# Migrate + seed default super-admin (accounting app)
+# Migrate + seed system roles and permissions (does not create entities)
 docker compose -f docker/docker-compose.yml exec accounting php artisan migrate --seed
+
+# Optional local demo entities + super-admin
+docker compose -f docker/docker-compose.yml exec accounting php artisan db:seed --class=SuperAdminSeeder
 
 # Migrate Ecopa
 docker compose -f docker/docker-compose.yml exec ecopa php artisan migrate
@@ -119,8 +122,14 @@ php artisan accounting:run-recurring --date=2026-04-30 --entity=<ULID>
 
 ## Default Super Admin (Local / Dev)
 
-Seeded by `SuperAdminSeeder` (`apps/accounting/database/seeders/SuperAdminSeeder.php`)
-when `php artisan db:seed` runs. Idempotent on email.
+Seeded only by explicitly running `SuperAdminSeeder`
+(`apps/accounting/database/seeders/SuperAdminSeeder.php`). The default
+`php artisan db:seed` command installs system roles and permissions without
+creating tenants, users, or entities.
+
+```bash
+php artisan db:seed --class=SuperAdminSeeder
+```
 
 | Field    | Default                  | Override (env) |
 |----------|--------------------------|----------------|
