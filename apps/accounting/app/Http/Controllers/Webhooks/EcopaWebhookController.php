@@ -1,232 +1,345 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Webhooks;
 
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
+use App\Exceptions\EcopaRegistrationException;
 use App\Http\Controllers\Controller;
+use App\Models\EcopaWebhookReceipt;
 use App\Models\User;
+use App\Services\EcopaIntegrationService;
+use App\Services\UserAccessRevoker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-/**
- * Receives Ecopa lifecycle events.
- *
- * Endpoint: POST /webhooks/ecopa
- * Auth:     X-Ecopa-Signature header (handled by VerifyEcopaSignature middleware)
- * Body:     { event, event_id, occurred_at, subject }
- */
+/** Receives HMAC-verified, idempotent Ecopa lifecycle events. */
 class EcopaWebhookController extends Controller
 {
+    public function __construct(
+        private readonly UserAccessRevoker $accessRevoker,
+        private readonly EcopaIntegrationService $integration,
+    ) {}
+
     public function handle(Request $request): JsonResponse
     {
-        $event = $request->input('event');
-        $subject = $request->input('subject', []);
-        $eventId = $request->input('event_id');
+        $data = $request->validate([
+            'event' => ['required', 'string', 'max:80'],
+            'event_id' => ['required', 'string', 'max:120'],
+            'subject' => ['sometimes', 'array'],
+        ]);
 
-        Log::info('Ecopa webhook received', compact('event', 'eventId'));
+        $event = $data['event'];
+        $eventId = $data['event_id'];
+        $subject = $data['subject'] ?? [];
 
-        $result = null;
+        if (EcopaWebhookReceipt::query()->where('event_id', $eventId)->exists()) {
+            return response()->json([
+                'status' => 'already_processed',
+                'event' => $event,
+                'event_id' => $eventId,
+            ]);
+        }
 
-        match (true) {
-            $event === 'user.disabled' => $this->onUserDisabled($subject),
-            $event === 'user.enabled' => $this->onUserEnabled($subject),
-            $event === 'user.updated' => $this->onUserUpdated($subject),
-            $event === 'user.deleted' => $this->onUserDeleted($subject),
-            str_starts_with((string) $event, 'app_permission.') => $this->onAppPermission($event, $subject),
-            str_starts_with((string) $event, 'entity.') => $this->onEntity($event, $subject),
-            str_starts_with((string) $event, 'assignment.') => $result = $this->onAssignment($event, $subject),
-            default => null, // unknown event — accept to avoid retry storms
+        $result = DB::transaction(function () use ($event, $eventId, $subject): ?array {
+            $reserved = EcopaWebhookReceipt::query()->insertOrIgnore([
+                'event_id' => $eventId,
+                'event' => $event,
+                'processed_at' => now(),
+            ]);
+            if ($reserved === 0) {
+                return ['duplicate' => true];
+            }
+
+            try {
+                $result = match (true) {
+                    $event === 'app.registration.approved' => $this->onRegistrationApproved($subject),
+                    $event === 'app.registration.rejected' => $this->onRegistrationRejected($subject),
+                    $event === 'user.disabled' => $this->onUserDisabled($subject),
+                    $event === 'user.enabled' => $this->onUserEnabled($subject),
+                    $event === 'user.updated' => $this->onUserUpdated($subject),
+                    $event === 'user.deleted' => $this->onUserDisabled($subject),
+                    $event === 'user.assigned' => $this->onUserAssigned($subject),
+                    $event === 'user.revoked' => $this->onUserRevoked($subject),
+                    str_starts_with($event, 'app_permission.') => $this->onAppPermission($event, $subject),
+                    str_starts_with($event, 'entity.') => $this->onEntity($event, $subject),
+                    str_starts_with($event, 'assignment.') => $this->onAssignment($event, $subject),
+                    default => $this->rejected('unknown_event', "Event Ecopa [{$event}] tidak didukung."),
+                };
+            } catch (EcopaRegistrationException $exception) {
+                $result = $this->rejected('invalid_registration_event', $exception->getMessage());
+            }
+
+            if (($result['retryable'] ?? false) === true || ($result['status'] ?? null) === 'rejected') {
+                EcopaWebhookReceipt::query()->where('event_id', $eventId)->delete();
+            }
+
+            return $result;
+        });
+
+        if (($result['duplicate'] ?? false) === true) {
+            return response()->json([
+                'status' => 'already_processed',
+                'event' => $event,
+                'event_id' => $eventId,
+            ]);
+        }
+
+        Log::info('Ecopa webhook processed', compact('event', 'eventId'));
+
+        $httpStatus = match ($result['status'] ?? null) {
+            'pending' => 409,
+            'rejected' => 422,
+            default => 200,
         };
 
         return response()->json(array_merge(
-            ['status' => 'received', 'event' => $event],
+            ['status' => 'received', 'event' => $event, 'event_id' => $eventId],
             $result ?? [],
-        ), 200);
+        ), $httpStatus);
     }
 
-    protected function onUserDisabled(array $subject): void
+    private function onRegistrationApproved(array $subject): array
+    {
+        $status = $this->integration->activateFromApproval($subject);
+
+        return [
+            'status' => 'applied',
+            'code' => 'registration_activated',
+            'registration_status' => $status['registration_status'],
+        ];
+    }
+
+    private function onRegistrationRejected(array $subject): array
+    {
+        $this->integration->rejectRegistration($subject);
+
+        return ['status' => 'applied', 'code' => 'registration_rejected'];
+    }
+
+    private function onUserDisabled(array $subject): array
+    {
+        $user = $this->findUser($subject);
+        if ($user) {
+            $this->accessRevoker->disable($user);
+        }
+
+        return ['status' => 'applied', 'code' => 'user_disabled'];
+    }
+
+    private function onUserEnabled(array $subject): array
+    {
+        $user = $this->findUser($subject);
+        if ($user) {
+            $this->accessRevoker->enable($user);
+        }
+
+        return ['status' => 'applied', 'code' => 'user_enabled'];
+    }
+
+    private function onUserUpdated(array $subject): array
     {
         $user = $this->findUser($subject);
         if (! $user) {
-            return;
+            return ['status' => 'applied', 'code' => 'user_not_provisioned'];
         }
-        // Mark locally — we don't have a "disabled" column yet, so logout sessions
-        // by clearing remember_token + revoking RBAC assignments via your own logic.
-        // Minimum viable: invalidate remember_token to force re-login (which will fail SSO).
-        $user->forceFill(['remember_token' => null])->save();
-        Log::info('User disabled via Ecopa webhook', ['user_id' => $user->id]);
+
+        $user->fill(array_filter([
+            'name' => $subject['name'] ?? null,
+            'email' => $subject['email'] ?? null,
+        ], fn (mixed $value): bool => is_string($value) && $value !== ''))->save();
+
+        return ['status' => 'applied', 'code' => 'user_updated'];
     }
 
-    protected function onUserEnabled(array $subject): void
+    private function onUserAssigned(array $subject): array
     {
-        // No-op: re-enable handled via fresh SSO login
-    }
+        $ecopaId = (string) ($subject['user_id'] ?? $subject['id'] ?? '');
+        $email = (string) ($subject['email'] ?? '');
 
-    protected function onUserUpdated(array $subject): void
-    {
-        $user = $this->findUser($subject);
-        if (! $user) {
-            return;
+        if ($ecopaId === '' || $email === '') {
+            return $this->rejected('missing_user_keys', 'user.assigned membutuhkan user_id dan email.');
         }
-        $changes = [];
-        if (! empty($subject['name']) && $user->name !== $subject['name']) {
-            $changes['name'] = $subject['name'];
-        }
-        if (! empty($subject['email']) && $user->email !== $subject['email']) {
-            $changes['email'] = $subject['email'];
-        }
-        if ($changes) {
-            $user->fill($changes)->save();
-        }
-    }
 
-    protected function onUserDeleted(array $subject): void
-    {
-        $user = $this->findUser($subject);
-        if (! $user) {
-            return;
+        $user = User::query()->where('main_tier_user_id', $ecopaId)->first()
+            ?? User::query()->where('email', $email)->first()
+            ?? new User;
+
+        if (! $user->exists) {
+            $user->id = (string) Str::ulid();
+            $user->password_hash = null;
         }
-        // Don't hard-delete (audit trail). Disable instead.
+
         $user->forceFill([
-            'remember_token' => null,
-            // 'disabled_at' => now(), // add if/when column exists
+            'main_tier_user_id' => $ecopaId,
+            'email' => $email,
+            'name' => $subject['name'] ?? Str::before($email, '@'),
+            'email_verified_at' => $user->email_verified_at ?? now(),
+            'disabled_at' => null,
         ])->save();
-    }
 
-    protected function onAppPermission(string $event, array $subject): void
-    {
-        $userIdEcopa = (string) ($subject['user_id'] ?? '');
-        if (! $userIdEcopa) {
-            return;
+        $assignmentSubject = array_merge([
+            'user_id' => $ecopaId,
+            'app_code' => 'accounting',
+        ], $subject);
+
+        if (empty($assignmentSubject['entity_id'])) {
+            return $this->onAppWideAssignment($user, $assignmentSubject);
         }
 
-        $user = User::query()->where('main_tier_user_id', $userIdEcopa)->first();
+        return $this->onAssignment('assignment.granted', $assignmentSubject);
+    }
+
+    private function onAppWideAssignment(User $user, array $subject): array
+    {
+        $app = RbacApp::query()->firstOrCreate(
+            ['code' => 'accounting'],
+            ['name' => 'Accounting', 'version' => '1.0', 'enabled' => true],
+        );
+        $assignment = UserAppAssignment::query()
+            ->where('user_id', $user->id)
+            ->where('app_id', $app->id)
+            ->whereNull('entity_id')
+            ->first();
+
+        if (! $assignment) {
+            $assignment = new UserAppAssignment;
+            $assignment->id = (string) Str::ulid();
+            $assignment->user_id = $user->id;
+            $assignment->app_id = $app->id;
+            $assignment->entity_id = null;
+            $assignment->assigned_at = now();
+        }
+
+        $ecopaRole = $subject['ecopa_role'] ?? $subject['app_role'] ?? null;
+        $assignment->ecopa_role = is_string($ecopaRole) ? $ecopaRole : $assignment->ecopa_role;
+        $assignment->revoked_at = null;
+        // role_id is intentionally untouched. An Akunta admin chooses it.
+        $assignment->save();
+
+        return ['status' => 'applied', 'code' => 'user_access_assigned'];
+    }
+
+    private function onUserRevoked(array $subject): array
+    {
+        if (! empty($subject['entity_id'])) {
+            return $this->onAssignment('assignment.revoked', array_merge([
+                'app_code' => 'accounting',
+            ], $subject));
+        }
+
+        $user = $this->findUser($subject);
+        $app = RbacApp::query()->where('code', 'accounting')->first();
+        if ($user && $app) {
+            UserAppAssignment::query()
+                ->where('user_id', $user->id)
+                ->where('app_id', $app->id)
+                ->whereNull('revoked_at')
+                ->update(['revoked_at' => now(), 'ecopa_role' => null]);
+            $this->accessRevoker->revokeSessionsAndTokens($user);
+        }
+
+        return ['status' => 'applied', 'code' => 'user_access_revoked'];
+    }
+
+    private function onAppPermission(string $event, array $subject): array
+    {
+        $user = $this->findUser($subject);
         if (! $user) {
-            return; // user not yet provisioned locally
+            return ['status' => 'applied', 'code' => 'user_not_provisioned'];
         }
 
-        // For revoke/role-changed events: clear remember_token so user must re-auth
-        // and pick up new claims on next login. Avoids stale role within active session.
-        if (in_array($event, ['app_permission.revoked', 'app_permission.role_changed'], true)) {
-            $user->forceFill(['remember_token' => null])->save();
+        if ($event === 'app_permission.revoked') {
+            return $this->onUserRevoked($subject);
         }
 
-        Log::info('Ecopa app_permission event applied', [
-            'event' => $event,
-            'user_id' => $user->id,
-        ]);
+        if ($event === 'app_permission.role_changed') {
+            $this->accessRevoker->revokeSessionsAndTokens($user);
+        }
+
+        return ['status' => 'applied', 'code' => 'app_permission_synced'];
     }
 
-    protected function findUser(array $subject): ?User
+    private function findUser(array $subject): ?User
     {
-        $sub = (string) ($subject['id'] ?? '');
-        if ($sub) {
-            $u = User::query()->where('main_tier_user_id', $sub)->first();
-            if ($u) {
-                return $u;
+        $ecopaId = (string) ($subject['user_id'] ?? $subject['id'] ?? '');
+        if ($ecopaId !== '') {
+            $user = User::query()->where('main_tier_user_id', $ecopaId)->first();
+            if ($user) {
+                return $user;
             }
         }
-        $email = $subject['email'] ?? null;
-        if ($email) {
-            return User::query()->where('email', $email)->first();
-        }
 
-        return null;
+        $email = $subject['email'] ?? null;
+
+        return is_string($email) && $email !== ''
+            ? User::query()->where('email', $email)->first()
+            : null;
     }
 
-    /**
-     * Mirror Ecopa Entity into local read-only entities table. Source of
-     * truth is Ecopa; we never CRUD entities locally.
-     */
-    protected function onEntity(string $event, array $subject): void
+    private function onEntity(string $event, array $subject): array
     {
         $id = (string) ($subject['id'] ?? '');
         if ($id === '') {
-            return;
+            return $this->rejected('missing_entity_id', 'Event entity membutuhkan id.');
         }
 
         if ($event === 'entity.deleted') {
-            // Soft-freeze: don't hard-delete to preserve journal references.
-            // Mark as archived if column exists; for now, log + leave row.
-            Log::info('Ecopa entity.deleted received (kept locally for audit)', ['entity_id' => $id]);
+            Log::info('Ecopa entity.deleted kept locally for audit', ['entity_id' => $id]);
 
-            return;
+            return ['status' => 'applied', 'code' => 'entity_preserved'];
         }
 
         $tenant = $this->resolveLocalTenant();
-
-        Entity::updateOrCreate(
+        Entity::query()->updateOrCreate(
             ['id' => $id],
             array_filter([
-                'tenant_id' => $tenant?->id,
+                'tenant_id' => $tenant->id,
                 'name' => $subject['name'] ?? null,
                 'npwp' => $subject['npwp'] ?? null,
                 'address' => is_array($subject['address'] ?? null) ? $subject['address'] : null,
-            ], fn ($v) => $v !== null),
+            ], fn (mixed $value): bool => $value !== null),
         );
 
-        Log::info('Ecopa entity mirrored', ['event' => $event, 'entity_id' => $id]);
+        return ['status' => 'applied', 'code' => 'entity_mirrored'];
     }
 
-    /**
-     * Upsert / revoke local UserAppAssignment from Ecopa's coarse role event.
-     * The local fine-grained `role_id` (finance/tax/auditor) is preserved if
-     * already set; otherwise NULL until an Akunta admin assigns one.
-     */
-    protected function onAssignment(string $event, array $subject): array
+    private function onAssignment(string $event, array $subject): array
     {
         $userIdEcopa = (string) ($subject['user_id'] ?? '');
         $entityId = (string) ($subject['entity_id'] ?? '');
         $appCode = (string) ($subject['app_slug'] ?? $subject['app_code'] ?? '');
 
         if ($userIdEcopa === '' || $entityId === '' || $appCode === '') {
-            Log::warning('Ecopa assignment.* missing keys', compact('event', 'subject'));
-
-            return [
-                'status' => 'rejected',
-                'code' => 'missing_assignment_keys',
-                'message' => 'Assignment webhook membutuhkan user_id, entity_id, dan app_code.',
-                'retryable' => false,
-            ];
+            return $this->rejected(
+                'missing_assignment_keys',
+                'Assignment webhook membutuhkan user_id, entity_id, dan app_code.',
+            );
         }
 
         $user = User::query()->where('main_tier_user_id', $userIdEcopa)->first();
         $app = RbacApp::query()->where('code', $appCode)->first();
-
         if (! $user || ! $app) {
-            Log::info('Ecopa assignment.* skipped — user/app not provisioned', [
-                'event' => $event, 'user_ecopa' => $userIdEcopa, 'app' => $appCode,
-            ]);
-
-            return [
-                'status' => 'pending',
-                'code' => 'dependency_not_provisioned',
-                'message' => 'User atau aplikasi belum tersedia di Akunta. Assignment akan diproses setelah provisioning selesai.',
-                'retryable' => true,
-                'user_id' => $userIdEcopa,
-                'app_code' => $appCode,
-            ];
+            return $this->pending(
+                'dependency_not_provisioned',
+                'User atau aplikasi belum tersedia di Akunta.',
+                ['user_id' => $userIdEcopa, 'app_code' => $appCode],
+            );
         }
 
         if (! Entity::query()->whereKey($entityId)->exists()) {
-            Log::warning('Ecopa assignment.* pending — entity not mirrored', [
-                'event' => $event, 'user_ecopa' => $userIdEcopa,
-                'app' => $appCode, 'entity_id' => $entityId,
-            ]);
-
-            return [
-                'status' => 'pending',
-                'code' => 'entity_not_synced',
-                'message' => 'Entity belum tersedia di Akunta. Sinkronkan entity terlebih dahulu sebelum memproses assignment.',
-                'retryable' => true,
-                'entity_id' => $entityId,
-                'app_code' => $appCode,
-            ];
+            return $this->pending(
+                'entity_not_synced',
+                'Entity belum tersedia di Akunta. Sinkronkan entity terlebih dahulu.',
+                ['entity_id' => $entityId, 'app_code' => $appCode],
+            );
         }
 
         $row = UserAppAssignment::query()
@@ -236,22 +349,11 @@ class EcopaWebhookController extends Controller
             ->first();
 
         if ($event === 'assignment.revoked') {
-            if ($row) {
-                $row->forceFill([
-                    'revoked_at' => now(),
-                    'ecopa_role' => null,
-                ])->save();
-                $user->forceFill(['remember_token' => null])->save();
-            }
+            $row?->forceFill(['revoked_at' => now(), 'ecopa_role' => null])->save();
+            $this->accessRevoker->revokeSessionsAndTokens($user);
 
-            return [
-                'status' => 'applied',
-                'code' => 'assignment_revoked',
-                'message' => 'Assignment berhasil dicabut di Akunta.',
-            ];
+            return ['status' => 'applied', 'code' => 'assignment_revoked'];
         }
-
-        $ecopaRole = $subject['ecopa_role'] ?? $subject['app_role'] ?? null;
 
         if (! $row) {
             $row = new UserAppAssignment;
@@ -262,43 +364,48 @@ class EcopaWebhookController extends Controller
             $row->assigned_at = now();
         }
 
+        $ecopaRole = $subject['ecopa_role'] ?? $subject['app_role'] ?? null;
         $row->ecopa_role = is_string($ecopaRole) ? $ecopaRole : $row->ecopa_role;
         $row->revoked_at = null;
         $row->save();
 
-        // Force re-auth so claims pick up new coarse role on next login.
         if ($event === 'assignment.role_changed') {
-            $user->forceFill(['remember_token' => null])->save();
+            $this->accessRevoker->revokeSessionsAndTokens($user);
         }
-
-        Log::info('Ecopa assignment mirrored', [
-            'event' => $event, 'user_id' => $user->id, 'app_id' => $app->id, 'entity_id' => $entityId,
-        ]);
 
         return [
             'status' => 'applied',
             'code' => 'assignment_mirrored',
-            'message' => 'Assignment berhasil disinkronkan ke Akunta.',
             'entity_id' => $entityId,
             'app_code' => $appCode,
         ];
     }
 
-    /**
-     * Best-effort tenant resolver for entity mirror rows. Tier-2 Akunta
-     * currently has a single Tenant per ecosystem; create on demand if
-     * missing so Entity FK doesn't fail.
-     */
-    protected function resolveLocalTenant(): ?Tenant
+    private function resolveLocalTenant(): Tenant
     {
-        $tenant = Tenant::query()->first();
-        if ($tenant) {
-            return $tenant;
-        }
-
-        return Tenant::create([
+        return Tenant::query()->first() ?? Tenant::query()->create([
             'name' => 'Default',
             'slug' => 'default',
         ]);
+    }
+
+    private function pending(string $code, string $message, array $context = []): array
+    {
+        return array_merge([
+            'status' => 'pending',
+            'code' => $code,
+            'message' => $message,
+            'retryable' => true,
+        ], $context);
+    }
+
+    private function rejected(string $code, string $message): array
+    {
+        return [
+            'status' => 'rejected',
+            'code' => $code,
+            'message' => $message,
+            'retryable' => false,
+        ];
     }
 }

@@ -14,20 +14,26 @@ return [
 
     'url' => env('ECOPA_URL', 'https://home.opensynergic.com'),
 
-    'client_id'     => env('ECOPA_CLIENT_ID'),
+    'client_id' => env('ECOPA_CLIENT_ID'),
     'client_secret' => env('ECOPA_CLIENT_SECRET'),
-    'redirect_uri'  => env('ECOPA_REDIRECT_URI'),
+    'redirect_uri' => env('ECOPA_REDIRECT_URI'),
 
     // Bearer token for /api/* server-to-server calls (Ecopa "Company App" token)
-    'api_token'     => env('ECOPA_API_TOKEN'),
+    'api_token' => env('ECOPA_API_TOKEN'),
+
+    'registration_name' => env('ECOPA_REGISTRATION_NAME', 'Akunta'),
+
+    // Optional override. Normally APP_URL is the canonical child-app URL and
+    // the first-access wizard only asks for Ecopa URL + Registration Token.
+    'registration_base_url' => env('ECOPA_REGISTRATION_BASE_URL', env('APP_URL')),
 
     // This app's own slug as registered in Ecopa websites table. Used to filter
     // out the current app from "Ekosistem" sidebar (only show sister apps).
-    'self_slug'     => env('ECOPA_SELF_SLUG'),
+    'self_slug' => env('ECOPA_SELF_SLUG', 'accounting'),
 
     // Shared secret used to verify webhook signatures from Ecopa.
-    // Provided by Ecopa admin during app registration (auto-generated on first
-    // metadata sync; copy from Ecopa Apps Management → SSO/Webhook tab).
+    // Environment values remain supported for existing deployments. New
+    // installations receive and encrypt these through the approval callback.
     'webhook_secret' => env('ECOPA_WEBHOOK_SECRET'),
 
     'expected_issuer' => env('ECOPA_EXPECTED_ISSUER', 'ecopa'),
@@ -42,8 +48,8 @@ return [
 
     // Routes — set on the Laravel side that consumes this module
     'routes' => [
-        'login'    => env('ECOPA_LOGIN_ROUTE', 'ecopa.login'),
+        'login' => env('ECOPA_LOGIN_ROUTE', 'ecopa.login'),
         'callback' => env('ECOPA_CALLBACK_ROUTE', 'ecopa.callback'),
-        'logout'   => env('ECOPA_LOGOUT_ROUTE', 'ecopa.logout'),
+        'logout' => env('ECOPA_LOGOUT_ROUTE', 'ecopa.logout'),
     ],
 ];

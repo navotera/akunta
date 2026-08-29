@@ -10,6 +10,8 @@
   import WorkspaceTabs from './WorkspaceTabs.svelte';
   import { formatDate } from '$lib/utils/date.js';
   import { fakeDataApi } from '$lib/api/fake-data.js';
+  import { accessDenied } from '$lib/stores/access-denied.svelte.js';
+  import AccessDeniedContent from './AccessDeniedContent.svelte';
 
   interface NavItem {
     href?: string;
@@ -246,6 +248,10 @@
     // Refetch periods when active tenant changes.
     void tenant.id;
     if (tenant.id) period.refresh();
+  });
+
+  $effect(() => {
+    accessDenied.clearIfContextChanged(`${$page.url.pathname}${$page.url.search}`, tenant.id);
   });
 
   $effect(() => {
@@ -821,10 +827,19 @@
       </div>
     {/if}
 
-    <WorkspaceTabs />
+    {#if accessDenied.active}
+      <main class="min-w-0 flex-1">
+        <AccessDeniedContent
+          message={accessDenied.detail?.message ?? 'Anda tidak memiliki izin untuk aksi ini.'}
+          entityName={tenant.name}
+        />
+      </main>
+    {:else}
+      <WorkspaceTabs />
 
-    <main class="min-w-0 flex-1">
-      {@render children?.()}
-    </main>
+      <main class="min-w-0 flex-1">
+        {@render children?.()}
+      </main>
+    {/if}
   </div>
 </div>

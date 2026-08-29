@@ -20,6 +20,7 @@ use App\Models\TaxCode;
 use App\Models\WebhookSubscription;
 use App\Observers\JournalEntryObserver;
 use App\Services\CronLogger;
+use App\Services\EcopaIntegrationService;
 use App\Services\WebhookDispatcher;
 use App\Tenancy\Contracts\TenantProvisioner;
 use App\Tenancy\PostgresTenantProvisioner;
@@ -54,6 +55,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        try {
+            app(EcopaIntegrationService::class)->applyRuntimeConfiguration();
+        } catch (\Throwable) {
+            // Fresh installs must still be able to run migrations before the
+            // integration table and database connection are available.
+        }
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
         }

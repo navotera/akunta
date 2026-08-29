@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Auth;
 
 use Akunta\EcopaClient\Http\EcopaAuthController;
+use App\Models\Account;
+use App\Models\Period;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 
 class EcopaController extends EcopaAuthController
 {
@@ -22,10 +25,10 @@ class EcopaController extends EcopaAuthController
      */
     protected function provisionUser(array $claims): void
     {
-        $email     = $claims['email']    ?? null;
-        $ecopaSub  = (string) ($claims['sub'] ?? '');
-        $name      = $claims['name']     ?? null;
-        $appRole   = $claims['app_role'] ?? null;
+        $email = $claims['email'] ?? null;
+        $ecopaSub = (string) ($claims['sub'] ?? '');
+        $name = $claims['name'] ?? null;
+        $appRole = $claims['app_role'] ?? null;
         $appScopes = $claims['app_scopes'] ?? [];
         $divisions = $claims['divisions'] ?? [];
 
@@ -56,13 +59,17 @@ class EcopaController extends EcopaAuthController
             if ($appRole !== 'admin') {
                 abort(403, 'Akun belum di-assign ke Akunta. Hubungi admin Ecopa.');
             }
-            $user = new User();
-            $user->id = (string) \Illuminate\Support\Str::ulid();
+            $user = new User;
+            $user->id = (string) Str::ulid();
             $user->email = $email;
-            $user->name = $name ?? \Illuminate\Support\Str::before($email, '@');
+            $user->name = $name ?? Str::before($email, '@');
             $user->main_tier_user_id = $ecopaSub;
             $user->email_verified_at = now();
             // No password_hash — SSO-only.
+        }
+
+        if ($user->disabled_at !== null) {
+            abort(403, 'Akses Akunta untuk akun ini telah dinonaktifkan di Ecopa. Hubungi administrator Ecopa.');
         }
 
         // Mirror Ecopa attrs (Ecopa = source of truth)
@@ -75,9 +82,9 @@ class EcopaController extends EcopaAuthController
         // Stash claims in session so app code can map app_role → local RBAC role
         // and scope by Ecopa division when picking entity.
         session([
-            'ecopa.app_role'     => $appRole,
-            'ecopa.app_scopes'   => $appScopes,
-            'ecopa.divisions'    => $divisions,
+            'ecopa.app_role' => $appRole,
+            'ecopa.app_scopes' => $appScopes,
+            'ecopa.divisions' => $divisions,
             'ecopa.access_token' => $claims['access_token'] ?? null,
             'ecopa.token_expires_at' => isset($claims['token_expires_in'])
                 ? now()->addSeconds((int) $claims['token_expires_in'])->timestamp
@@ -93,13 +100,19 @@ class EcopaController extends EcopaAuthController
         // is resolved client-side from /api/v1/me + cookie.
         $spa = rtrim((string) config('app.spa_url'), '/');
 
-        return ($spa !== '' ? $spa : url(''))."/dashboard";
+        $entity = Auth::user()?->getDefaultTenant();
+        $needsOnboarding = $entity === null
+            || data_get($entity->workspace_settings, 'bookkeeping_mode') === null
+            || ! Account::query()->where('entity_id', $entity->id)->whereNull('system_key')->exists()
+            || ! Period::query()->where('entity_id', $entity->id)->exists();
+
+        return ($spa !== '' ? $spa : url('')).($needsOnboarding ? '/onboarding' : '/dashboard');
     }
 
     protected function failureRedirect(): string
     {
         $spa = rtrim((string) config('app.spa_url'), '/');
 
-        return ($spa !== '' ? $spa : url(''))."/login";
+        return ($spa !== '' ? $spa : url('')).'/login';
     }
 }

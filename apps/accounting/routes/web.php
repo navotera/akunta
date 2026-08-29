@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\GoogleOAuthController;
 use App\Http\Controllers\Webhooks\EcopaWebhookController;
 use App\Http\Controllers\Webhooks\OidcBackchannelLogoutController;
 use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
+use App\Http\Middleware\LogEcopaWebhook;
 use App\Http\Middleware\VerifyEcopaSignature;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Http\Request;
@@ -19,7 +20,9 @@ Route::get('/', function () {
         return redirect()->route('sso.login');
     }
 
-    return view('welcome');
+    $spaUrl = rtrim((string) config('app.spa_url'), '/');
+
+    return $spaUrl !== '' ? redirect()->away($spaUrl.'/') : view('welcome');
 });
 
 // App self-description (consumed by Ecopa during app registration)
@@ -35,7 +38,7 @@ Route::get('/dashboard', function () {
 
 // Ecopa webhook receiver (lifecycle events). HMAC-verified, no CSRF.
 Route::post('/webhooks/ecopa', [EcopaWebhookController::class, 'handle'])
-    ->middleware(['api', VerifyEcopaSignature::class])
+    ->middleware(['api', LogEcopaWebhook::class, 'throttle:120,1', VerifyEcopaSignature::class])
     ->withoutMiddleware([VerifyCsrfToken::class])
     ->name('webhooks.ecopa');
 
@@ -91,6 +94,13 @@ Route::get('/sso/login', function () {
             // under the SPA origin (cookie + tenant resolved client-side).
             $spaUrl = rtrim((string) config('app.spa_url'), '/');
             $target = $spaUrl !== '' ? $spaUrl.'/dashboard' : '/dashboard';
+
+            return redirect()->away($target);
+        }
+
+        if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
+            $spaUrl = rtrim((string) config('app.spa_url'), '/');
+            $target = $spaUrl !== '' ? $spaUrl.'/onboarding' : '/dashboard';
 
             return redirect()->away($target);
         }

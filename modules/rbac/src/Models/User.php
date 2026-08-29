@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $password_hash
  * @property string|null $main_tier_user_id
  * @property Carbon|null $last_login_at
+ * @property Carbon|null $disabled_at
  */
 class User extends Authenticatable
 {
@@ -37,6 +38,7 @@ class User extends Authenticatable
     protected $casts = [
         'last_login_at' => 'datetime',
         'email_verified_at' => 'datetime',
+        'disabled_at' => 'datetime',
     ];
 
     public function getAuthPassword(): ?string

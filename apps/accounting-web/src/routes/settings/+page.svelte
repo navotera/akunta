@@ -2,7 +2,13 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { isEcopaIntegrationEnabled } from '$lib/api/client.js';
+  import {
+    ecopaIntegrationApi,
+    type EcopaIntegrationStatus,
+    type EcopaWebhookEventDefinition,
+    type EcopaWebhookLog,
+  } from '$lib/api/ecopa-integration.js';
+  import { roleManagementApi, type RoleManagementData } from '$lib/api/role-management.js';
   import {
     DEFAULT_DATE_FORMAT,
     formatDate,
@@ -94,6 +100,37 @@
 
   let activeSection = $state<SettingSection>('general');
   let ecopaEnabled = $state(true);
+  let ecopaIntegration = $state<EcopaIntegrationStatus | null>(null);
+  let ecopaIntegrationLoading = $state(false);
+  let ecopaWebhookLogs = $state<EcopaWebhookLog[]>([]);
+  let ecopaWebhookEvents = $state<EcopaWebhookEventDefinition[]>([
+    {
+      event: 'app.registration.approved',
+      purpose: 'Aktifkan integrasi dan credential SSO Akunta.',
+    },
+    {
+      event: 'app.registration.rejected',
+      purpose: 'Catat penolakan registrasi agar wizard dapat diulang.',
+    },
+    {
+      event: 'user.assigned',
+      purpose: 'Buat/aktifkan shadow user dengan role Akunta yang masih kosong.',
+    },
+    { event: 'user.updated', purpose: 'Perbarui nama dan email shadow user lokal.' },
+    { event: 'user.revoked', purpose: 'Cabut assignment, sesi, dan token user dari Akunta.' },
+    {
+      event: 'user.deleted',
+      purpose: 'Nonaktifkan user tanpa menghapus histori akuntansi.',
+    },
+  ]);
+  let ecopaWebhookLogsLoading = $state(false);
+  let ecopaWebhookLogsError = $state<string | null>(null);
+  let ecopaWebhookLogTotal = $state(0);
+  let ecopaWebhookRetentionMonths = $state(12);
+  let roleManagement = $state<RoleManagementData | null>(null);
+  let roleManagementLoading = $state(false);
+  let roleManagementSaving = $state<string | null>(null);
+  let roleManagementMessage = $state<string | null>(null);
   let dateFormat = $state(DEFAULT_DATE_FORMAT);
   let themeColor = $state<string>('blue');
   let savedMessage = $state<string | null>(null);
@@ -178,6 +215,8 @@
 
   function selectSection(section: SettingSection) {
     activeSection = section;
+    if (section === 'users' && isAdmin) void loadRoleManagement();
+    if (section === 'integration' && isAdmin) void loadEcopaWebhookLogs();
     if (section !== 'entity-profile') return;
 
     const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
@@ -205,7 +244,9 @@
       return;
     }
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
-    ecopaEnabled = isEcopaIntegrationEnabled();
+    if ($page.url.searchParams.get('section') === 'users') activeSection = 'users';
+    if ($page.url.searchParams.get('section') === 'integration') activeSection = 'integration';
+    await loadEcopaIntegration();
     dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
     const activeWorkspace = tenant.available.find((item) => item.id === tenant.id);
@@ -215,6 +256,8 @@
       applyWorkspaceTheme(tenant.id, themeColor);
     }
     if (isAdmin) void loadWorkspaces();
+    if (isAdmin && activeSection === 'users') void loadRoleManagement();
+    if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
     if (canManageFakeData) void loadFakeData();
   }
 
@@ -636,13 +679,81 @@
     }[field].trim();
   }
 
-  function toggleEcopa() {
-    ecopaEnabled = !ecopaEnabled;
-    if (tenant.id) {
-      localStorage.setItem(`akunta.ecopa.integration.${tenant.id}`, ecopaEnabled ? 'on' : 'off');
+  async function loadEcopaIntegration() {
+    ecopaIntegrationLoading = true;
+    try {
+      ecopaIntegration = await ecopaIntegrationApi.status();
+      ecopaEnabled = ecopaIntegration.integration_status === 'on';
+    } catch {
+      ecopaIntegration = null;
+    } finally {
+      ecopaIntegrationLoading = false;
     }
-    savedMessage = `Integrasi Ecopa ${ecopaEnabled ? 'diaktifkan' : 'dinonaktifkan'}.`;
-    window.setTimeout(() => (savedMessage = null), 3000);
+  }
+
+  async function loadEcopaWebhookLogs() {
+    if (!isAdmin) return;
+    ecopaWebhookLogsLoading = true;
+    ecopaWebhookLogsError = null;
+    try {
+      const result = await ecopaIntegrationApi.webhookLogs();
+      ecopaWebhookLogs = result.data;
+      ecopaWebhookEvents = result.events;
+      ecopaWebhookLogTotal = result.meta.total;
+      ecopaWebhookRetentionMonths = result.meta.retention_months;
+    } catch (caught) {
+      ecopaWebhookLogsError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      ecopaWebhookLogsLoading = false;
+    }
+  }
+
+  function ecopaWebhookOutcomeLabel(outcome: EcopaWebhookLog['outcome']): string {
+    return {
+      processed: 'Diproses',
+      already_processed: 'Duplikat aman',
+      retryable: 'Perlu retry',
+      rejected: 'Ditolak',
+      unauthorized: 'Signature gagal',
+      error: 'Error server',
+    }[outcome];
+  }
+
+  function ecopaWebhookOutcomeClass(outcome: EcopaWebhookLog['outcome']): string {
+    if (outcome === 'processed' || outcome === 'already_processed') {
+      return 'bg-paid-light text-paid';
+    }
+    if (outcome === 'retryable') return 'bg-warning-light text-warning';
+
+    return 'bg-danger-light text-danger';
+  }
+
+  async function loadRoleManagement() {
+    if (!tenant.id || !isAdmin) return;
+    roleManagementLoading = true;
+    roleManagementMessage = null;
+    try {
+      roleManagement = await roleManagementApi.list(tenant.id);
+    } catch (caught) {
+      roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      roleManagementLoading = false;
+    }
+  }
+
+  async function updateManagedRole(assignmentId: string, roleId: string) {
+    if (!tenant.id) return;
+    roleManagementSaving = assignmentId;
+    roleManagementMessage = null;
+    try {
+      const result = await roleManagementApi.update(assignmentId, roleId || null, tenant.id);
+      await loadRoleManagement();
+      roleManagementMessage = result.message;
+    } catch (caught) {
+      roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      roleManagementSaving = null;
+    }
   }
 
   function updateDateFormat(event: Event) {
@@ -2107,22 +2218,101 @@
         <div
           class="mt-5 rounded-md border border-border-soft bg-page-bg p-4 text-sm text-text-muted"
         >
-          Role dan assignment user dikelola melalui pusat identitas Ecopa. Setelah role diberi <code
+          Identitas dan status akses user berasal dari Ecopa. Role serta permission rinci dikelola
+          oleh Admin Aplikasi di Akunta. Setelah role diberi <code
             class="font-semibold text-text-default">automapping.manage</code
           >, perubahan akses langsung berlaku pada halaman Auto Mapping.
         </div>
       {:else if activeSection === 'users'}
         <h2 class="text-lg font-bold">User &amp; Roles</h2>
-        <p class="mt-1 text-sm text-text-muted">Kelola pengguna dan hak akses aplikasi.</p>
+        <p class="mt-1 text-sm text-text-muted">
+          Identitas user berasal dari Ecopa; role akuntansi ditentukan per entitas di Akunta.
+        </p>
         <div
           class="mt-6 rounded-md border border-border-soft bg-page-bg p-4 text-sm text-text-muted"
         >
-          User dan roles dikelola melalui Ecopa sebagai pusat identitas dan akses.
+          User berasal dari Ecopa dengan level Admin atau User. Admin Aplikasi Akunta menentukan
+          role akuntansi setiap user; pencabutan user di Ecopa menonaktifkan akses tanpa menghapus
+          data historis yang pernah diinput.
         </div>
+        {#if !isAdmin}
+          <p
+            class="mt-4 rounded-md border border-warning bg-warning-light p-3 text-sm text-warning"
+          >
+            Hanya Admin Aplikasi Akunta yang dapat mengubah role.
+          </p>
+        {:else if roleManagementLoading && !roleManagement}
+          <p class="mt-5 text-sm text-text-muted">Memuat user dan role…</p>
+        {:else}
+          <div class="mt-5 overflow-hidden rounded-lg border border-border-default">
+            <table class="ak-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Level Ecopa</th>
+                  <th>Role Akunta</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each roleManagement?.users ?? [] as managedUser (managedUser.assignment_id)}
+                  <tr>
+                    <td>
+                      <p class="font-semibold text-text-default">{managedUser.name}</p>
+                      <p class="text-xs text-text-muted">{managedUser.email}</p>
+                    </td>
+                    <td>
+                      <span class="ak-pill bg-primary-light text-primary">
+                        {managedUser.ecopa_role ?? 'user'}
+                      </span>
+                    </td>
+                    <td>
+                      <select
+                        class="min-w-48 rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                        value={managedUser.role_id ?? ''}
+                        disabled={roleManagementSaving === managedUser.assignment_id ||
+                          !!managedUser.disabled_at}
+                        onchange={(event) =>
+                          updateManagedRole(
+                            managedUser.assignment_id,
+                            (event.currentTarget as HTMLSelectElement).value,
+                          )}
+                        aria-label={`Role Akunta untuk ${managedUser.name}`}
+                      >
+                        <option value="">Belum diberi role</option>
+                        {#each roleManagement?.roles ?? [] as role (role.id)}
+                          <option value={role.id}>{role.name}</option>
+                        {/each}
+                      </select>
+                    </td>
+                    <td>
+                      <span
+                        class="ak-pill {managedUser.disabled_at
+                          ? 'bg-danger-light text-danger'
+                          : 'bg-paid-light text-paid'}"
+                      >
+                        {managedUser.disabled_at ? 'Dinonaktifkan Ecopa' : 'Aktif'}
+                      </span>
+                    </td>
+                  </tr>
+                {:else}
+                  <tr>
+                    <td colspan="4" class="py-8 text-center text-text-muted">
+                      Belum ada user yang di-assign Ecopa ke entitas ini.
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+        {#if roleManagementMessage}
+          <p class="mt-3 text-sm text-text-muted" role="status">{roleManagementMessage}</p>
+        {/if}
       {:else}
         <h2 class="text-lg font-bold">Integration with Ecopa</h2>
         <p class="mt-1 text-sm text-text-muted">
-          Aktifkan atau nonaktifkan koneksi Akunta dengan Ecopa.
+          Status integrasi tersimpan di server dan berlaku untuk seluruh aplikasi Akunta.
         </p>
         <div
           class="mt-6 flex items-center justify-between gap-4 rounded-md border border-border-soft p-4"
@@ -2130,21 +2320,143 @@
           <div>
             <h3 class="text-sm font-semibold">Ecopa integration</h3>
             <p class="mt-1 text-xs text-text-muted">
-              {ecopaEnabled ? 'Koneksi Ecopa aktif.' : 'Koneksi Ecopa dinonaktifkan.'}
+              {ecopaIntegrationLoading
+                ? 'Memeriksa status…'
+                : ecopaEnabled
+                  ? 'Aktif — identitas dikelola Ecopa, role akuntansi dikelola Akunta.'
+                  : 'Independent — user dan login dikelola oleh Akunta.'}
             </p>
           </div>
           <button
             type="button"
-            role="switch"
-            aria-checked={ecopaEnabled}
-            class="ak-toggle {ecopaEnabled ? 'ak-toggle--on' : ''}"
-            onclick={toggleEcopa}
-            aria-label="Aktifkan atau nonaktifkan integrasi Ecopa"
-          ></button>
+            class="rounded-md border border-border-default px-3 py-2 text-xs font-semibold hover:border-primary hover:text-primary"
+            onclick={loadEcopaIntegration}
+            disabled={ecopaIntegrationLoading}>Muat ulang status</button
+          >
         </div>
-        {#if savedMessage}
-          <p class="mt-3 text-xs text-paid" role="status">{savedMessage}</p>
+        {#if ecopaIntegration?.registration_status === 'pending'}
+          <div
+            class="mt-3 rounded-md border border-warning bg-warning-light p-3 text-xs text-warning"
+          >
+            Registrasi masih pending. Ecopa akan mengirim approval ke webhook standar
+            <code>{ecopaIntegration.webhook_url}</code>; tidak ada secret yang perlu diisi manual.
+          </div>
         {/if}
+
+        <div class="mt-5 rounded-lg border border-border-default">
+          <div class="border-b border-border-default px-4 py-3">
+            <h3 class="text-sm font-semibold text-text-default">Webhook Ecopa yang diterima</h3>
+            <p class="mt-1 text-xs text-text-muted">
+              Endpoint standar: <code>{ecopaIntegration?.webhook_url ?? '/webhooks/ecopa'}</code>.
+              Semua event wajib memiliki <code>event_id</code> unik dan signature HMAC yang valid.
+            </p>
+          </div>
+          <div class="divide-y divide-border-soft">
+            {#each ecopaWebhookEvents as webhookEvent (webhookEvent.event)}
+              <div class="grid gap-1 px-4 py-3 md:grid-cols-[16rem_1fr] md:gap-4">
+                <code class="text-xs font-semibold text-primary">{webhookEvent.event}</code>
+                <p class="text-xs text-text-muted">{webhookEvent.purpose}</p>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="mt-5 overflow-hidden rounded-lg border border-border-default">
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 border-b border-border-default px-4 py-3"
+          >
+            <div>
+              <h3 class="text-sm font-semibold text-text-default">Log webhook Ecopa</h3>
+              <p class="mt-1 text-xs text-text-muted">
+                {ecopaWebhookLogTotal} percobaan tercatat; retensi {ecopaWebhookRetentionMonths}
+                bulan. Secret dan payload lengkap tidak disimpan.
+              </p>
+            </div>
+            {#if isAdmin}
+              <button
+                type="button"
+                class="rounded-md border border-border-default px-3 py-2 text-xs font-semibold hover:border-primary hover:text-primary"
+                onclick={loadEcopaWebhookLogs}
+                disabled={ecopaWebhookLogsLoading}
+              >
+                {ecopaWebhookLogsLoading ? 'Memuat…' : 'Muat ulang log'}
+              </button>
+            {/if}
+          </div>
+
+          {#if !isAdmin}
+            <p class="px-4 py-5 text-sm text-text-muted">
+              Hanya Admin Aplikasi Akunta yang dapat melihat log webhook Ecopa.
+            </p>
+          {:else if ecopaWebhookLogsError}
+            <p class="m-4 rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">
+              {ecopaWebhookLogsError}
+            </p>
+          {:else if ecopaWebhookLogsLoading && ecopaWebhookLogs.length === 0}
+            <p class="px-4 py-5 text-sm text-text-muted">Memuat log webhook…</p>
+          {:else}
+            <div class="overflow-x-auto">
+              <table class="ak-table min-w-[880px]">
+                <thead>
+                  <tr>
+                    <th>Waktu</th>
+                    <th>Event</th>
+                    <th>Referensi</th>
+                    <th>Hasil</th>
+                    <th>HTTP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each ecopaWebhookLogs as webhookLog (webhookLog.id)}
+                    <tr>
+                      <td>
+                        <p class="whitespace-nowrap text-xs text-text-default">
+                          {formatDateTime(webhookLog.received_at)}
+                        </p>
+                        <p class="mt-1 text-[11px] text-text-muted">
+                          {webhookLog.duration_ms} ms
+                        </p>
+                      </td>
+                      <td>
+                        <code class="text-xs font-semibold text-primary">
+                          {webhookLog.event ?? 'payload tidak valid'}
+                        </code>
+                        <p class="mt-1 max-w-56 truncate text-[11px] text-text-muted">
+                          {webhookLog.event_id ?? 'event_id tidak tersedia'}
+                        </p>
+                      </td>
+                      <td>
+                        <p class="max-w-56 truncate text-xs text-text-muted">
+                          {webhookLog.subject_reference ?? '—'}
+                        </p>
+                      </td>
+                      <td>
+                        <span class={`ak-pill ${ecopaWebhookOutcomeClass(webhookLog.outcome)}`}>
+                          {ecopaWebhookOutcomeLabel(webhookLog.outcome)}
+                        </span>
+                        {#if webhookLog.result_code || webhookLog.message}
+                          <p class="mt-1 max-w-64 truncate text-[11px] text-text-muted">
+                            {webhookLog.result_code ?? webhookLog.message}
+                          </p>
+                        {/if}
+                      </td>
+                      <td>
+                        <span class="font-mono text-xs font-semibold">{webhookLog.http_status}</span
+                        >
+                      </td>
+                    </tr>
+                  {:else}
+                    <tr>
+                      <td colspan="5" class="py-8 text-center text-text-muted">
+                        Belum ada webhook Ecopa yang diterima.
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </div>
       {/if}
     </section>
   </div>

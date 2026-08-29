@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
 use App\Http\Controllers\Controller;
+use App\Services\EcopaIntegrationService;
 use App\Services\WorkspaceActivityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,10 +17,19 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function __construct(private readonly WorkspaceActivityService $workspaceActivity) {}
+    public function __construct(
+        private readonly WorkspaceActivityService $workspaceActivity,
+        private readonly EcopaIntegrationService $ecopaIntegration,
+    ) {}
 
     public function login(Request $request): JsonResponse
     {
+        abort_if(
+            $this->ecopaIntegration->status()['integration_status'] === EcopaIntegrationService::STATUS_ON,
+            403,
+            'Login lokal dinonaktifkan karena Akunta menggunakan Ecopa.',
+        );
+
         $data = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
@@ -39,6 +49,15 @@ class AuthController extends Controller
 
         /** @var User $user */
         $user = Auth::user();
+        if ($user->disabled_at !== null) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw ValidationException::withMessages([
+                'email' => 'Akses Akunta untuk akun ini telah dinonaktifkan di Ecopa. Hubungi administrator Ecopa.',
+            ]);
+        }
         $user->forceFill(['last_login_at' => now()])->save();
 
         return response()->json([
@@ -48,15 +67,22 @@ class AuthController extends Controller
 
     public function localLogin(Request $request): JsonResponse
     {
-        abort_unless(app()->environment('local') && ! config('ecopa.client_id'), 404);
+        abort_unless(
+            app()->environment('local')
+            && ! config('ecopa.client_id')
+            && $this->ecopaIntegration->status()['integration_status'] !== EcopaIntegrationService::STATUS_ON,
+            404,
+        );
 
         $email = (string) env('SUPER_ADMIN_EMAIL', 'superadmin@akunta.local');
         /** @var User|null $user */
         $user = User::query()->where('email', $email)->first();
 
-        if (! $user) {
+        if (! $user || $user->disabled_at !== null) {
             throw ValidationException::withMessages([
-                'email' => 'Local super admin belum tersedia. Jalankan seeder lokal terlebih dahulu.',
+                'email' => $user
+                    ? 'Akses akun ini telah dinonaktifkan.'
+                    : 'Local super admin belum tersedia. Jalankan seeder lokal terlebih dahulu.',
             ]);
         }
 
@@ -88,6 +114,15 @@ class AuthController extends Controller
             ], 401);
         }
 
+        if ($user->disabled_at !== null) {
+            return response()->json([
+                'errors' => [[
+                    'code' => 'account_disabled',
+                    'message' => 'Akses Akunta untuk akun ini telah dinonaktifkan di Ecopa.',
+                ]],
+            ], 403);
+        }
+
         return response()->json([
             'data' => $this->userPayload($user),
         ]);
@@ -95,13 +130,9 @@ class AuthController extends Controller
 
     private function userPayload(User $user): array
     {
+        $accessibleIds = $user->getTenants()->pluck('id');
         $entities = Entity::query()
-            ->whereIn('id', $user->assignments()
-                ->whereNull('revoked_at')
-                ->pluck('entity_id')
-                ->filter()
-                ->unique()
-                ->values())
+            ->whereIn('id', $accessibleIds)
             ->whereNull('archived_at')
             ->orderBy('name')
             ->get(['id', 'tenant_id', 'name', 'is_active', 'is_fake_data', 'workspace_settings', 'theme_color', 'logo_path', 'updated_at']);

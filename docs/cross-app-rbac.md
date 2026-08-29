@@ -95,10 +95,21 @@ Ecopa fires HMAC-signed webhooks to subscribed apps when relevant state changes:
 | `assignment.revoked` | `{ user_id, entity_id, app_code }` |
 | `user.updated` | name/email/picture mirror |
 
+For Akunta, the canonical user lifecycle contract is `user.assigned`,
+`user.updated`, `user.revoked`, and `user.deleted` through
+`POST /webhooks/ecopa`. The entity/assignment names above remain compatibility
+aliases for the broader mirror/reconcile protocol.
+
 App-side handler:
 - Upsert local mirror.
 - For `assignment.granted`: ensure local `assignments` row exists with the linked Ecopa role; do **not** auto-create a local fine-grained role — that's a separate admin step.
-- For `assignment.revoked`: hard-delete the local `assignments` row.
+- For `assignment.revoked` or `user.revoked`: set `revoked_at`, revoke active
+  sessions/tokens, and preserve the assignment plus historical attribution.
+- For `user.deleted`: set `disabled_at` and revoke active access. Never delete
+  the local user, journals, attachments, audit records, or other historical
+  data attributed to that user.
+- Record each delivery attempt in the child app's safe operational webhook log;
+  keep the successful idempotency receipt as a separate record.
 
 ### Reconcile (nightly cron)
 

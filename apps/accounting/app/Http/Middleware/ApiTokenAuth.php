@@ -35,6 +35,11 @@ class ApiTokenAuth
         if ($token->user_id !== null) {
             $user = $token->user;
             if ($user !== null) {
+                if ($user->disabled_at !== null) {
+                    $token->forceFill(['revoked_at' => now()])->save();
+
+                    return response()->json(['error' => 'account_disabled'], 401);
+                }
                 Auth::setUser($user);
             }
         }

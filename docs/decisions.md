@@ -1220,3 +1220,55 @@ and delete are rejected even if the UI is bypassed. Native `posted` and
 these constraints with lock notices and hidden mutation actions. Draft workflow
 examples remain interactive for permission-appropriate simulations, while the
 baseline is recovered only through the audited dataset reset.
+
+## Locked 2026-08-28 — Ecopa registration and local Accounting roles
+
+Akunta stores installation-wide integration state in
+`ecopa_config_integration`. Before login, a fresh installation shows a wizard
+that asks only for Ecopa URL and Registration Token. The browser submits both
+to the Akunta backend; only the backend calls Ecopa. Akunta derives canonical
+slug `accounting`, APP_URL, callback URI, and `{APP_URL}/webhooks/ecopa`.
+
+A 200/202 registration response leaves the installation pending. Approval is
+not confirmed manually: Ecopa sends `app.registration.approved` to the standard
+webhook, signed with the one-time Registration Token as bootstrap trust. The
+callback contains generated client ID, client secret, and permanent webhook
+secret. Akunta verifies request ID/slug, encrypts credentials, and only then
+writes `integration_status=on`. The encrypted bootstrap secret is retained to
+authenticate idempotent callback retries. Existing env-based credentials remain
+a compatibility fallback, not the new-install workflow.
+
+After activation the registration wizard disappears and SSO begins. The first
+Ecopa admin is redirected to Akunta onboarding and creates the initial entity,
+selects bookkeeping mode and COA, creates a period, and finishes setup.
+
+Ecopa owns identity, enabled/disabled state, and the coarse per-app level
+`admin` or `user`. Akunta owns fine-grained Accounting roles per entity. An
+Ecopa app admin can assign a local Accounting role in Settings; the mutation is
+audited and invalidates the affected user's sessions and tokens. An Ecopa
+`user` with no local role intentionally has no Accounting action permissions.
+
+The trusted, signed `/webhooks/ecopa` receiver handles `user.updated`,
+`user.deleted`, `user.assigned`, and `user.revoked` plus the existing lifecycle,
+entity, permission, and assignment aliases. Event IDs are durably idempotent.
+`user.assigned` provisions a local shadow identity and an app-wide or
+entity-scoped assignment with no local role. This narrowly supersedes the older
+blanket statement that Akunta never creates users. Interactive SSO still cannot
+create an unknown non-admin user. Revocation/deletion sets `disabled_at` where appropriate,
+revokes assignments/sessions/tokens, and never deletes the user or historical
+accounting/audit records attributed to that user.
+
+Each delivery attempt is recorded separately in `ecopa_webhook_logs`. This is
+an operational delivery history, not the idempotency boundary: accepted event
+IDs remain unique in `ecopa_webhook_receipts`, while retries, duplicates,
+rejected payloads, invalid signatures, and server failures each produce their
+own log row. This separation lets operators diagnose Ecopa delivery behavior
+without risking duplicate business mutations.
+
+Webhook logs intentionally exclude raw payloads, signature headers, and every
+registration/SSO/webhook secret. Only bounded event metadata, a limited subject
+reference, outcome/result code, HTTP status, signature verdict, retryability,
+timing, and a bounded message are retained for 12 months. Read access is
+limited to Admin Aplikasi through Settings > Integration and the authenticated
+SPA API; scheduled pruning covers both ordinary webhook deliveries and Ecopa
+inbound webhook logs.

@@ -4,10 +4,13 @@
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { isEcopaIntegrationEnabled, redirectToEcopaLogin } from '$lib/api/client.js';
+  import { ecopaIntegrationApi } from '$lib/api/ecopa-integration.js';
 
   // Default flow: bounce to Ecopa OIDC. The legacy local form is reachable via
   // `?local=1` for environments where Ecopa is not configured (typically dev).
   let localMode = $state(false);
+  let integrationChecked = $state(false);
+  let integrationError = $state<string | null>(null);
   let useLocalForm = $derived(localMode || $page.url.searchParams.get('local') === '1');
   let loggedOut = $derived($page.url.searchParams.get('logged_out') === '1');
   let ssoError = $derived($page.url.searchParams.get('sso_error'));
@@ -27,11 +30,23 @@
   let submitting = $state(false);
   let formError = $state<string | null>(null);
 
-  onMount(() => {
-    localMode = !isEcopaIntegrationEnabled();
-    if (localMode && !loggedOut) {
-      void loginLocal();
-    } else if (!useLocalForm && !loggedOut && !ssoError) {
+  onMount(async () => {
+    try {
+      const integration = await ecopaIntegrationApi.publicStatus();
+      if (!integration.configured) {
+        await goto('/', { replaceState: true });
+        return;
+      }
+      localMode = integration.integration_status === 'off';
+    } catch (caught) {
+      integrationError =
+        caught instanceof Error ? caught.message : 'Status integrasi tidak dapat diperiksa.';
+      localMode = !isEcopaIntegrationEnabled();
+    } finally {
+      integrationChecked = true;
+    }
+
+    if (!useLocalForm && !loggedOut && !ssoError) {
       redirectToEcopaLogin();
     }
   });
@@ -54,6 +69,16 @@
     redirectToEcopaLogin();
   }
 
+  function resumeLogin() {
+    if (localMode) {
+      if (import.meta.env.DEV) void loginLocal();
+      else void goto('/login?local=1', { replaceState: true });
+      return;
+    }
+
+    startSsoLogin();
+  }
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
     if (submitting) return;
@@ -70,7 +95,44 @@
   }
 </script>
 
-{#if loggedOut}
+{#if !integrationChecked}
+  <div
+    class="fixed inset-0 z-50 flex min-h-screen items-center justify-center bg-slate-950/40 px-4"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="login-integration-loading-title"
+    data-testid="integration-loading"
+  >
+    <div
+      class="w-full max-w-sm rounded-xl border border-border-default bg-card-bg p-6 text-center shadow-xl"
+    >
+      <div
+        class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-border-default border-t-primary"
+        aria-hidden="true"
+      ></div>
+      <h1 id="login-integration-loading-title" class="font-semibold text-text-strong">
+        Memeriksa integrasi
+      </h1>
+      <p class="mt-2 text-sm text-text-muted">Mohon tunggu sebentar…</p>
+    </div>
+  </div>
+{:else if integrationError}
+  <div class="flex min-h-screen items-center justify-center px-4">
+    <div
+      class="w-full max-w-sm rounded-xl border border-border-default bg-card-bg p-6 text-center shadow-md"
+    >
+      <h1 class="font-semibold text-text-strong">Integrasi belum dapat diperiksa</h1>
+      <p class="mt-2 text-sm text-text-muted">{integrationError}</p>
+      <button
+        type="button"
+        class="mt-5 w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
+        onclick={() => window.location.reload()}
+      >
+        Coba lagi
+      </button>
+    </div>
+  </div>
+{:else if loggedOut}
   <div class="flex min-h-screen items-center justify-center px-4">
     <div
       class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
@@ -80,31 +142,11 @@
       <button
         type="button"
         class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
-        onclick={localMode ? loginLocal : startSsoLogin}
+        onclick={resumeLogin}
         data-testid={localMode ? 'local-login-button' : 'ecopa-login-button'}
       >
         {localMode ? 'Masuk kembali' : 'Masuk dengan Ecopa'}
       </button>
-    </div>
-  </div>
-{:else if localMode}
-  <div class="flex min-h-screen items-center justify-center px-4">
-    <div
-      class="w-full max-w-sm rounded-lg border border-border-default bg-card-bg p-6 text-center shadow-md"
-    >
-      <h1 class="mb-1 text-xl font-bold">Akunta</h1>
-      {#if submitting}
-        <p class="text-sm text-text-muted">Menyiapkan akun lokal…</p>
-      {:else if formError}
-        <p class="mb-4 text-sm text-danger">{formError}</p>
-        <button
-          type="button"
-          class="w-full rounded-md bg-primary px-4 py-2 font-semibold text-white hover:bg-primary-active"
-          onclick={loginLocal}
-        >
-          Coba lagi
-        </button>
-      {/if}
     </div>
   </div>
 {:else if !useLocalForm}

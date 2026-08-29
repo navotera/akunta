@@ -1071,6 +1071,46 @@ Item yang sudah didiskusikan tapi keputusannya ditunda. Angkat kembali saat siap
 
   **Status:** didiskusikan 2026-04-23, ditunda user. Angkat bersamaan dengan fase integrasi eksternal atau saat build module pertama yang butuh webhook.
 
+### 14.5 Ecopa child-app registration and role ownership
+
+- Before login, an installation without active integration shows a blocking
+  wizard containing only Ecopa URL and Registration Token. Akunta derives its
+  name, canonical slug `accounting`, base URL, callback, and standard webhook
+  URL from server configuration.
+- HTTP 200/202 from Ecopa leaves the installation pending. Ecopa completes the
+  flow by sending a bootstrap-signed `app.registration.approved` callback to
+  `{base_url}/webhooks/ecopa`, including generated SSO and permanent webhook
+  credentials. Akunta encrypts those credentials and only then writes
+  `integration_status=on`. Rejection returns the wizard to a retryable state.
+- Once active, the registration wizard disappears, Ecopa SSO starts, and the
+  first Ecopa admin completes Akunta onboarding: initial entity, bookkeeping
+  mode, COA, and period.
+- Ecopa controls identity and the coarse app level (`admin` or `user`). Akunta
+  controls the detailed Accounting role per entity. Admin Akunta can assign or
+  clear a local role from Settings, and each change is audited.
+- The Ecopa webhook is HMAC-verified and idempotent by `event_id`. Disabling,
+  deleting, or revoking a user removes active access and credentials while
+  preserving the local user row, journals, attachments, and audit attribution.
+- The standard Akunta receiver is exactly `POST {APP_URL}/webhooks/ecopa` and
+  accepts `app.registration.approved`, `app.registration.rejected`,
+  `user.assigned`, `user.updated`, `user.revoked`, and `user.deleted`.
+  Registration callbacks use the Registration Token for HMAC verification;
+  active user lifecycle events use the permanent webhook secret.
+- A trusted `user.assigned` webhook provisions the local shadow user and an
+  app-wide or entity-scoped assignment with `role_id=null`. Until an Admin
+  Akunta selects a local role, a regular user has no Accounting action
+  permissions and sees the global permission guidance screen on denied pages.
+- Every Ecopa delivery attempt is written to `ecopa_webhook_logs`, including
+  invalid signatures, rejected payloads, retryable dependencies, successful
+  processing, and idempotent replay. The log stores only bounded operational
+  metadata and subject identifiers; secrets, signature headers, and complete
+  raw payloads are excluded. Successful idempotency receipts remain separate
+  in `ecopa_webhook_receipts`.
+- Admin Aplikasi can inspect the latest logs in Settings > Integration through
+  the read-only `/api/v1/spa/ecopa-integration/webhook-logs` endpoint. Ecopa
+  webhook logs have a 12-month retention period and are pruned by the existing
+  scheduled webhook-log maintenance command.
+
 ---
 
 ## 15. Revision History

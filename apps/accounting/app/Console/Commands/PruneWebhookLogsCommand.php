@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Models\EcopaWebhookLog;
 use App\Models\WebhookDelivery;
 use Illuminate\Console\Command;
 
@@ -16,9 +17,13 @@ class PruneWebhookLogsCommand extends Command
     public function handle(): int
     {
         $cutoff = now()->subMonths(12);
-        $deleted = WebhookDelivery::query()->where('created_at', '<', $cutoff)->delete();
+        $deliveryDeleted = WebhookDelivery::query()->where('created_at', '<', $cutoff)->delete();
+        $ecopaDeleted = EcopaWebhookLog::query()->where('received_at', '<', $cutoff)->delete();
 
-        $this->info("Pruned {$deleted} webhook delivery logs older than 12 months (cutoff {$cutoff->toIso8601String()}).");
+        $this->info(
+            "Pruned {$deliveryDeleted} delivery logs and {$ecopaDeleted} Ecopa webhook logs "
+            ."older than 12 months (cutoff {$cutoff->toIso8601String()})."
+        );
 
         return self::SUCCESS;
     }

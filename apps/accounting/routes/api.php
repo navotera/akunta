@@ -5,11 +5,15 @@ use App\Http\Controllers\Api\Spa\AccountController;
 use App\Http\Controllers\Api\Spa\AttachmentController;
 use App\Http\Controllers\Api\Spa\AutoMappingController;
 use App\Http\Controllers\Api\Spa\DocumentationNoteController;
+use App\Http\Controllers\Api\Spa\EcopaIntegrationController;
+use App\Http\Controllers\Api\Spa\EcopaWebhookLogController;
 use App\Http\Controllers\Api\Spa\FakeDataController;
 use App\Http\Controllers\Api\Spa\FiscalAdjustmentController;
+use App\Http\Controllers\Api\Spa\InstallationOnboardingController;
 use App\Http\Controllers\Api\Spa\OnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
 use App\Http\Controllers\Api\Spa\ReportingController;
+use App\Http\Controllers\Api\Spa\RoleManagementController;
 use App\Http\Controllers\Api\Spa\SourceRefController;
 use App\Http\Controllers\Api\Spa\TaxProvisionController;
 use App\Http\Controllers\Api\Spa\Widgets\EcosystemController;
@@ -34,6 +38,9 @@ use Illuminate\Support\Facades\Route;
 | `auth:sanctum` resolves the session user.
 */
 Route::middleware('web')->group(function () {
+    Route::get('auth/integration-status', [EcopaIntegrationController::class, 'publicStatus']);
+    Route::post('auth/ecopa-registration', [EcopaIntegrationController::class, 'register'])
+        ->middleware('throttle:5,1');
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::post('auth/local-login', [AuthController::class, 'localLogin']);
     Route::post('auth/logout', [AuthController::class, 'logout']);
@@ -142,10 +149,18 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::patch('documentation-notes/{id}', [DocumentationNoteController::class, 'update']);
         Route::delete('documentation-notes/{id}', [DocumentationNoteController::class, 'destroy']);
 
+        Route::get('ecopa-integration', [EcopaIntegrationController::class, 'show']);
+        Route::get('ecopa-integration/webhook-logs', [EcopaWebhookLogController::class, 'index']);
+
+        Route::get('role-management', [RoleManagementController::class, 'index']);
+        Route::patch('role-management/{assignmentId}', [RoleManagementController::class, 'update']);
+
         Route::get('onboarding/status', [OnboardingController::class, 'status']);
         Route::get('onboarding/coa-templates', [OnboardingController::class, 'coaTemplates']);
         Route::post('onboarding/bookkeeping-mode', [OnboardingController::class, 'bookkeepingMode']);
         Route::post('onboarding/apply-coa', [OnboardingController::class, 'applyCoa']);
+        Route::get('installation-onboarding/status', [InstallationOnboardingController::class, 'status']);
+        Route::post('installation-onboarding/entity', [InstallationOnboardingController::class, 'entity']);
 
         Route::get('widgets/financial-pulse', [FinancialPulseController::class, 'show']);
         Route::get('widgets/recent-journals', [RecentJournalsController::class, 'index']);

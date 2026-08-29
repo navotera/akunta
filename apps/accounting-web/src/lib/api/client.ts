@@ -4,6 +4,8 @@
  * - Reads `XSRF-TOKEN` cookie and forwards as `X-XSRF-TOKEN` header.
  * - Adds `X-Tenant-Slug` if a tenant is selected client-side.
  */
+import { accessDenied } from '$lib/stores/access-denied.svelte.js';
+
 export interface ApiOptions extends RequestInit {
   json?: unknown;
   tenantSlug?: string | null;
@@ -176,7 +178,24 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     if ((res.status === 401 || res.status === 419) && !opts.skipAuthRedirect) {
       redirectToEcopaLogin();
     }
-    throw new ApiError(res.status, parsed);
+    const error = new ApiError(res.status, parsed);
+    if (res.status === 403) {
+      const routeKey =
+        typeof window === 'undefined'
+          ? '/'
+          : `${window.location.pathname}${window.location.search}`;
+      accessDenied.show({
+        message:
+          error.message === 'API error 403'
+            ? 'Anda tidak memiliki izin untuk membuka atau menjalankan aksi di halaman ini.'
+            : error.message,
+        routeKey,
+        entityId: tenantSlug,
+        requestPath: path,
+        method,
+      });
+    }
+    throw error;
   }
 
   if (res.status === 204) return undefined as T;

@@ -11,7 +11,7 @@
   let { children } = $props();
 
   // Routes that render without the app shell (auth, landing).
-  const bareRoutes = ['/login', '/'];
+  const bareRoutes = ['/login', '/', '/onboarding'];
 
   function onKeydown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
