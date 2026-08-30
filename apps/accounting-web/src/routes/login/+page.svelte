@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
-  import { isEcopaIntegrationEnabled, redirectToEcopaLogin } from '$lib/api/client.js';
+  import { redirectToEcopaLogin } from '$lib/api/client.js';
   import { ecopaIntegrationApi } from '$lib/api/ecopa-integration.js';
 
   // Default flow: bounce to Ecopa OIDC. The legacy local form is reachable via
@@ -41,12 +41,11 @@
     } catch (caught) {
       integrationError =
         caught instanceof Error ? caught.message : 'Status integrasi tidak dapat diperiksa.';
-      localMode = !isEcopaIntegrationEnabled();
     } finally {
       integrationChecked = true;
     }
 
-    if (!useLocalForm && !loggedOut && !ssoError) {
+    if (!integrationError && !useLocalForm && !loggedOut && !ssoError) {
       redirectToEcopaLogin();
     }
   });

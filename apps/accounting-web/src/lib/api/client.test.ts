@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { accessDenied } from '$lib/stores/access-denied.svelte.js';
-import { api, ApiError, isEcopaIntegrationEnabled } from './client.js';
+import { api, ApiError } from './client.js';
 
 beforeEach(() => {
   accessDenied.clear();
@@ -49,17 +49,42 @@ describe('ApiError', () => {
       method: 'GET',
     });
   });
-});
 
-describe('Ecopa integration entity scope', () => {
-  it('reads the toggle only from the active entity namespace', () => {
-    localStorage.setItem('akunta.ecopa.integration.entity-a', 'on');
-    localStorage.setItem('akunta.ecopa.integration.entity-b', 'off');
+  it.each([401, 419])('returns an expired session to /login for HTTP %i', async (status) => {
+    const location = { pathname: '/dashboard', href: '' };
+    vi.stubGlobal('window', { location });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'Unauthenticated.' }), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
 
-    localStorage.setItem('akunta.active_entity_id', 'entity-a');
-    expect(isEcopaIntegrationEnabled()).toBe(true);
+    await expect(api('/api/v1/spa/dashboard')).rejects.toMatchObject({ status });
 
-    localStorage.setItem('akunta.active_entity_id', 'entity-b');
-    expect(isEcopaIntegrationEnabled()).toBe(false);
+    expect(location.href).toBe('/login');
+  });
+
+  it('does not navigate when the caller handles an authentication failure', async () => {
+    const location = { pathname: '/dashboard', href: '' };
+    vi.stubGlobal('window', { location });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'Unauthenticated.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(api('/api/v1/me', { skipAuthRedirect: true })).rejects.toMatchObject({
+      status: 401,
+    });
+
+    expect(location.href).toBe('');
   });
 });

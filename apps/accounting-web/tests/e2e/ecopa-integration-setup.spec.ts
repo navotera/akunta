@@ -52,6 +52,96 @@ test('configured but inactive integration shows the local login form', async ({ 
   await expect(page.getByText('Hubungkan Akunta ke Ecopa')).toHaveCount(0);
 });
 
+test('a backend-approved integration redirects despite a stale local browser flag', async ({
+  page,
+}) => {
+  let redirects = 0;
+
+  await page.addInitScript(() => {
+    localStorage.setItem('akunta.active_entity_id', 'entity-a');
+    localStorage.setItem('akunta.ecopa.integration.entity-a', 'off');
+  });
+  await page.route('**/api/auth/integration-status', async (route) => {
+    await route.fulfill({ json: { data: configuredIntegrationStatus('on') } });
+  });
+  await page.route('**/auth/ecopa/redirect', async (route) => {
+    redirects += 1;
+    await route.fulfill({ status: 200, body: 'Ecopa redirect started' });
+  });
+
+  await page.goto('/login');
+
+  await expect.poll(() => redirects).toBe(1);
+  await page.waitForTimeout(150);
+  expect(redirects).toBe(1);
+});
+
+test('a backend-inactive integration ignores a stale enabled browser flag', async ({ page }) => {
+  let redirects = 0;
+
+  await page.addInitScript(() => {
+    localStorage.setItem('akunta.active_entity_id', 'entity-a');
+    localStorage.setItem('akunta.ecopa.integration.entity-a', 'on');
+  });
+  await page.route('**/api/auth/integration-status', async (route) => {
+    await route.fulfill({ json: { data: configuredIntegrationStatus('off') } });
+  });
+  await page.route('**/auth/ecopa/redirect', async (route) => {
+    redirects += 1;
+    await route.fulfill({ status: 200, body: 'Unexpected Ecopa redirect' });
+  });
+
+  await page.goto('/login');
+
+  await expect(page.getByTestId('login-form')).toBeVisible();
+  await page.waitForTimeout(150);
+  expect(redirects).toBe(0);
+});
+
+test('a failed integration-status request stays recoverable without an SSO redirect', async ({
+  page,
+}) => {
+  let redirects = 0;
+
+  await page.route('**/api/auth/integration-status', async (route) => {
+    await route.fulfill({ status: 500, json: { message: 'Status tidak tersedia.' } });
+  });
+  await page.route('**/auth/ecopa/redirect', async (route) => {
+    redirects += 1;
+    await route.fulfill({ status: 200, body: 'Unexpected Ecopa redirect' });
+  });
+
+  await page.goto('/login');
+
+  await expect(
+    page.getByRole('heading', { name: 'Integrasi belum dapat diperiksa' }),
+  ).toBeVisible();
+  expect(redirects).toBe(0);
+});
+
+test('login recovery query parameters do not auto-start Ecopa SSO', async ({ page }) => {
+  let redirects = 0;
+
+  await page.route('**/api/auth/integration-status', async (route) => {
+    await route.fulfill({ json: { data: configuredIntegrationStatus('on') } });
+  });
+  await page.route('**/auth/ecopa/redirect', async (route) => {
+    redirects += 1;
+    await route.fulfill({ status: 200, body: 'Unexpected Ecopa redirect' });
+  });
+
+  await page.goto('/login?local=1');
+  await expect(page.getByTestId('login-form')).toBeVisible();
+
+  await page.goto('/login?logged_out=1');
+  await expect(page.getByTestId('ecopa-login-button')).toBeVisible();
+
+  await page.goto('/login?sso_error=token_exchange');
+  await expect(page.getByTestId('sso-error')).toBeVisible();
+
+  expect(redirects).toBe(0);
+});
+
 test('local login query cannot bypass first-time integration setup', async ({ page }) => {
   await page.route('**/api/auth/integration-status', async (route) => {
     await route.fulfill({ json: { data: integrationStatus(false) } });
@@ -77,5 +167,15 @@ function integrationStatus(pending: boolean) {
     webhook_url: 'https://accounting.example.test/webhooks/ecopa',
     sso_ready: false,
     webhook_ready: false,
+  };
+}
+
+function configuredIntegrationStatus(status: 'on' | 'off') {
+  return {
+    ...integrationStatus(false),
+    configured: true,
+    integration_status: status,
+    registration_status: 'active',
+    sso_ready: status === 'on',
   };
 }

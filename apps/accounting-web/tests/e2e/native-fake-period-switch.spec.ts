@@ -17,7 +17,6 @@ test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ pa
         localStorage.setItem('akunta.active_period_id', periodId);
         localStorage.setItem('akunta.e2e.initialized', 'yes');
       }
-      localStorage.setItem('akunta.ecopa.integration', 'off');
     },
     { entityId: REGULAR_ENTITY, periodId: PERIOD_2028 },
   );
