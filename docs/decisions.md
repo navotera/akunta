@@ -1232,9 +1232,10 @@ slug `accounting`, APP_URL, callback URI, and `{APP_URL}/webhooks/ecopa`.
 A 200/202 registration response leaves the installation pending. Approval is
 not confirmed manually: Ecopa sends `app.registration.approved` to the standard
 webhook, signed with the one-time Registration Token as bootstrap trust. The
-callback contains generated client ID, client secret, and permanent webhook
-secret. Akunta verifies request ID/slug, encrypts credentials, and only then
-writes `integration_status=on`. The encrypted bootstrap secret is retained to
+callback contains generated client ID, client secret, and the registered
+redirect URI. Akunta keeps the permanent webhook secret generated before
+submission, verifies request ID/slug/redirect URI, encrypts credentials, and
+only then writes `integration_status=on`. The encrypted bootstrap secret is retained to
 authenticate idempotent callback retries. Existing env-based credentials remain
 a compatibility fallback, not the new-install workflow.
 
@@ -1248,9 +1249,9 @@ Ecopa app admin can assign a local Accounting role in Settings; the mutation is
 audited and invalidates the affected user's sessions and tokens. An Ecopa
 `user` with no local role intentionally has no Accounting action permissions.
 
-The trusted, signed `/webhooks/ecopa` receiver handles `user.updated`,
-`user.deleted`, `user.assigned`, and `user.revoked` plus the existing lifecycle,
-entity, permission, and assignment aliases. Event IDs are durably idempotent.
+The trusted, signed `/webhooks/ecopa` receiver handles `app.admin_bootstrap`,
+`app.access.granted`, `app.access.restored`, and `app.access.revoked`, plus the
+user lifecycle and legacy assignment aliases. Event IDs are durably idempotent.
 `user.assigned` provisions a local shadow identity and an app-wide or
 entity-scoped assignment with no local role. This narrowly supersedes the older
 blanket statement that Akunta never creates users. Interactive SSO still cannot

@@ -62,12 +62,14 @@ class EcopaWebhookController extends Controller
                 $result = match (true) {
                     $event === 'app.registration.approved' => $this->onRegistrationApproved($subject),
                     $event === 'app.registration.rejected' => $this->onRegistrationRejected($subject),
+                    $event === 'app.admin_bootstrap' => $this->onAdminBootstrap($subject),
                     $event === 'user.disabled' => $this->onUserDisabled($subject),
                     $event === 'user.enabled' => $this->onUserEnabled($subject),
                     $event === 'user.updated' => $this->onUserUpdated($subject),
                     $event === 'user.deleted' => $this->onUserDisabled($subject),
                     $event === 'user.assigned' => $this->onUserAssigned($subject),
                     $event === 'user.revoked' => $this->onUserRevoked($subject),
+                    str_starts_with($event, 'app.access.') => $this->onAppAccess($event, $subject),
                     str_starts_with($event, 'app_permission.') => $this->onAppPermission($event, $subject),
                     str_starts_with($event, 'entity.') => $this->onEntity($event, $subject),
                     str_starts_with($event, 'assignment.') => $this->onAssignment($event, $subject),
@@ -122,6 +124,44 @@ class EcopaWebhookController extends Controller
         $this->integration->rejectRegistration($subject);
 
         return ['status' => 'applied', 'code' => 'registration_rejected'];
+    }
+
+    private function onAdminBootstrap(array $subject): array
+    {
+        $appSlug = data_get($subject, 'app.slug');
+        $expectedSlug = (string) config('ecopa.self_slug', 'accounting');
+        if (is_string($appSlug) && $appSlug !== '' && ! hash_equals($expectedSlug, $appSlug)) {
+            return $this->rejected('app_slug_mismatch', 'Slug app admin bootstrap tidak sesuai.');
+        }
+
+        $admins = $subject['admins'] ?? null;
+        if (! is_array($admins)) {
+            return $this->rejected('missing_admin_snapshot', 'app.admin_bootstrap membutuhkan daftar admins.');
+        }
+
+        $synced = 0;
+        foreach ($admins as $admin) {
+            if (! is_array($admin)) {
+                return $this->rejected('invalid_admin_snapshot', 'Snapshot admin Ecopa tidak valid.');
+            }
+
+            $result = $this->onUserAssigned(array_merge($admin, [
+                'user_id' => (string) ($admin['id'] ?? ''),
+                'app_code' => $expectedSlug,
+                'ecopa_role' => 'admin',
+            ]));
+            if (($result['status'] ?? null) !== 'applied') {
+                return $result;
+            }
+
+            $synced++;
+        }
+
+        return [
+            'status' => 'applied',
+            'code' => 'admin_bootstrap_synced',
+            'admins_synced' => $synced,
+        ];
     }
 
     private function onUserDisabled(array $subject): array
@@ -247,6 +287,27 @@ class EcopaWebhookController extends Controller
         }
 
         return ['status' => 'applied', 'code' => 'user_access_revoked'];
+    }
+
+    private function onAppAccess(string $event, array $subject): array
+    {
+        $expectedSlug = (string) config('ecopa.self_slug', 'accounting');
+        $appSlug = (string) (data_get($subject, 'app.slug') ?? data_get($subject, 'app.code') ?? '');
+        if ($appSlug !== '' && ! hash_equals($expectedSlug, $appSlug)) {
+            return $this->rejected('app_slug_mismatch', 'Slug app access tidak sesuai.');
+        }
+
+        $user = is_array($subject['user'] ?? null) ? $subject['user'] : [];
+        $normalized = array_merge($subject, [
+            'user_id' => (string) ($subject['user_id'] ?? $user['id'] ?? ''),
+            'email' => (string) ($subject['email'] ?? $user['email'] ?? ''),
+            'name' => $subject['name'] ?? $user['name'] ?? null,
+            'app_code' => $expectedSlug,
+        ]);
+
+        return $event === 'app.access.revoked'
+            ? $this->onUserRevoked($normalized)
+            : $this->onUserAssigned($normalized);
     }
 
     private function onAppPermission(string $event, array $subject): array

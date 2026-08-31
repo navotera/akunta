@@ -40,7 +40,6 @@ test('admin uses Tutorial and Catatan tabs and manages note submenus', async ({ 
 
   await page.addInitScript((entityId) => {
     localStorage.setItem('akunta.active_entity_id', entityId);
-    localStorage.setItem(`akunta.ecopa.integration.${entityId}`, 'off');
   }, ENTITY_ID);
 
   await page.route('**/api/v1/**', async (route) => {

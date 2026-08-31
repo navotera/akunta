@@ -10,12 +10,9 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             PresetRolesSeeder::class,
-            SuperAdminSeeder::class,
+            AccountingAppSeeder::class,
             SettingsPermissionsSeeder::class,
             JournalWorkflowPermissionsSeeder::class,
-            EcosystemBootstrapSeeder::class,
-            RequiredAccountsSeeder::class,
-            FakeDataEntitySeeder::class,
         ]);
     }
 }

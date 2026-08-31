@@ -10,7 +10,6 @@ test('admin previews and confirms a marker-only Demo 2026 reset from Settings', 
 
   await page.addInitScript((entityId) => {
     localStorage.setItem('akunta.active_entity_id', entityId);
-    localStorage.setItem('akunta.ecopa.integration', 'off');
   }, FAKE_ENTITY);
 
   await page.route('**/api/v1/**', async (route) => {

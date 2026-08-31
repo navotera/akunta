@@ -127,7 +127,6 @@
   <header class="mb-6">
     <p class="text-xs font-medium text-text-muted">Setup</p>
     <h1 class="text-2xl font-bold">Onboarding</h1>
-    <p class="text-sm text-text-muted">{status?.entity_name ?? 'Memuat…'}</p>
   </header>
 
   <ol class="mb-8 flex items-center gap-3 text-sm">

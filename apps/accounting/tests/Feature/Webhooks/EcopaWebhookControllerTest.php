@@ -218,6 +218,48 @@ it('creates an app-wide shadow assignment without choosing the local Akunta role
     ]);
 });
 
+it('accepts the current Ecopa app access events with nested user snapshots', function () {
+    $app = RbacApp::create([
+        'code' => 'accounting', 'name' => 'Accounting', 'version' => '1.0', 'enabled' => true,
+    ]);
+    $subject = [
+        'user_id' => 'ecopa-app-access-user',
+        'ecopa_role' => 'admin',
+        'app' => [
+            'slug' => 'accounting',
+            'name' => 'Akunta',
+        ],
+        'user' => [
+            'id' => 'ecopa-app-access-user',
+            'email' => 'app-access@example.test',
+            'name' => 'App Access User',
+        ],
+    ];
+
+    $this->withoutMiddleware(VerifyEcopaSignature::class)->postJson('/webhooks/ecopa', [
+        'event' => 'app.access.granted',
+        'event_id' => 'event-app-access-granted',
+        'subject' => $subject,
+    ])->assertOk()->assertJsonPath('code', 'user_access_assigned');
+
+    $user = User::query()->where('main_tier_user_id', 'ecopa-app-access-user')->firstOrFail();
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $user->id,
+        'app_id' => $app->id,
+        'entity_id' => null,
+        'ecopa_role' => 'admin',
+        'revoked_at' => null,
+    ]);
+
+    $this->withoutMiddleware(VerifyEcopaSignature::class)->postJson('/webhooks/ecopa', [
+        'event' => 'app.access.revoked',
+        'event_id' => 'event-app-access-revoked',
+        'subject' => $subject,
+    ])->assertOk()->assertJsonPath('code', 'user_access_revoked');
+
+    expect($user->assignments()->where('app_id', $app->id)->firstOrFail()->revoked_at)->not->toBeNull();
+});
+
 it('does not acknowledge or persist an unsupported event as processed', function () {
     $this->withoutMiddleware(VerifyEcopaSignature::class)->postJson('/webhooks/ecopa', [
         'event' => 'unsupported.event',

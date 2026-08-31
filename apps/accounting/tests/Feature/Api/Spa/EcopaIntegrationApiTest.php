@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\EcopaConfigIntegration;
 use App\Models\EcopaWebhookLog;
 use App\Models\User;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -54,13 +55,16 @@ it('registers from the public first-access wizard without enabling integration p
         ->assertJsonPath('data.registration_status', 'pending')
         ->assertJsonPath('data.registration_request_id', 'registration-123');
 
-    Http::assertSent(fn ($request): bool => $request->url() === 'https://ecopa.example.test/api/app-registration-requests'
-        && $request->hasHeader('X-Ecopa-Registration-Token', 'one-time-registration-token')
-        && $request->data() === [
-            'name' => 'Akunta',
-            'slug' => 'accounting',
-            'base_url' => 'https://accounting.example.test',
-        ]);
+    Http::assertSent(function ($request): bool {
+        $payload = $request->data();
+
+        return $request->url() === 'https://ecopa.example.test/api/app-registration-requests'
+            && $request->hasHeader('X-Ecopa-Registration-Token', 'one-time-registration-token')
+            && ($payload['name'] ?? null) === 'Akunta'
+            && ($payload['slug'] ?? null) === 'accounting'
+            && ($payload['base_url'] ?? null) === 'https://accounting.example.test'
+            && preg_match('/\\A[0-9a-f]{64}\\z/D', (string) ($payload['webhook_secret'] ?? '')) === 1;
+    });
 
     $encrypted = DB::table('ecopa_config_integration')
         ->where('name', 'registration_verification_secret')
@@ -70,13 +74,56 @@ it('registers from the public first-access wizard without enabling integration p
     $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'integration_status']);
 });
 
+it('allows an HTTP localhost Ecopa URL in production', function () {
+    $this->withoutMiddleware(ValidateCsrfToken::class);
+
+    Http::fake([
+        'http://localhost:9000/api/app-registration-requests' => Http::response([
+            'data' => ['id' => 'local-registration', 'status' => 'pending'],
+        ], 202),
+    ]);
+
+    app()->detectEnvironment(fn (): string => 'production');
+
+    try {
+        $this->postJson('/api/auth/ecopa-registration', [
+            'ecopa_url' => 'http://localhost:9000',
+            'registration_token' => 'local-registration-token',
+        ])->assertOk()
+            ->assertJsonPath('data.registration_status', 'pending')
+            ->assertJsonPath('data.registration_request_id', 'local-registration');
+    } finally {
+        app()->detectEnvironment(fn (): string => 'testing');
+    }
+
+    Http::assertSent(fn ($request): bool => $request->url() === 'http://localhost:9000/api/app-registration-requests');
+});
+
+it('still rejects an HTTP non-localhost Ecopa URL in production', function () {
+    $this->withoutMiddleware(ValidateCsrfToken::class);
+
+    app()->detectEnvironment(fn (): string => 'production');
+
+    try {
+        $this->postJson('/api/auth/ecopa-registration', [
+            'ecopa_url' => 'http://ecopa.example.test',
+            'registration_token' => 'one-time-registration-token',
+        ])->assertUnprocessable()
+            ->assertJsonPath('message', 'Ecopa URL wajib menggunakan HTTPS di production.');
+    } finally {
+        app()->detectEnvironment(fn (): string => 'testing');
+    }
+});
+
 it('activates encrypted runtime SSO configuration from a signed Ecopa approval callback', function () {
     $bootstrapSecret = 'one-time-registration-token';
+    $webhookSecret = str_repeat('a', 64);
     foreach ([
         'registration_status' => 'pending',
         'registration_request_id' => 'registration-456',
         'base_url' => 'https://accounting.example.test',
         'ecopa_url' => 'https://ecopa.example.test',
+        'key_integration' => Crypt::encryptString($webhookSecret),
         'registration_verification_secret' => Crypt::encryptString($bootstrapSecret),
     ] as $name => $value) {
         EcopaConfigIntegration::query()->create(compact('name', 'value'));
@@ -90,7 +137,7 @@ it('activates encrypted runtime SSO configuration from a signed Ecopa approval c
             'app_slug' => 'accounting',
             'client_id' => 'accounting-client',
             'client_secret' => 'client-secret-value',
-            'webhook_secret' => str_repeat('w', 40),
+            'redirect_uri' => 'https://accounting.example.test/auth/ecopa/callback',
         ],
     ];
     $json = json_encode($payload, JSON_THROW_ON_ERROR);
@@ -105,7 +152,7 @@ it('activates encrypted runtime SSO configuration from a signed Ecopa approval c
 
     expect(config('ecopa.client_id'))->toBe('accounting-client')
         ->and(config('ecopa.client_secret'))->toBe('client-secret-value')
-        ->and(config('ecopa.webhook_secret'))->toBe(str_repeat('w', 40));
+        ->and(config('ecopa.webhook_secret'))->toBe($webhookSecret);
     $this->assertDatabaseHas('ecopa_config_integration', [
         'name' => 'integration_status',
         'value' => 'on',
@@ -119,6 +166,44 @@ it('activates encrypted runtime SSO configuration from a signed Ecopa approval c
         'HTTP_ACCEPT' => 'application/json',
         'HTTP_X_ECOPA_SIGNATURE' => $signature,
     ], $json)->assertOk()->assertJsonPath('status', 'already_processed');
+});
+
+it('rejects approval credentials issued for a different redirect URI', function () {
+    $bootstrapSecret = 'one-time-registration-token';
+    foreach ([
+        'registration_status' => 'pending',
+        'registration_request_id' => 'registration-redirect-mismatch',
+        'base_url' => 'https://accounting.example.test',
+        'key_integration' => Crypt::encryptString(str_repeat('b', 64)),
+        'registration_verification_secret' => Crypt::encryptString($bootstrapSecret),
+    ] as $name => $value) {
+        EcopaConfigIntegration::query()->create(compact('name', 'value'));
+    }
+
+    $payload = [
+        'event' => 'app.registration.approved',
+        'event_id' => 'approval-event-redirect-mismatch',
+        'subject' => [
+            'registration_request_id' => 'registration-redirect-mismatch',
+            'app_slug' => 'accounting',
+            'client_id' => 'accounting-client',
+            'client_secret' => 'client-secret-value',
+            'redirect_uri' => 'https://attacker.example.test/callback',
+        ],
+    ];
+    $json = json_encode($payload, JSON_THROW_ON_ERROR);
+
+    $this->call('POST', '/webhooks/ecopa', [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_ACCEPT' => 'application/json',
+        'HTTP_X_ECOPA_SIGNATURE' => 'sha256='.hash_hmac('sha256', $json, $bootstrapSecret),
+    ], $json)->assertUnprocessable()
+        ->assertJsonPath('code', 'invalid_registration_event');
+
+    $this->assertDatabaseMissing('ecopa_config_integration', [
+        'name' => 'integration_status',
+        'value' => 'on',
+    ]);
 });
 
 it('disables password login after Ecopa mode is active', function () {

@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Artisan;
  * post journals — generic CoA, an open period for the current month, and
  * sample journal templates.
  *
- * Idempotent. Safe to re-run on every `migrate --seed` cycle. Skips entities
- * that already have a populated CoA / period / templates.
+ * Run explicitly after entities exist. Idempotent and skips entities that
+ * already have a populated CoA / period / templates.
  */
 class EcosystemBootstrapSeeder extends Seeder
 {

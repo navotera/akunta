@@ -59,19 +59,11 @@ function extractApiErrorMessage(body: unknown): string | null {
 }
 
 const ECOPA_LOGIN_PATH = '/auth/ecopa/redirect';
-
-export function isEcopaIntegrationEnabled(): boolean {
-  if (typeof localStorage === 'undefined') return !import.meta.env.DEV;
-  const entityId = readActiveTenantId();
-  const value = entityId ? localStorage.getItem(`akunta.ecopa.integration.${entityId}`) : null;
-  return value === null ? !import.meta.env.DEV : value === 'on';
-}
+const LOGIN_PATH = '/login';
 
 /**
- * Redirect the browser to the Ecopa OIDC login flow on Akunta backend. The
- * Laravel route `ecopa.login` (`/auth/ecopa/redirect`) handles both the
- * Ecopa-configured case (kicks off OAuth) and the unconfigured case (falls
- * back to a 404 — same as before SPA migration).
+ * Redirect the browser to the Ecopa OIDC login flow on Akunta backend after
+ * the caller has confirmed that the server integration is active.
  *
  * Guards:
  *  - SSR safety: noop when `window` is undefined.
@@ -81,12 +73,22 @@ export function isEcopaIntegrationEnabled(): boolean {
  */
 export function redirectToEcopaLogin(): void {
   if (typeof window === 'undefined') return;
-  if (!isEcopaIntegrationEnabled()) return;
   const path = window.location.pathname;
   if (path.startsWith('/auth/')) return;
   // Use full assignment so the SPA history is replaced — user shouldn't be
   // able to "back" into a stale auth state.
   window.location.href = ECOPA_LOGIN_PATH;
+}
+
+/**
+ * Return to the SPA login entry point after an expired API session. The login
+ * page asks the backend which authentication mode is active before choosing
+ * either local login or the Ecopa OIDC redirect.
+ */
+export function redirectToLogin(): void {
+  if (typeof window === 'undefined') return;
+  if (window.location.pathname === LOGIN_PATH) return;
+  window.location.href = LOGIN_PATH;
 }
 
 function getCookie(name: string): string | null {
@@ -171,12 +173,14 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     } catch {
       parsed = await res.text();
     }
-    // Auth failure: bounce browser to Ecopa OIDC flow unless caller opted out
-    // (e.g. auth bootstrap that needs to surface the unauthenticated state).
+    // Auth failure: return to the SPA login entry point unless caller opted
+    // out (e.g. auth bootstrap that needs to surface the unauthenticated
+    // state). The login page uses the backend integration status to choose
+    // local login or Ecopa OIDC.
     // 419 here = CSRF mismatch that survived our one retry — treat as expired
     // session.
     if ((res.status === 401 || res.status === 419) && !opts.skipAuthRedirect) {
-      redirectToEcopaLogin();
+      redirectToLogin();
     }
     const error = new ApiError(res.status, parsed);
     if (res.status === 403) {

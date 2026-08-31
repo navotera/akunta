@@ -78,10 +78,12 @@ class EcopaIntegrationService
             throw new EcopaRegistrationException('Registration Token wajib diisi.', 422);
         }
 
+        $webhookSecret = $this->registrationWebhookSecret();
         $payload = [
             'name' => (string) config('ecopa.registration_name', 'Akunta'),
             'slug' => (string) config('ecopa.self_slug', 'accounting'),
             'base_url' => $baseUrl,
+            'webhook_secret' => $webhookSecret,
         ];
 
         $response = $this->http($ecopaUrl, $token)->post('/api/app-registration-requests', $payload);
@@ -118,6 +120,12 @@ class EcopaIntegrationService
     public function activateFromApproval(array $subject): array
     {
         $this->assertMatchingRequest($subject);
+        if (! $this->hasValidLocalWebhookSecret()) {
+            throw new EcopaRegistrationException(
+                'Webhook secret lokal Akunta belum dikonfigurasi dengan benar.',
+                503,
+            );
+        }
         if ($this->value('integration_status') === self::STATUS_ON) {
             // Idempotent replay: never rotate credentials from a second event.
             return $this->status();
@@ -125,10 +133,10 @@ class EcopaIntegrationService
 
         $clientId = trim((string) ($subject['client_id'] ?? ''));
         $clientSecret = trim((string) ($subject['client_secret'] ?? ''));
-        $webhookSecret = trim((string) ($subject['webhook_secret'] ?? ''));
-        if ($clientId === '' || $clientSecret === '' || strlen($webhookSecret) < 32) {
+        $redirectUri = trim((string) ($subject['redirect_uri'] ?? ''));
+        if ($clientId === '' || $clientSecret === '' || $redirectUri === '') {
             throw new EcopaRegistrationException(
-                'Approval Ecopa wajib menyertakan client_id, client_secret, dan webhook_secret minimal 32 karakter.',
+                'Approval Ecopa wajib menyertakan client_id, client_secret, dan redirect_uri.',
                 422,
             );
         }
@@ -138,12 +146,14 @@ class EcopaIntegrationService
         if (! hash_equals($expectedSlug, $appSlug)) {
             throw new EcopaRegistrationException('Slug approval Ecopa tidak sesuai dengan aplikasi Akunta.', 422);
         }
+        if (! hash_equals($this->callbackUrl(), $redirectUri)) {
+            throw new EcopaRegistrationException('Redirect URI approval Ecopa tidak sesuai dengan callback Akunta.', 422);
+        }
 
-        DB::transaction(function () use ($clientId, $clientSecret, $webhookSecret, $subject): void {
+        DB::transaction(function () use ($clientId, $clientSecret, $subject): void {
             $this->putMany([
                 'client_id' => Crypt::encryptString($clientId),
                 'client_secret' => Crypt::encryptString($clientSecret),
-                'key_integration' => Crypt::encryptString($webhookSecret),
                 'api_token' => filled($subject['api_token'] ?? null)
                     ? Crypt::encryptString((string) $subject['api_token'])
                     : null,
@@ -288,6 +298,38 @@ class EcopaIntegrationService
         return rtrim($baseUrl, '/').'/webhooks/ecopa';
     }
 
+    private function registrationWebhookSecret(): string
+    {
+        $secret = $this->encryptedValue('key_integration');
+        if ($secret !== null) {
+            if (! $this->isValidWebhookSecret($secret)) {
+                throw new EcopaRegistrationException(
+                    'Webhook secret lokal Akunta belum dikonfigurasi dengan benar.',
+                    503,
+                );
+            }
+
+            return $secret;
+        }
+
+        $secret = bin2hex(random_bytes(32));
+        $this->putMany(['key_integration' => Crypt::encryptString($secret)]);
+
+        return $secret;
+    }
+
+    private function hasValidLocalWebhookSecret(): bool
+    {
+        $secret = $this->encryptedValue('key_integration');
+
+        return $secret !== null && $this->isValidWebhookSecret($secret);
+    }
+
+    private function isValidWebhookSecret(string $secret): bool
+    {
+        return preg_match('/\\A[0-9a-f]{64}\\z/D', $secret) === 1;
+    }
+
     private function nonEmptyConfig(string $key): ?string
     {
         $value = trim((string) config($key));
@@ -312,10 +354,12 @@ class EcopaIntegrationService
         if (! in_array($scheme, ['http', 'https'], true) || $host === '') {
             throw new EcopaRegistrationException("{$field} harus berupa URL HTTP/HTTPS yang valid.", 422);
         }
-        if (app()->environment('production') && $scheme !== 'https') {
+
+        $isLocalhost = strtolower(rtrim($host, '.')) === 'localhost';
+        if (app()->environment('production') && $scheme !== 'https' && ! $isLocalhost) {
             throw new EcopaRegistrationException("{$field} wajib menggunakan HTTPS di production.", 422);
         }
-        if (! $rejectPrivateHosts || app()->environment(['local', 'testing'])) {
+        if ($isLocalhost || ! $rejectPrivateHosts || app()->environment(['local', 'testing'])) {
             return;
         }
 

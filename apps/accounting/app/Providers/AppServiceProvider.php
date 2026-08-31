@@ -113,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Idempotent upsert of cluster Pengaturan permissions on every boot. Guarded
      * against missing schema (during migrations) and missing apps row (before
-     * SuperAdminSeeder has provisioned the accounting App). Wrapped in once()
+     * AccountingAppSeeder has provisioned the accounting App). Wrapped in once()
      * so concurrent requests don't repeat the work in the same process.
      */
     protected function registerSettingsPermissions(): void
