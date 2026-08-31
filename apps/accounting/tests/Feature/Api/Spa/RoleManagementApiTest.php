@@ -6,7 +6,11 @@ use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
+use App\Models\ApiToken;
 use App\Models\User;
+use App\Services\UserAccessRevoker;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'Role Tenant', 'slug' => 'role-'.uniqid()]);
@@ -43,6 +47,44 @@ beforeEach(function () {
 });
 
 it('lets an Ecopa app admin assign a local accounting role', function () {
+    expect(Schema::getColumnType('personal_access_tokens', 'tokenable_id'))->toBe('varchar');
+
+    [$managedApiToken] = ApiToken::issue([
+        'name' => 'Managed user token',
+        'user_id' => $this->managedUser->id,
+        'app_id' => $this->rbacApp->id,
+        'permissions' => ['journal.create'],
+    ]);
+    $otherUser = User::create([
+        'name' => 'Other User',
+        'email' => 'other-role-user@example.test',
+        'password_hash' => bcrypt('x'),
+    ]);
+    [$otherApiToken] = ApiToken::issue([
+        'name' => 'Other user token',
+        'user_id' => $otherUser->id,
+        'app_id' => $this->rbacApp->id,
+        'permissions' => ['journal.create'],
+    ]);
+    DB::table('personal_access_tokens')->insert([
+        'tokenable_type' => $this->managedUser->getMorphClass(),
+        'tokenable_id' => $this->managedUser->id,
+        'name' => 'Managed Sanctum token',
+        'token' => hash('sha256', 'managed-sanctum-token'),
+        'abilities' => json_encode(['*']),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('personal_access_tokens')->insert([
+        'tokenable_type' => $otherUser->getMorphClass(),
+        'tokenable_id' => $otherUser->id,
+        'name' => 'Other Sanctum token',
+        'token' => hash('sha256', 'other-sanctum-token'),
+        'abilities' => json_encode(['*']),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
     $this->actingAs($this->admin)
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -62,7 +104,40 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
         ->assertJsonPath('data.role_id', $this->operatorRole->id);
 
     expect($this->assignment->fresh()->role_id)->toBe($this->operatorRole->id);
+    expect($managedApiToken->fresh()->revoked_at)->not->toBeNull();
+    expect($otherApiToken->fresh()->revoked_at)->toBeNull();
+    $this->assertDatabaseMissing('personal_access_tokens', [
+        'tokenable_type' => $this->managedUser->getMorphClass(),
+        'tokenable_id' => $this->managedUser->id,
+    ]);
+    $this->assertDatabaseHas('personal_access_tokens', [
+        'tokenable_type' => $otherUser->getMorphClass(),
+        'tokenable_id' => $otherUser->id,
+    ]);
     $this->assertDatabaseHas('audit_log', [
+        'action' => 'user.role_changed',
+        'resource_id' => $this->assignment->id,
+        'entity_id' => $this->entity->id,
+    ]);
+});
+
+it('rolls back a role change when access revocation fails', function () {
+    $revoker = Mockery::mock(UserAccessRevoker::class);
+    $revoker->shouldReceive('revokeSessionsAndTokens')
+        ->once()
+        ->andThrow(new RuntimeException('Token revocation failed'));
+    $this->app->instance(UserAccessRevoker::class, $revoker);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertStatus(500);
+
+    expect($this->assignment->fresh()->role_id)->toBeNull();
+    $this->assertDatabaseMissing('audit_log', [
         'action' => 'user.role_changed',
         'resource_id' => $this->assignment->id,
         'entity_id' => $this->entity->id,
