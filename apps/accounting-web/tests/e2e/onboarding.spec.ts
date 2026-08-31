@@ -20,12 +20,55 @@ test('fresh installation does not show an entity subtitle before the first entit
       },
     });
   });
+  await page.route('**/api/v1/spa/installation-onboarding/status', async (route) => {
+    await route.fulfill({
+      json: {
+        data: { completed: false, completed_at: null, has_entity: false, entity_count: 0 },
+      },
+    });
+  });
 
   await page.goto('/onboarding');
 
   await expect(page.getByTestId('entity-onboarding-step')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Onboarding' })).toBeVisible();
   await expect(page.getByText('Memuat…', { exact: true })).toHaveCount(0);
+});
+
+test('redirects away from onboarding after installation setup is complete', async ({ page }) => {
+  await page.route('**/api/v1/me', async (route) => {
+    await route.fulfill({
+      json: {
+        data: {
+          id: 'ecopa-admin-2',
+          email: 'admin-2@example.test',
+          name: 'Ecopa Admin 2',
+          roles: [],
+          tenants: [],
+          is_sso_admin: true,
+          is_admin: true,
+          is_impersonating: false,
+          impersonator_id: null,
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/spa/installation-onboarding/status', async (route) => {
+    await route.fulfill({
+      json: {
+        data: {
+          completed: true,
+          completed_at: '2026-08-31T00:00:00Z',
+          has_entity: true,
+          entity_count: 1,
+        },
+      },
+    });
+  });
+
+  await page.goto('/onboarding');
+
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test('uses the current calendar year as the default onboarding period', async ({ page }) => {

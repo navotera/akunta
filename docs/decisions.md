@@ -1242,6 +1242,10 @@ a compatibility fallback, not the new-install workflow.
 After activation the registration wizard disappears and SSO begins. The first
 Ecopa admin is redirected to Akunta onboarding and creates the initial entity,
 selects bookkeeping mode and COA, creates a period, and finishes setup.
+Onboarding completion is installation-wide and irreversible in ordinary
+operation: subsequent admins or users are redirected to the dashboard, not the
+wizard. The initial entity retains its own bookkeeping configuration; later
+entities are configured through ordinary workspace/settings workflows.
 
 Ecopa owns identity, enabled/disabled state, and the coarse per-app level
 `admin` or `user`. Akunta owns fine-grained Accounting roles per entity. An

@@ -34,6 +34,11 @@
         return;
       }
     }
+    const installation = await installationOnboardingApi.status();
+    if (installation.completed) {
+      goto('/dashboard', { replaceState: true });
+      return;
+    }
     if (auth.user?.tenants.length === 0) {
       if (!auth.user.is_sso_admin) {
         error =
@@ -64,6 +69,7 @@
       await loadEntityOnboarding();
       step = 1;
     } catch (e) {
+      if (await redirectIfInstallationCompleted(e)) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;
@@ -78,6 +84,7 @@
       status = await onboardingApi.status();
       step = 2;
     } catch (e) {
+      if (await redirectIfInstallationCompleted(e)) return;
       error = (e as Error).message;
     } finally {
       busy = false;
@@ -93,6 +100,7 @@
       status = await onboardingApi.status();
       step = 3;
     } catch (e) {
+      if (await redirectIfInstallationCompleted(e)) return;
       error = (e as Error).message;
     } finally {
       busy = false;
@@ -107,6 +115,7 @@
       status = await onboardingApi.status();
       step = 4;
     } catch (e) {
+      if (await redirectIfInstallationCompleted(e)) return;
       error =
         e instanceof ApiError
           ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body)
@@ -118,6 +127,17 @@
 
   function finish() {
     goto('/dashboard');
+  }
+
+  async function redirectIfInstallationCompleted(exception: unknown): Promise<boolean> {
+    if (!(exception instanceof ApiError) || exception.status !== 409) return false;
+
+    const installation = await installationOnboardingApi.status();
+    if (!installation.completed) return false;
+
+    await goto('/dashboard', { replaceState: true });
+
+    return true;
   }
 </script>
 

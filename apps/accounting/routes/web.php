@@ -8,6 +8,7 @@ use App\Http\Controllers\Webhooks\OidcBackchannelLogoutController;
 use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
 use App\Http\Middleware\LogEcopaWebhook;
 use App\Http\Middleware\VerifyEcopaSignature;
+use App\Services\InstallationOnboardingService;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -78,29 +79,22 @@ Route::get('/login', function (Request $request) {
 Route::get('/sso/login', function () {
     if (auth()->check()) {
         $user = auth()->user();
-        $tenant = method_exists($user, 'getDefaultTenant') ? $user->getDefaultTenant() : null;
+        $spaUrl = rtrim((string) config('app.spa_url'), '/');
 
-        // SSO admin yang baru-pertama-kali masuk: belum punya assignment lokal
-        // tapi punya app_role=admin di Ecopa → boleh akses entitas mana pun.
-        if ($tenant === null
-            && method_exists($user, 'isSsoAdmin')
-            && $user->isSsoAdmin()) {
-            $tenant = Entity::query()->first();
-        }
-
-        if ($tenant !== null) {
-            // SPA lives on a different host:port (Vite dev or static deploy).
-            // Redirect away to the configured SPA dashboard so /api/v1/me runs
-            // under the SPA origin (cookie + tenant resolved client-side).
-            $spaUrl = rtrim((string) config('app.spa_url'), '/');
+        if (app(InstallationOnboardingService::class)->isCompleted()) {
             $target = $spaUrl !== '' ? $spaUrl.'/dashboard' : '/dashboard';
 
             return redirect()->away($target);
         }
 
         if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
-            $spaUrl = rtrim((string) config('app.spa_url'), '/');
             $target = $spaUrl !== '' ? $spaUrl.'/onboarding' : '/dashboard';
+
+            return redirect()->away($target);
+        }
+
+        if (method_exists($user, 'getDefaultTenant') && $user->getDefaultTenant() !== null) {
+            $target = $spaUrl !== '' ? $spaUrl.'/dashboard' : '/dashboard';
 
             return redirect()->away($target);
         }
