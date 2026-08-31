@@ -27,3 +27,75 @@ test('fresh installation does not show an entity subtitle before the first entit
   await expect(page.getByRole('heading', { name: 'Onboarding' })).toBeVisible();
   await expect(page.getByText('Memuat…', { exact: true })).toHaveCount(0);
 });
+
+test('uses the current calendar year as the default onboarding period', async ({ page }) => {
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.pathname === '/api/v1/me') {
+      await route.fulfill({
+        json: {
+          data: {
+            id: 'ecopa-admin-1',
+            email: 'admin@example.test',
+            name: 'Ecopa Admin',
+            roles: ['admin'],
+            tenants: [
+              {
+                id: 'entity-1',
+                tenant_id: 'tenant-1',
+                name: 'PT Contoh Indonesia',
+                slug: null,
+                theme_color: 'blue',
+                logo_url: null,
+                is_active: true,
+                is_fake_data: false,
+                demo_dataset_version: null,
+                can_manage_fake_data: true,
+                bookkeeping_mode: 'independent_books',
+                issue_report_url: null,
+              },
+            ],
+            is_sso_admin: true,
+            is_admin: true,
+            is_impersonating: false,
+            impersonator_id: null,
+          },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/v1/spa/onboarding/status') {
+      await route.fulfill({
+        json: {
+          data: {
+            entity_id: 'entity-1',
+            entity_name: 'PT Contoh Indonesia',
+            has_accounts: true,
+            account_count: 1,
+            has_open_period: false,
+            period_count: 0,
+            bookkeeping_mode: 'independent_books',
+            has_bookkeeping_mode: true,
+            completed: false,
+          },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/v1/spa/onboarding/coa-templates') {
+      await route.fulfill({ json: { data: [] } });
+      return;
+    }
+
+    await route.fulfill({ json: { data: [] } });
+  });
+
+  await page.goto('/onboarding');
+
+  const year = new Date().getFullYear();
+  await expect(page.getByTestId('onboarding-period-start-date')).toHaveValue(`${year}-01-01`);
+  await expect(page.getByTestId('onboarding-period-end-date')).toHaveValue(`${year}-12-31`);
+});
