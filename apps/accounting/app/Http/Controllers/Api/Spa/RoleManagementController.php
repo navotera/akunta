@@ -127,12 +127,12 @@ class RoleManagementController extends Controller
                     'source' => 'akunta_admin',
                 ],
             );
-        });
 
-        $user = User::query()->find($assignment->user_id);
-        if ($user) {
-            $this->accessRevoker->revokeSessionsAndTokens($user);
-        }
+            $user = User::query()->find($assignment->user_id);
+            if ($user) {
+                $this->accessRevoker->revokeSessionsAndTokens($user);
+            }
+        });
 
         return response()->json(['data' => [
             'assignment_id' => $assignment->id,
