@@ -18,14 +18,12 @@
   let entityName = $state('');
   let legalForm = $state('PT');
 
+  const currentYear = new Date().getFullYear();
+
   let periodForm = $state({
     name: '',
-    start_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      .toISOString()
-      .slice(0, 10),
-    end_date: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)
-      .toISOString()
-      .slice(0, 10),
+    start_date: `${currentYear}-01-01`,
+    end_date: `${currentYear}-12-31`,
   });
 
   onMount(async () => {
@@ -300,6 +298,7 @@
             <DateInput
               value={periodForm.start_date}
               onChange={(iso) => (periodForm.start_date = iso)}
+              testId="onboarding-period-start-date"
             />
           </label>
           <label class="block">
@@ -307,6 +306,7 @@
             <DateInput
               value={periodForm.end_date}
               onChange={(iso) => (periodForm.end_date = iso)}
+              testId="onboarding-period-end-date"
             />
           </label>
         </div>
