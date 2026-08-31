@@ -42,6 +42,9 @@ class RoleManagementController extends Controller
     {
         $entity = $this->resolveManagedEntity($request);
         $app = $this->accountingApp();
+        /** @var User $actor */
+        $actor = $request->user();
+        $canChangeOwnRole = ! $this->isProtectedRoleManager($actor, $entity, $app);
 
         $assignments = UserAppAssignment::query()
             ->where('app_id', $app->id)
@@ -63,6 +66,7 @@ class RoleManagementController extends Controller
                 'role_id' => $assignment->role_id,
                 'role_code' => $assignment->role?->code,
                 'disabled_at' => $assignment->user?->disabled_at?->toIso8601String(),
+                'can_update_role' => $assignment->user_id !== $actor->id || $canChangeOwnRole,
             ])
             ->values();
 
@@ -106,6 +110,14 @@ class RoleManagementController extends Controller
             })
             ->whereNull('revoked_at')
             ->firstOrFail();
+
+        /** @var User $actor */
+        $actor = $request->user();
+        abort_if(
+            $assignment->user_id === $actor->id && $this->isProtectedRoleManager($actor, $entity, $app),
+            403,
+            'Admin tidak dapat mengubah role Akunta miliknya sendiri. Minta admin lain untuk melakukannya.',
+        );
 
         $before = $assignment->role_id;
         DB::transaction(function () use ($assignment, $data, $entity, $before): void {
@@ -161,5 +173,21 @@ class RoleManagementController extends Controller
     private function accountingApp(): RbacApp
     {
         return RbacApp::query()->where('code', 'accounting')->firstOrFail();
+    }
+
+    private function isProtectedRoleManager(User $user, Entity $entity, RbacApp $app): bool
+    {
+        if ($user->isSsoAdmin()) {
+            return true;
+        }
+
+        return $user->assignments()
+            ->where('app_id', $app->id)
+            ->whereNull('revoked_at')
+            ->where(function ($query) use ($entity): void {
+                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+            })
+            ->whereHas('role', fn ($query) => $query->whereIn('code', ['super_admin', 'admin']))
+            ->exists();
     }
 }

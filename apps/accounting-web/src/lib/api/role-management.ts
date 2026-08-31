@@ -16,6 +16,7 @@ export interface ManagedUser {
   role_id: string | null;
   role_code: string | null;
   disabled_at: string | null;
+  can_update_role: boolean;
 }
 
 export interface RoleManagementData {
