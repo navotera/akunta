@@ -98,19 +98,14 @@ test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ pa
       return;
     }
 
-    if (url.pathname === '/api/v1/spa/onboarding/status') {
+    if (url.pathname === '/api/v1/spa/installation-onboarding/status') {
       await route.fulfill({
         json: {
           data: {
-            entity_id: entityId,
-            entity_name: entityId === FAKE_ENTITY ? 'PT. Fake Data' : 'PT Tahun 2028',
-            has_accounts: true,
-            account_count: 80,
-            has_open_period: true,
-            period_count: 1,
-            bookkeeping_mode: 'independent_books',
-            has_bookkeeping_mode: true,
             completed: true,
+            completed_at: '2026-08-31T00:00:00Z',
+            has_entity: true,
+            entity_count: 2,
           },
         },
       });

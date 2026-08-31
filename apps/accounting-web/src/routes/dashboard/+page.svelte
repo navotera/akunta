@@ -6,7 +6,7 @@
   import { period } from '$lib/stores/period.svelte.js';
   import { widgetsApi, type FinancialPulse, type RecentJournal } from '$lib/api/widgets.js';
   import { reportingApi, type FiscalReconciliationData } from '$lib/api/reporting.js';
-  import { onboardingApi } from '$lib/api/onboarding.js';
+  import { installationOnboardingApi } from '$lib/api/installation-onboarding.js';
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
   import Spark from '$lib/components/dashboard/Spark.svelte';
@@ -61,9 +61,13 @@
     }
 
     try {
-      const onboarding = await onboardingApi.status(tenant.id);
+      const onboarding = await installationOnboardingApi.status();
       if (!onboarding.completed) {
-        goto('/onboarding', { replaceState: true });
+        if (auth.user?.is_sso_admin) {
+          goto('/onboarding', { replaceState: true });
+        } else {
+          error = 'Setup Akunta belum diselesaikan. Minta admin Ecopa menyelesaikan onboarding.';
+        }
         return;
       }
       if (!period.activeId) await period.refresh();

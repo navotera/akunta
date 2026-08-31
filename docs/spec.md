@@ -1091,6 +1091,10 @@ Item yang sudah didiskusikan tapi keputusannya ditunda. Angkat kembali saat siap
 - Once active, the registration wizard disappears, Ecopa SSO starts, and the
   first Ecopa admin completes Akunta onboarding: initial entity, bookkeeping
   mode, COA, and period.
+- This is a one-time installation onboarding flow. After completion, later
+  Ecopa admins and users must enter the dashboard rather than repeat the
+  wizard; newly created entities are configured through ordinary workspace and
+  settings flows.
 - Ecopa controls identity and the coarse app level (`admin` or `user`). Akunta
   controls the detailed Accounting role per entity. Admin Akunta can assign or
   clear a local role from Settings, and each change is audited.

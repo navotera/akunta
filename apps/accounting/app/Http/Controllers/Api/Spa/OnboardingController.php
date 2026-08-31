@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Period;
+use App\Services\InstallationOnboardingService;
 use App\Services\Onboarding\CoaTemplateRegistry;
 use App\Services\RequiredAccountService;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,7 @@ class OnboardingController extends Controller
         private readonly CoaTemplateRegistry $registry,
         private readonly ApplyCoaTemplateAction $apply,
         private readonly RequiredAccountService $requiredAccounts,
+        private readonly InstallationOnboardingService $installationOnboarding,
     ) {}
 
     public function status(Request $request): JsonResponse
@@ -41,15 +43,14 @@ class OnboardingController extends Controller
                 'period_count' => $periodCount,
                 'bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode'),
                 'has_bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode') !== null,
-                'completed' => $accountCount > 0
-                    && $periodCount > 0
-                    && data_get($entity->workspace_settings, 'bookkeeping_mode') !== null,
+                'completed' => $this->installationOnboarding->isCompleted(),
             ],
         ]);
     }
 
     public function bookkeepingMode(Request $request): JsonResponse
     {
+        $this->installationOnboarding->assertIncomplete();
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
             'bookkeeping_mode' => 'required|in:independent_books,internal_only',
@@ -58,6 +59,7 @@ class OnboardingController extends Controller
         $settings['bookkeeping_mode'] = $data['bookkeeping_mode'];
         $entity->forceFill(['workspace_settings' => $settings])->save();
         $this->requiredAccounts->ensure($entity->refresh());
+        $this->installationOnboarding->markCompletedIfReady($entity->refresh());
 
         return response()->json([
             'data' => [
@@ -76,12 +78,14 @@ class OnboardingController extends Controller
 
     public function applyCoa(Request $request): JsonResponse
     {
+        $this->installationOnboarding->assertIncomplete();
         $entity = $this->resolveEntity($request);
         $data = $request->validate([
             'template_key' => 'required|string|max:40',
         ]);
 
         $result = $this->apply->execute($entity->id, $data['template_key']);
+        $this->installationOnboarding->markCompletedIfReady($entity->refresh());
 
         return response()->json([
             'data' => [

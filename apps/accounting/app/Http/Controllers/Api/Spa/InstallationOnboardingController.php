@@ -12,6 +12,7 @@ use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\InstallationOnboardingService;
 use App\Services\RequiredAccountService;
 use Database\Seeders\PresetRolesSeeder;
 use Illuminate\Http\JsonResponse;
@@ -24,22 +25,24 @@ class InstallationOnboardingController extends Controller
     public function __construct(
         private readonly RequiredAccountService $requiredAccounts,
         private readonly AuditLoggerContract $auditLogger,
+        private readonly InstallationOnboardingService $onboarding,
     ) {}
 
     public function status(Request $request): JsonResponse
     {
-        $this->authorizeInstaller($request);
-
         return response()->json(['data' => [
-            'has_entity' => Entity::query()->exists(),
-            'entity_count' => Entity::query()->count(),
+            'completed' => $this->onboarding->isCompleted(),
+            'completed_at' => $this->onboarding->completedAt(),
+            'has_entity' => $this->onboarding->hasInitialEntity(),
+            'entity_count' => $this->onboarding->initialEntityCount(),
         ]]);
     }
 
     public function entity(Request $request): JsonResponse
     {
         $this->authorizeInstaller($request);
-        abort_if(Entity::query()->exists(), 409, 'Entitas awal sudah tersedia. Muat ulang onboarding.');
+        $this->onboarding->assertIncomplete();
+        abort_if($this->onboarding->hasInitialEntity(), 409, 'Entitas awal sudah tersedia. Muat ulang onboarding.');
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],

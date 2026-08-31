@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\UserAppAssignment;
+use App\Models\EcopaConfigIntegration;
 use App\Models\User;
 
 it('lets the first Ecopa admin create the initial entity and local admin assignment', function () {
@@ -46,4 +47,23 @@ it('rejects initial entity creation by a regular Ecopa user', function () {
         ->withSession(['ecopa.app_role' => 'user'])
         ->postJson('/api/v1/spa/installation-onboarding/entity', ['name' => 'PT Tidak Sah'])
         ->assertForbidden();
+});
+
+it('redirects later Ecopa admins to the dashboard after installation onboarding', function () {
+    config()->set('app.spa_url', 'http://spa.test');
+    EcopaConfigIntegration::query()->create([
+        'name' => 'installation_onboarding_completed_at',
+        'value' => '2026-08-31T00:00:00+00:00',
+    ]);
+    $admin = User::query()->create([
+        'name' => 'Second Ecopa Admin',
+        'email' => 'second-admin@example.test',
+        'main_tier_user_id' => 'ecopa-second-admin',
+        'email_verified_at' => now(),
+    ]);
+
+    $this->actingAs($admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->get('/sso/login')
+        ->assertRedirect('http://spa.test/dashboard');
 });

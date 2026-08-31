@@ -3,9 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use Akunta\EcopaClient\Http\EcopaAuthController;
-use App\Models\Account;
-use App\Models\Period;
 use App\Models\User;
+use App\Services\InstallationOnboardingService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
@@ -100,11 +99,8 @@ class EcopaController extends EcopaAuthController
         // is resolved client-side from /api/v1/me + cookie.
         $spa = rtrim((string) config('app.spa_url'), '/');
 
-        $entity = Auth::user()?->getDefaultTenant();
-        $needsOnboarding = $entity === null
-            || data_get($entity->workspace_settings, 'bookkeeping_mode') === null
-            || ! Account::query()->where('entity_id', $entity->id)->whereNull('system_key')->exists()
-            || ! Period::query()->where('entity_id', $entity->id)->exists();
+        $needsOnboarding = ! app(InstallationOnboardingService::class)->isCompleted()
+            && Auth::user()?->isSsoAdmin();
 
         return ($spa !== '' ? $spa : url('')).($needsOnboarding ? '/onboarding' : '/dashboard');
     }

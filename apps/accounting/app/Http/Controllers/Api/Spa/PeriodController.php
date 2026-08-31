@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
 use App\Models\Period;
+use App\Services\InstallationOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,8 @@ class PeriodController extends Controller
 {
     use ProtectsNativeFakeData;
     use ResolvesTenant;
+
+    public function __construct(private readonly InstallationOnboardingService $installationOnboarding) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -58,13 +61,19 @@ class PeriodController extends Controller
             ->where('status', Period::STATUS_OPEN)
             ->exists();
 
-        $period = Period::create([
-            ...$data,
-            'entity_id' => $entity->id,
-            'status' => $hasOpenPeriod ? Period::STATUS_CLOSED : Period::STATUS_OPEN,
-            'closed_at' => $hasOpenPeriod ? now() : null,
-            'closed_by' => $hasOpenPeriod ? Auth::id() : null,
-        ]);
+        $period = DB::transaction(function () use ($data, $entity, $hasOpenPeriod): Period {
+            $period = Period::create([
+                ...$data,
+                'entity_id' => $entity->id,
+                'status' => $hasOpenPeriod ? Period::STATUS_CLOSED : Period::STATUS_OPEN,
+                'closed_at' => $hasOpenPeriod ? now() : null,
+                'closed_by' => $hasOpenPeriod ? Auth::id() : null,
+            ]);
+
+            $this->installationOnboarding->markCompletedIfReady($entity->refresh());
+
+            return $period;
+        });
 
         return response()->json(['data' => $this->serialize($period)], 201);
     }

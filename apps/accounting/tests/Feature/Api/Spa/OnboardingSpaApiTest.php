@@ -8,6 +8,8 @@ use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\Account;
+use App\Models\EcopaConfigIntegration;
+use App\Models\User as AccountingUser;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'OB', 'slug' => 'ob-'.uniqid()]);
@@ -60,4 +62,99 @@ it('applies a CoA template and creates accounts', function () {
         ->assertJsonPath('data.template_key', 'generic');
 
     expect(Account::where('entity_id', $this->entity->id)->count())->toBeGreaterThan(0);
+});
+
+it('completes onboarding globally and prevents a second wizard run', function () {
+    $headers = ['X-Tenant-Slug' => $this->entity->id];
+
+    $this->actingAs($this->user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/onboarding/bookkeeping-mode', [
+            'bookkeeping_mode' => 'independent_books',
+        ])
+        ->assertOk();
+
+    $this->actingAs($this->user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/onboarding/apply-coa', [
+            'template_key' => 'generic',
+        ])
+        ->assertOk();
+
+    $this->actingAs($this->user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/periods', [
+            'name' => '2026',
+            'start_date' => '2026-01-01',
+            'end_date' => '2026-12-31',
+        ])
+        ->assertCreated();
+
+    $this->actingAs($this->user)
+        ->getJson('/api/v1/spa/installation-onboarding/status')
+        ->assertOk()
+        ->assertJsonPath('data.completed', true)
+        ->assertJsonPath('data.has_entity', true)
+        ->assertJsonPath('data.entity_count', 1);
+
+    $this->actingAs($this->user)
+        ->withHeaders($headers)
+        ->getJson('/api/v1/spa/onboarding/status')
+        ->assertOk()
+        ->assertJsonPath('data.completed', true);
+
+    expect(EcopaConfigIntegration::query()
+        ->where('name', 'installation_onboarding_completed_at')
+        ->value('value'))->not->toBeNull();
+
+    EcopaConfigIntegration::query()
+        ->where('name', 'installation_onboarding_completed_at')
+        ->delete();
+    $migration = require database_path('migrations/2026_08_31_000760_backfill_installation_onboarding_completion.php');
+    $migration->up();
+
+    expect(EcopaConfigIntegration::query()
+        ->where('name', 'installation_onboarding_completed_at')
+        ->value('value'))->not->toBeNull();
+
+    $secondAdmin = AccountingUser::create([
+        'name' => 'Second Admin',
+        'email' => 'admin-'.uniqid().'@x.test',
+        'password_hash' => bcrypt('x'),
+    ]);
+
+    $this->actingAs($secondAdmin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->postJson('/api/v1/spa/installation-onboarding/entity', [
+            'name' => 'PT Kedua',
+        ])
+        ->assertConflict();
+
+    $this->actingAs($secondAdmin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/onboarding/bookkeeping-mode', [
+            'bookkeeping_mode' => 'internal_only',
+        ])
+        ->assertConflict();
+
+    $this->actingAs($this->user)
+        ->withHeaders($headers)
+        ->postJson('/api/v1/spa/periods', [
+            'name' => '2027',
+            'start_date' => '2027-01-01',
+            'end_date' => '2027-12-31',
+        ])
+        ->assertCreated();
+});
+
+it('does not treat the native demo entity as an initial entity', function () {
+    $this->entity->update(['is_fake_data' => true]);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/v1/spa/installation-onboarding/status')
+        ->assertOk()
+        ->assertJsonPath('data.completed', false)
+        ->assertJsonPath('data.has_entity', false)
+        ->assertJsonPath('data.entity_count', 0);
 });
