@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 const ENTITY_ID = '01J00000000000000000000701';
 const ASSIGNMENT_ID = '01J00000000000000000000702';
 const OPERATOR_ROLE_ID = '01J00000000000000000000703';
+const ADMIN_USER_ID = '01J00000000000000000000704';
+const ADMIN_ASSIGNMENT_ID = '01J00000000000000000000707';
 
 test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
   let selectedRole: string | null = null;
@@ -19,7 +21,7 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
       await route.fulfill({
         json: {
           data: {
-            id: '01J00000000000000000000704',
+            id: ADMIN_USER_ID,
             name: 'Admin Akunta',
             email: 'admin@example.test',
             roles: ['admin'],
@@ -76,6 +78,18 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
             entity_id: ENTITY_ID,
             users: [
               {
+                assignment_id: ADMIN_ASSIGNMENT_ID,
+                user_id: ADMIN_USER_ID,
+                name: 'Admin Akunta',
+                email: 'admin@example.test',
+                ecopa_user_id: 'ecopa-admin',
+                ecopa_role: 'admin',
+                role_id: null,
+                role_code: null,
+                disabled_at: null,
+                can_update_role: false,
+              },
+              {
                 assignment_id: ASSIGNMENT_ID,
                 user_id: '01J00000000000000000000706',
                 name: 'User Ecopa',
@@ -85,6 +99,7 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
                 role_id: selectedRole,
                 role_code: selectedRole ? 'operator' : null,
                 disabled_at: null,
+                can_update_role: true,
               },
             ],
             roles: [{ id: OPERATOR_ROLE_ID, code: 'operator', name: 'Operator' }],
@@ -116,9 +131,13 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
 
   await page.goto('/settings?section=users');
 
-  const select = page.getByLabel('Role Akunta untuk User Ecopa');
-  await expect(select).toBeVisible();
-  await select.selectOption(OPERATOR_ROLE_ID);
+  const ownRoleSelect = page.getByLabel('Role Akunta untuk Admin Akunta');
+  await expect(ownRoleSelect).toBeDisabled();
+  await expect(page.getByText('Role Anda hanya dapat diubah oleh admin lain.')).toBeVisible();
+
+  const otherUserRoleSelect = page.getByLabel('Role Akunta untuk User Ecopa');
+  await expect(otherUserRoleSelect).toBeVisible();
+  await otherUserRoleSelect.selectOption(OPERATOR_ROLE_ID);
 
   await expect(page.getByRole('status')).toContainText('Role Akunta berhasil diperbarui');
   expect(selectedRole).toBe(OPERATOR_ROLE_ID);

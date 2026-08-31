@@ -345,6 +345,10 @@ employee.manage
 
 User bisa **bikin custom role** dengan pick-and-mix permissions via UI (lihat 5.8).
 
+Super Admin, App Admin, dan Admin Aplikasi Ecopa tidak dapat mengubah assignment
+role Akunta mereka sendiri. Perubahan tersebut harus dilakukan oleh admin lain;
+aturan ini wajib dipaksakan oleh API, bukan hanya oleh UI.
+
 ### 5.6 Integrated vs Standalone Mode
 
 | Aspek | Integrated Mode | Standalone Mode |

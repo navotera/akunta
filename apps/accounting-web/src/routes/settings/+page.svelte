@@ -2270,7 +2270,8 @@
                       <select
                         class="min-w-48 rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
                         value={managedUser.role_id ?? ''}
-                        disabled={roleManagementSaving === managedUser.assignment_id ||
+                        disabled={!managedUser.can_update_role ||
+                          roleManagementSaving === managedUser.assignment_id ||
                           !!managedUser.disabled_at}
                         onchange={(event) =>
                           updateManagedRole(
@@ -2284,6 +2285,11 @@
                           <option value={role.id}>{role.name}</option>
                         {/each}
                       </select>
+                      {#if !managedUser.can_update_role}
+                        <p class="mt-1 text-xs text-text-muted">
+                          Role Anda hanya dapat diubah oleh admin lain.
+                        </p>
+                      {/if}
                     </td>
                     <td>
                       <span

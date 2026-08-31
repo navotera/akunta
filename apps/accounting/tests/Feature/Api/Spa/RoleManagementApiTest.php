@@ -92,6 +92,7 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
         ->assertOk()
         ->assertJsonPath('data.users.0.email', $this->managedUser->email)
         ->assertJsonPath('data.users.0.role_id', null)
+        ->assertJsonPath('data.users.0.can_update_role', true)
         ->assertJsonPath('data.roles.0.code', 'operator');
 
     $this->actingAs($this->admin)
@@ -143,6 +144,77 @@ it('rolls back a role change when access revocation fails', function () {
         'entity_id' => $this->entity->id,
     ]);
 });
+
+it('prevents an Ecopa admin from changing their own local role', function () {
+    $assignment = $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => null,
+        'ecopa_role' => 'admin',
+        'assigned_at' => now(),
+    ]);
+    [$apiToken] = ApiToken::issue([
+        'name' => 'Ecopa admin token',
+        'user_id' => $this->admin->id,
+        'app_id' => $this->rbacApp->id,
+        'permissions' => ['workspace.manage'],
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonFragment([
+            'assignment_id' => $assignment->id,
+            'can_update_role' => false,
+        ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertForbidden();
+
+    expect($assignment->fresh()->role_id)->toBeNull();
+    expect($apiToken->fresh()->revoked_at)->toBeNull();
+    $this->assertDatabaseMissing('audit_log', [
+        'action' => 'user.role_changed',
+        'resource_id' => $assignment->id,
+        'entity_id' => $this->entity->id,
+    ]);
+});
+
+it('prevents a local admin from changing their own role', function (string $roleCode) {
+    $protectedRole = Role::create([
+        'code' => $roleCode,
+        'name' => str($roleCode)->replace('_', ' ')->title()->toString(),
+        'is_preset' => true,
+    ]);
+    $assignment = $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $protectedRole->id,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertForbidden();
+
+    expect($assignment->fresh()->role_id)->toBe($protectedRole->id);
+    $this->assertDatabaseMissing('audit_log', [
+        'action' => 'user.role_changed',
+        'resource_id' => $assignment->id,
+        'entity_id' => $this->entity->id,
+    ]);
+})->with(['admin', 'super_admin']);
 
 it('rejects role management by a regular Ecopa user', function () {
     $this->actingAs($this->managedUser)
