@@ -8,6 +8,7 @@
     getPersistedWorkspaceHref,
     getWorkspaceTab,
     initializeWorkspace,
+    isWorkspaceHref,
     persistWorkspace,
     workspace,
   } from '$lib/stores/workspace.svelte.js';
@@ -26,6 +27,8 @@
 
   onMount(() => {
     const href = currentHref();
+    if (!isWorkspaceHref(href)) return;
+
     initializeWorkspace(href);
     const persistedHref = getPersistedWorkspaceHref();
     if (
@@ -49,7 +52,7 @@
     $page.url.pathname;
     $page.url.search;
     const href = currentHref();
-    if (!workspace.initialized || restoringWorkspace) return;
+    if (!workspace.initialized || restoringWorkspace || !isWorkspaceHref(href)) return;
     ensureWorkspaceTab(href);
     persistWorkspace(href);
   });

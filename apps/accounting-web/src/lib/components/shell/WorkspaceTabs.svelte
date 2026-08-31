@@ -5,6 +5,7 @@
   import {
     ensureWorkspaceTab,
     initializeWorkspace,
+    isWorkspaceHref,
     persistWorkspace,
     workspace,
   } from '$lib/stores/workspace.svelte.js';
@@ -49,7 +50,10 @@
   }
 
   onMount(() => {
-    initializeWorkspace(currentHref());
+    const href = currentHref();
+    if (!isWorkspaceHref(href)) return;
+
+    initializeWorkspace(href);
     keepActiveTabFirst();
 
     const resizeObserver = new ResizeObserver(() => void trimOverflowingTabs());
@@ -62,7 +66,7 @@
   $effect(() => {
     $page.url.pathname;
     $page.url.search;
-    if (workspace.initialized) {
+    if (workspace.initialized && isWorkspaceHref(currentHref())) {
       ensureWorkspaceTab(currentHref());
       keepActiveTabFirst();
       void trimOverflowingTabs();

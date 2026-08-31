@@ -36,6 +36,13 @@ test('fresh installation does not show an entity subtitle before the first entit
 });
 
 test('redirects away from onboarding after installation setup is complete', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'akunta:accounting-workspace-tabs',
+      JSON.stringify([{ href: '/onboarding' }]),
+    );
+    localStorage.setItem('akunta:accounting-workspace-active', '/onboarding');
+  });
   await page.route('**/api/v1/me', async (route) => {
     await route.fulfill({
       json: {
@@ -65,10 +72,75 @@ test('redirects away from onboarding after installation setup is complete', asyn
       },
     });
   });
+  await page.route('**/api/v1/spa/periods', async (route) => {
+    await route.fulfill({ json: { data: [] } });
+  });
+  await page.route('**/api/v1/spa/widgets/ecosystem', async (route) => {
+    await route.fulfill({ json: { data: [] } });
+  });
 
   await page.goto('/onboarding');
 
   await expect(page).toHaveURL(/\/dashboard$/);
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const workspaceState = await page.evaluate(() => ({
+    tabs: localStorage.getItem('akunta:accounting-workspace-tabs'),
+    active: localStorage.getItem('akunta:accounting-workspace-active'),
+  }));
+  expect(workspaceState).toEqual({
+    tabs: JSON.stringify([{ href: '/dashboard', label: 'Dashboard', icon: '⌂' }]),
+    active: '/dashboard',
+  });
+});
+
+test('does not restore onboarding after its completion changes during navigation', async ({
+  page,
+}) => {
+  let statusRequests = 0;
+  await page.route('**/api/v1/me', async (route) => {
+    await route.fulfill({
+      json: {
+        data: {
+          id: 'ecopa-admin-1',
+          email: 'admin@example.test',
+          name: 'Ecopa Admin',
+          roles: [],
+          tenants: [],
+          is_sso_admin: true,
+          is_admin: true,
+          is_impersonating: false,
+          impersonator_id: null,
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/spa/installation-onboarding/status', async (route) => {
+    const completed = statusRequests++ > 0;
+    await route.fulfill({
+      json: {
+        data: {
+          completed,
+          completed_at: completed ? '2026-08-31T00:00:00Z' : null,
+          has_entity: true,
+          entity_count: 1,
+        },
+      },
+    });
+  });
+  await page.route('**/api/v1/spa/periods', async (route) => {
+    await route.fulfill({ json: { data: [] } });
+  });
+  await page.route('**/api/v1/spa/widgets/ecosystem', async (route) => {
+    await route.fulfill({ json: { data: [] } });
+  });
+
+  await page.goto('/dashboard');
+
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.waitForTimeout(300);
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect.poll(() => statusRequests).toBeGreaterThanOrEqual(3);
 });
 
 test('uses the current calendar year as the default onboarding period', async ({ page }) => {

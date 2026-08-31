@@ -14,7 +14,6 @@ import IncomeStatementPage from '../../routes/laporan/laba-rugi/+page.svelte';
 import BalanceSheetPage from '../../routes/laporan/neraca/+page.svelte';
 import GeneralLedgerPage from '../../routes/laporan/buku-besar/+page.svelte';
 import SubsidiaryLedgerPage from '../../routes/laporan/buku-pembantu/+page.svelte';
-import OnboardingPage from '../../routes/onboarding/+page.svelte';
 import AutoMappingPage from '../../routes/auto-mapping/+page.svelte';
 import AutoMappingDetailPage from '../../routes/auto-mapping/[id]/+page.svelte';
 import AutoMappingDocumentationPage from '../../routes/documentation/auto-mapping/+page.svelte';
@@ -136,7 +135,6 @@ const routes: RouteDefinition[] = [
     icon: '⌬',
     component: SubsidiaryLedgerPage,
   },
-  { prefix: '/onboarding', exact: true, label: 'Onboarding', icon: '✓', component: OnboardingPage },
 ];
 
 const WORKSPACE_STORAGE_KEY = 'akunta:accounting-workspace-tabs';
@@ -148,11 +146,25 @@ export const workspace = $state({
   emptyAt: null as string | null,
 });
 
-export function resolveWorkspaceTab(href: string): WorkspaceTab {
+function workspaceRoute(href: string): RouteDefinition | undefined {
   const pathname = href.split('?')[0];
-  const definition = routes.find(({ prefix, exact }) =>
+
+  return routes.find(({ prefix, exact }) =>
     exact ? pathname === prefix : pathname.startsWith(prefix),
   );
+}
+
+export function isWorkspaceHref(href: string): boolean {
+  return workspaceRoute(href) !== undefined;
+}
+
+function removeInvalidWorkspaceTabs(): void {
+  const validTabs = workspace.tabs.filter((tab) => isWorkspaceHref(tab.href));
+  if (validTabs.length !== workspace.tabs.length) workspace.tabs = validTabs;
+}
+
+export function resolveWorkspaceTab(href: string): WorkspaceTab {
+  const definition = workspaceRoute(href);
 
   return definition
     ? { href, label: definition.label, icon: definition.icon, component: definition.component }
@@ -160,6 +172,10 @@ export function resolveWorkspaceTab(href: string): WorkspaceTab {
 }
 
 export function ensureWorkspaceTab(href: string): void {
+  removeInvalidWorkspaceTabs();
+
+  if (!isWorkspaceHref(href)) return;
+
   if (workspace.emptyAt === href) return;
   workspace.emptyAt = null;
   const resolved = resolveWorkspaceTab(href);
@@ -195,7 +211,9 @@ export function initializeWorkspace(href: string): void {
           sessionStorage.getItem(WORKSPACE_STORAGE_KEY) ??
           '[]',
       ) as Array<Pick<WorkspaceTab, 'href'>>;
-      restored = stored.filter((tab) => tab?.href).map((tab) => resolveWorkspaceTab(tab.href));
+      restored = stored
+        .filter((tab) => tab?.href && isWorkspaceHref(tab.href))
+        .map((tab) => resolveWorkspaceTab(tab.href));
     } catch {
       localStorage.removeItem(WORKSPACE_STORAGE_KEY);
       sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
@@ -211,14 +229,25 @@ export function initializeWorkspace(href: string): void {
 export function getPersistedWorkspaceHref(): string | null {
   if (typeof localStorage === 'undefined') return null;
   const href = localStorage.getItem(WORKSPACE_ACTIVE_STORAGE_KEY);
-  return href && resolveWorkspaceTab(href).label !== 'Halaman' ? href : null;
+  if (!href || !isWorkspaceHref(href)) {
+    if (href !== null) localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+    return null;
+  }
+
+  return href;
 }
 
 export function persistWorkspace(activeHref?: string): void {
   if (typeof localStorage === 'undefined') return;
+  removeInvalidWorkspaceTabs();
   localStorage.setItem(
     WORKSPACE_STORAGE_KEY,
     JSON.stringify(workspace.tabs.map(({ href, label, icon }) => ({ href, label, icon }))),
   );
-  if (activeHref) localStorage.setItem(WORKSPACE_ACTIVE_STORAGE_KEY, activeHref);
+  if (activeHref) {
+    if (isWorkspaceHref(activeHref)) localStorage.setItem(WORKSPACE_ACTIVE_STORAGE_KEY, activeHref);
+    else localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+  } else if (!isWorkspaceHref(localStorage.getItem(WORKSPACE_ACTIVE_STORAGE_KEY) ?? '')) {
+    localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+  }
 }
