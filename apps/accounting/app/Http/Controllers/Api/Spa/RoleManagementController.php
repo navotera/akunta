@@ -147,12 +147,10 @@ class RoleManagementController extends Controller
             ])
             ->values();
 
-        $roles = Role::query()
-            ->whereIn('code', self::ACCOUNTING_ROLES)
+        $roles = Role::query();
+        $this->restrictToConfiguredAccountingRoles($roles, $entity);
+        $roles = $roles
             ->when(! $actorIsSuperAdmin, fn ($query) => $query->where('code', '!=', 'admin'))
-            ->where(function ($query) use ($entity): void {
-                $query->whereNull('tenant_id')->orWhere('tenant_id', $entity->tenant_id);
-            })
             ->orderByRaw("CASE WHEN code = 'admin' THEN 0 ELSE 1 END")
             ->orderBy('name')
             ->get(['id', 'code', 'name']);
@@ -174,11 +172,9 @@ class RoleManagementController extends Controller
             'role_id' => [
                 'required',
                 'string',
-                Rule::exists('roles', 'id')->where(fn ($query) => $query
-                    ->whereIn('code', self::ACCOUNTING_ROLES)
-                    ->where(fn ($roles) => $roles
-                        ->whereNull('tenant_id')
-                        ->orWhere('tenant_id', $entity->tenant_id))),
+                Rule::exists('roles', 'id')->where(function ($query) use ($entity): void {
+                    $this->restrictToConfiguredAccountingRoles($query, $entity);
+                }),
             ],
         ]);
 
@@ -259,11 +255,9 @@ class RoleManagementController extends Controller
             'role_id' => [
                 'nullable',
                 'string',
-                Rule::exists('roles', 'id')->where(fn ($query) => $query
-                    ->whereIn('code', self::ACCOUNTING_ROLES)
-                    ->where(fn ($roles) => $roles
-                        ->whereNull('tenant_id')
-                        ->orWhere('tenant_id', $entity->tenant_id))),
+                Rule::exists('roles', 'id')->where(function ($query) use ($entity): void {
+                    $this->restrictToConfiguredAccountingRoles($query, $entity);
+                }),
             ],
         ]);
 
@@ -402,6 +396,25 @@ class RoleManagementController extends Controller
         );
 
         return $entity;
+    }
+
+    /**
+     * Restrict role choices and mutation targets to Accounting roles that grant at least one
+     * configured permission. Existing assignments remain readable, including historical roles.
+     */
+    private function restrictToConfiguredAccountingRoles($query, Entity $entity): void
+    {
+        $query
+            ->whereIn('code', self::ACCOUNTING_ROLES)
+            ->where(function ($roles) use ($entity): void {
+                $roles->whereNull('tenant_id')->orWhere('tenant_id', $entity->tenant_id);
+            })
+            ->whereExists(function ($permissions): void {
+                $permissions
+                    ->selectRaw('1')
+                    ->from('role_permissions')
+                    ->whereColumn('role_permissions.role_id', 'roles.id');
+            });
     }
 
     private function accountingApp(): RbacApp

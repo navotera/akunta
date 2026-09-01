@@ -27,6 +27,11 @@ beforeEach(function () {
         'name' => 'Operator',
         'is_preset' => true,
     ]);
+    $this->operatorPermission = Permission::create([
+        'app_id' => $this->rbacApp->id,
+        'code' => 'journal.create',
+    ]);
+    $this->operatorRole->permissions()->attach($this->operatorPermission->id);
     $this->admin = User::create([
         'name' => 'Ecopa Admin',
         'email' => 'role-admin@example.test',
@@ -121,6 +126,45 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
         'resource_id' => $this->assignment->id,
         'entity_id' => $this->entity->id,
     ]);
+});
+
+it('hides roles without configured permissions and rejects their assignment', function () {
+    $unconfiguredRole = Role::create([
+        'code' => 'approver',
+        'name' => 'Approver',
+        'is_preset' => true,
+    ]);
+    $unassignedUser = User::create([
+        'name' => 'Unassigned Ecopa User',
+        'email' => 'unconfigured-role-user@example.test',
+        'main_tier_user_id' => 'ecopa-unconfigured-role-user',
+        'password_hash' => bcrypt('x'),
+    ]);
+    $unassignedUser->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => null,
+        'role_id' => null,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonMissing(['id' => $unconfiguredRole->id])
+        ->assertJsonFragment(['id' => $this->operatorRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $unassignedUser->id,
+            'role_id' => $unconfiguredRole->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['role_id']);
 });
 
 it('assigns an unassigned Ecopa shadow user to the active entity with a local role', function () {
@@ -344,6 +388,7 @@ it('limits changes to and from the admin role to super admins', function () {
         'name' => 'Admin',
         'is_preset' => true,
     ]);
+    $adminRole->permissions()->attach($this->operatorPermission->id);
     $this->assignment->update(['role_id' => $adminRole->id]);
 
     $this->actingAs($this->admin)
