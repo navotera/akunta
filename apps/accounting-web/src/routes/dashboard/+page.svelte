@@ -17,6 +17,7 @@
   let recent = $state<RecentJournal[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let missingActivePeriod = $state(false);
   let dashboardMode = $state<'internal' | 'fiscal'>('internal');
   let fiscalReport = $state<FiscalReconciliationData | null>(null);
   let fiscalLoading = $state(false);
@@ -71,8 +72,12 @@
         return;
       }
       if (!period.activeId) await period.refresh();
-      if (!period.activeId || !tenant.id) {
-        throw new Error('Pilih entitas dan periode aktif untuk membuka dashboard.');
+      if (!period.activeId) {
+        missingActivePeriod = true;
+        throw new Error('Periode aktif belum diatur. Pilih periode aktif untuk membuka dashboard.');
+      }
+      if (!tenant.id) {
+        throw new Error('Pilih entitas untuk membuka dashboard.');
       }
       [pulse, recent] = await Promise.all([
         widgetsApi.financialPulse(period.activeId, tenant.id),
@@ -151,8 +156,19 @@
   {#if loading}
     <div class="text-text-muted">Memuat dashboard…</div>
   {:else if error}
-    <div class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">
-      {error}
+    <div
+      class="rounded-md border border-danger bg-danger-light p-3 text-sm text-danger"
+      role="alert"
+    >
+      <p>{error}</p>
+      {#if missingActivePeriod}
+        <a
+          href="/periode"
+          class="mt-2 inline-block font-semibold text-danger underline underline-offset-2 hover:text-danger/80"
+        >
+          Atur periode aktif
+        </a>
+      {/if}
     </div>
   {:else if pulse}
     <header class="mb-5 flex flex-wrap items-center justify-between gap-3">

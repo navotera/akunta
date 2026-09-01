@@ -123,6 +123,62 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
     ]);
 });
 
+it('assigns an unassigned Ecopa shadow user to the active entity with a local role', function () {
+    $unassignedUser = User::create([
+        'name' => 'Unassigned Ecopa User',
+        'email' => 'unassigned-role-user@example.test',
+        'main_tier_user_id' => 'ecopa-unassigned-role-user',
+        'password_hash' => bcrypt('x'),
+    ]);
+    $unassignedUser->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => null,
+        'role_id' => null,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.unassigned_users.0.user_id', $unassignedUser->id)
+        ->assertJsonPath('data.unassigned_users.0.email', $unassignedUser->email);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $unassignedUser->id,
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.user_id', $unassignedUser->id)
+        ->assertJsonPath('data.entity_id', $this->entity->id)
+        ->assertJsonPath('data.role_id', $this->operatorRole->id);
+
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $unassignedUser->id,
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $this->operatorRole->id,
+        'revoked_at' => null,
+    ]);
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonFragment(['user_id' => $unassignedUser->id])
+        ->assertJsonPath('data.unassigned_users', []);
+
+    $this->assertDatabaseHas('audit_log', [
+        'action' => 'user.entity_assigned',
+        'entity_id' => $this->entity->id,
+    ]);
+});
+
 it('rolls back a role change when access revocation fails', function () {
     $revoker = Mockery::mock(UserAccessRevoker::class);
     $revoker->shouldReceive('revokeSessionsAndTokens')

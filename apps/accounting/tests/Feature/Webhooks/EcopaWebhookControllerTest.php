@@ -9,6 +9,7 @@ use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Http\Middleware\VerifyEcopaSignature;
 use App\Models\ApiToken;
+use App\Models\User as AccountingUser;
 use Illuminate\Support\Facades\DB;
 
 it('returns a clear pending response when an assignment entity is not synced', function () {
@@ -191,7 +192,9 @@ it('provisions user assigned aliases and preserves local role ownership', functi
     ]);
 });
 
-it('creates an app-wide shadow assignment without choosing the local Akunta role', function () {
+it('creates an app-wide shadow assignment without granting entity access', function () {
+    $tenant = Tenant::create(['name' => 'Shadow Tenant', 'slug' => 'shadow-'.uniqid()]);
+    $entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Unassigned Entity']);
     $app = RbacApp::create([
         'code' => 'accounting', 'name' => 'Accounting', 'version' => '1.0', 'enabled' => true,
     ]);
@@ -216,6 +219,17 @@ it('creates an app-wide shadow assignment without choosing the local Akunta role
         'ecopa_role' => 'user',
         'revoked_at' => null,
     ]);
+
+    $accountingUser = AccountingUser::query()->findOrFail($user->id);
+    expect($accountingUser->getTenants())->toBeEmpty()
+        ->and($accountingUser->canAccessTenant($entity))->toBeFalse();
+
+    $this->actingAs($accountingUser)
+        ->withSession(['ecopa.app_role' => 'registered'])
+        ->getJson('/api/v1/me')
+        ->assertOk()
+        ->assertJsonPath('data.tenants', [])
+        ->assertJsonPath('data.is_sso_admin', false);
 });
 
 it('accepts the current Ecopa app access events with nested user snapshots', function () {

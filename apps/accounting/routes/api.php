@@ -151,6 +151,7 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::get('ecopa-integration/webhook-logs', [EcopaWebhookLogController::class, 'index']);
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
+        Route::post('role-management/assignments', [RoleManagementController::class, 'assign']);
         Route::patch('role-management/{assignmentId}', [RoleManagementController::class, 'update']);
         Route::post('role-management/{assignmentId}/impersonate', [RoleManagementController::class, 'impersonate']);
         Route::post('role-management/stop-impersonation', [RoleManagementController::class, 'stopImpersonation']);
