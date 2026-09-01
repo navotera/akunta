@@ -36,7 +36,10 @@ class User extends RbacUser
         return $this->assignments()
             ->whereNull('revoked_at')
             ->where(function ($q) use ($tenant) {
-                $q->whereNull('entity_id')->orWhere('entity_id', $tenant->id);
+                $q->where('entity_id', $tenant->id)
+                    ->orWhere(function ($q) {
+                        $q->whereNull('entity_id')->whereNotNull('role_id');
+                    });
             })
             ->exists();
     }
@@ -47,9 +50,20 @@ class User extends RbacUser
         return session('ecopa.app_role') === 'admin';
     }
 
+    /**
+     * An app-level Ecopa assignment is a role-less local shadow record: it
+     * establishes identity but must not confer tenant-wide access. Only a role
+     * explicitly assigned by an Akunta admin may be tenant-wide.
+     *
+     * @return Collection<int, string>
+     */
     protected function accessibleEntityIdsFromTenantWide(): Collection
     {
-        if ($this->assignments()->whereNull('revoked_at')->whereNull('entity_id')->exists()) {
+        if ($this->assignments()
+            ->whereNull('revoked_at')
+            ->whereNull('entity_id')
+            ->whereNotNull('role_id')
+            ->exists()) {
             return Entity::query()->pluck('id');
         }
 

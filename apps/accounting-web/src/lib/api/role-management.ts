@@ -21,15 +21,38 @@ export interface ManagedUser {
   can_impersonate: boolean;
 }
 
+export interface UnassignedUser {
+  user_id: string;
+  name: string;
+  email: string;
+  ecopa_user_id: string | null;
+}
+
 export interface RoleManagementData {
   entity_id: string;
   users: ManagedUser[];
+  unassigned_users: UnassignedUser[];
   roles: ManagedRole[];
 }
 
 export const roleManagementApi = {
   list: (entityId: string) =>
     api<{ data: RoleManagementData }>('/api/v1/spa/role-management', {
+      tenantSlug: entityId,
+    }).then((response) => response.data),
+
+  assign: (userId: string, roleId: string, entityId: string) =>
+    api<{
+      data: {
+        assignment_id: string;
+        user_id: string;
+        entity_id: string;
+        role_id: string;
+        message: string;
+      };
+    }>('/api/v1/spa/role-management/assignments', {
+      method: 'POST',
+      json: { user_id: userId, role_id: roleId },
       tenantSlug: entityId,
     }).then((response) => response.data),
 

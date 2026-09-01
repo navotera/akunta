@@ -17,6 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class RoleManagementController extends Controller
@@ -74,7 +75,10 @@ class RoleManagementController extends Controller
         $assignments = UserAppAssignment::query()
             ->where('app_id', $app->id)
             ->where(function ($query) use ($entity): void {
-                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+                $query->where('entity_id', $entity->id)
+                    ->orWhere(function ($tenantWide): void {
+                        $tenantWide->whereNull('entity_id')->whereNotNull('role_id');
+                    });
             })
             ->whereNull('revoked_at')
             ->with(['user:id,name,email,main_tier_user_id,disabled_at', 'role:id,code,name'])
@@ -114,6 +118,32 @@ class RoleManagementController extends Controller
             ])
             ->values();
 
+        $unassignedUsers = User::query()
+            ->whereNull('disabled_at')
+            ->whereKeyNot($actor->id)
+            ->whereHas('assignments', function ($query) use ($app): void {
+                $query->where('app_id', $app->id)
+                    ->whereNull('revoked_at')
+                    ->whereNull('entity_id')
+                    ->whereNull('role_id');
+            })
+            ->whereDoesntHave('assignments', function ($query) use ($app): void {
+                $query->where('app_id', $app->id)
+                    ->whereNull('revoked_at')
+                    ->where(function ($assignment): void {
+                        $assignment->whereNotNull('entity_id')->orWhereNotNull('role_id');
+                    });
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'main_tier_user_id'])
+            ->map(fn (User $user): array => [
+                'user_id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'ecopa_user_id' => $user->main_tier_user_id,
+            ])
+            ->values();
+
         $roles = Role::query()
             ->whereIn('code', self::ACCOUNTING_ROLES)
             ->when(! $actorIsSuperAdmin, fn ($query) => $query->where('code', '!=', 'admin'))
@@ -127,7 +157,91 @@ class RoleManagementController extends Controller
         return response()->json(['data' => [
             'entity_id' => $entity->id,
             'users' => $users,
+            'unassigned_users' => $unassignedUsers,
             'roles' => $roles,
+        ]]);
+    }
+
+    public function assign(Request $request): JsonResponse
+    {
+        $entity = $this->resolveManagedEntity($request);
+        $app = $this->accountingApp();
+        $data = $request->validate([
+            'user_id' => ['required', 'string', Rule::exists('users', 'id')],
+            'role_id' => [
+                'required',
+                'string',
+                Rule::exists('roles', 'id')->where(fn ($query) => $query
+                    ->whereIn('code', self::ACCOUNTING_ROLES)
+                    ->where(fn ($roles) => $roles
+                        ->whereNull('tenant_id')
+                        ->orWhere('tenant_id', $entity->tenant_id))),
+            ],
+        ]);
+
+        $user = User::query()->findOrFail($data['user_id']);
+        abort_if($user->disabled_at !== null, 422, 'User yang dinonaktifkan tidak dapat di-assign.');
+
+        $alreadyAssigned = $user->assignments()
+            ->where('app_id', $app->id)
+            ->whereNull('revoked_at')
+            ->where(function ($query): void {
+                $query->whereNotNull('entity_id')->orWhereNotNull('role_id');
+            })
+            ->exists();
+        abort_if($alreadyAssigned, 422, 'User sudah terhubung ke entity atau workspace Akunta.');
+
+        $shadowAssignment = $user->assignments()
+            ->where('app_id', $app->id)
+            ->whereNull('revoked_at')
+            ->whereNull('entity_id')
+            ->whereNull('role_id')
+            ->first();
+        abort_unless($shadowAssignment, 422, 'User belum di-assign ke Akunta oleh Ecopa.');
+
+        /** @var User $actor */
+        $actor = $request->user();
+        $role = Role::query()->findOrFail($data['role_id']);
+        abort_if(
+            $role->code === 'admin' && ! $this->hasSuperAdminRole($actor, $entity, $app),
+            403,
+            'Role Admin hanya dapat diberikan oleh Super Admin.',
+        );
+
+        $assignment = DB::transaction(function () use ($actor, $app, $data, $entity, $shadowAssignment, $user): UserAppAssignment {
+            $assignment = new UserAppAssignment;
+            $assignment->id = (string) Str::ulid();
+            $assignment->user_id = $user->id;
+            $assignment->app_id = $app->id;
+            $assignment->entity_id = $entity->id;
+            $assignment->role_id = $data['role_id'];
+            $assignment->ecopa_role = $shadowAssignment->ecopa_role;
+            $assignment->assigned_by = $actor->id;
+            $assignment->assigned_at = now();
+            $assignment->save();
+
+            $this->auditLogger->record(
+                'user.entity_assigned',
+                UserAppAssignment::class,
+                $assignment->id,
+                $entity->id,
+                [
+                    'user_id' => $assignment->user_id,
+                    'role_id' => $assignment->role_id,
+                    'source' => 'akunta_admin',
+                ],
+            );
+            $this->accessRevoker->revokeSessionsAndTokens($user);
+
+            return $assignment;
+        });
+
+        return response()->json(['data' => [
+            'assignment_id' => $assignment->id,
+            'user_id' => $assignment->user_id,
+            'entity_id' => $assignment->entity_id,
+            'role_id' => $assignment->role_id,
+            'message' => 'User berhasil di-assign ke entitas ini. User perlu login ulang.',
         ]]);
     }
 
@@ -151,7 +265,10 @@ class RoleManagementController extends Controller
             ->whereKey($assignmentId)
             ->where('app_id', $app->id)
             ->where(function ($query) use ($entity): void {
-                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+                $query->where('entity_id', $entity->id)
+                    ->orWhere(function ($tenantWide): void {
+                        $tenantWide->whereNull('entity_id')->whereNotNull('role_id');
+                    });
             })
             ->whereNull('revoked_at')
             ->firstOrFail();
@@ -224,7 +341,10 @@ class RoleManagementController extends Controller
             ->whereKey($assignmentId)
             ->where('app_id', $app->id)
             ->where(function ($query) use ($entity): void {
-                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+                $query->where('entity_id', $entity->id)
+                    ->orWhere(function ($tenantWide): void {
+                        $tenantWide->whereNull('entity_id')->whereNotNull('role_id');
+                    });
             })
             ->whereNull('revoked_at')
             ->with('user')

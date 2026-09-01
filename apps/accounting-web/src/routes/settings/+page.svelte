@@ -124,6 +124,9 @@
   let roleManagementLoading = $state(false);
   let roleManagementSaving = $state<string | null>(null);
   let roleManagementMessage = $state<string | null>(null);
+  let userAssignmentFormOpen = $state(false);
+  let selectedUnassignedUserId = $state('');
+  let selectedAssignmentRoleId = $state('');
   let dateFormat = $state(DEFAULT_DATE_FORMAT);
   let themeColor = $state<string>('blue');
   let savedMessage = $state<string | null>(null);
@@ -680,6 +683,36 @@
       roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
     } finally {
       roleManagementLoading = false;
+    }
+  }
+
+  function openUserAssignmentForm() {
+    selectedUnassignedUserId = '';
+    selectedAssignmentRoleId = '';
+    roleManagementMessage = null;
+    userAssignmentFormOpen = true;
+  }
+
+  async function assignManagedUser() {
+    if (!tenant.id || !selectedUnassignedUserId || !selectedAssignmentRoleId) return;
+
+    roleManagementSaving = 'new-assignment';
+    roleManagementMessage = null;
+    try {
+      const result = await roleManagementApi.assign(
+        selectedUnassignedUserId,
+        selectedAssignmentRoleId,
+        tenant.id,
+      );
+      await loadRoleManagement();
+      userAssignmentFormOpen = false;
+      selectedUnassignedUserId = '';
+      selectedAssignmentRoleId = '';
+      roleManagementMessage = result.message;
+    } catch (caught) {
+      roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      roleManagementSaving = null;
     }
   }
 
@@ -2126,6 +2159,91 @@
         {:else if roleManagementLoading && !roleManagement}
           <p class="mt-5 text-sm text-text-muted">Memuat user dan role…</p>
         {:else}
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-text-default">Akses entitas</h3>
+              <p class="mt-1 text-xs text-text-muted">
+                Assign user Ecopa yang belum terhubung ke workspace atau entitas mana pun.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-60"
+              onclick={openUserAssignmentForm}
+              disabled={roleManagementLoading || !(roleManagement?.unassigned_users.length ?? 0)}
+            >
+              Tambah user
+            </button>
+          </div>
+
+          {#if userAssignmentFormOpen}
+            <form
+              class="mt-4 rounded-lg border border-primary/20 bg-primary-light/40 p-4"
+              onsubmit={(event) => {
+                event.preventDefault();
+                void assignManagedUser();
+              }}
+            >
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-sm font-semibold text-text-default">
+                    Assign user ke entitas ini
+                  </h3>
+                  <p class="mt-1 text-xs text-text-muted">
+                    User akan menerima role Akunta yang dipilih dan diminta login ulang.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="text-sm font-medium text-text-muted hover:text-text-default"
+                  onclick={() => (userAssignmentFormOpen = false)}
+                >
+                  Batal
+                </button>
+              </div>
+              <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                <label class="block">
+                  <span class="mb-1 block text-sm font-semibold text-text-default">User Ecopa</span>
+                  <select
+                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                    bind:value={selectedUnassignedUserId}
+                    required
+                  >
+                    <option value="" disabled>Pilih user</option>
+                    {#each roleManagement?.unassigned_users ?? [] as user (user.user_id)}
+                      <option value={user.user_id}>{user.name} — {user.email}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label class="block">
+                  <span class="mb-1 block text-sm font-semibold text-text-default">Role Akunta</span
+                  >
+                  <select
+                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                    bind:value={selectedAssignmentRoleId}
+                    required
+                  >
+                    <option value="" disabled>Pilih role</option>
+                    {#each roleManagement?.roles ?? [] as role (role.id)}
+                      <option value={role.id}>{role.name}</option>
+                    {/each}
+                  </select>
+                </label>
+              </div>
+              <div class="mt-4 flex justify-end">
+                <button
+                  type="submit"
+                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-wait disabled:opacity-60"
+                  disabled={roleManagementSaving === 'new-assignment' ||
+                    !selectedUnassignedUserId ||
+                    !selectedAssignmentRoleId}
+                >
+                  {roleManagementSaving === 'new-assignment' ? 'Menyimpan…' : 'Assign user'}
+                </button>
+              </div>
+            </form>
+          {/if}
+
           <div class="mt-5 overflow-hidden rounded-lg border border-border-default">
             <table class="ak-table">
               <thead>
@@ -2166,22 +2284,24 @@
                         <option value="">Belum diberi role</option>
                         {#if managedUser.role_id && !roleManagement?.roles.some((role) => role.id === managedUser.role_id)}
                           <option value={managedUser.role_id} disabled>
-                            {managedUser.role_name ?? managedUser.role_code ?? 'Role tidak tersedia'}
+                            {managedUser.role_name ??
+                              managedUser.role_code ??
+                              'Role tidak tersedia'}
                           </option>
                         {/if}
                         {#each roleManagement?.roles ?? [] as role (role.id)}
                           <option value={role.id}>{role.name}</option>
                         {/each}
                       </select>
-                        {#if !managedUser.can_update_role}
-                          <p class="mt-1 text-xs text-text-muted">
-                            {managedUser.role_code === 'super_admin'
-                              ? 'Role Anda tidak dapat diubah.'
-                              : managedUser.role_code === 'admin'
-                                ? 'Role Anda hanya dapat diubah oleh Super Admin.'
-                                : 'Role Anda hanya dapat diubah oleh admin lain.'}
-                          </p>
-                        {/if}
+                      {#if !managedUser.can_update_role}
+                        <p class="mt-1 text-xs text-text-muted">
+                          {managedUser.role_code === 'super_admin'
+                            ? 'Role Anda tidak dapat diubah.'
+                            : managedUser.role_code === 'admin'
+                              ? 'Role Anda hanya dapat diubah oleh Super Admin.'
+                              : 'Role Anda hanya dapat diubah oleh admin lain.'}
+                        </p>
+                      {/if}
                     </td>
                     <td>
                       <span
