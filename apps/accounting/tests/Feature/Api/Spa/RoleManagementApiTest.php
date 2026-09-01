@@ -179,6 +179,66 @@ it('assigns an unassigned Ecopa shadow user to the active entity with a local ro
     ]);
 });
 
+it('allows an Ecopa shadow user to be assigned to multiple workspaces', function () {
+    $secondEntity = Entity::create([
+        'tenant_id' => $this->entity->tenant_id,
+        'name' => 'Second Role Entity',
+    ]);
+    $multiWorkspaceUser = User::create([
+        'name' => 'Multi Workspace User',
+        'email' => 'multi-workspace-role-user@example.test',
+        'main_tier_user_id' => 'ecopa-multi-workspace-role-user',
+        'password_hash' => bcrypt('x'),
+    ]);
+    $multiWorkspaceUser->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => null,
+        'role_id' => null,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $multiWorkspaceUser->id,
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk();
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $secondEntity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonFragment(['user_id' => $multiWorkspaceUser->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $secondEntity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $multiWorkspaceUser->id,
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk();
+
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $multiWorkspaceUser->id,
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $this->operatorRole->id,
+        'revoked_at' => null,
+    ]);
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $multiWorkspaceUser->id,
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $secondEntity->id,
+        'role_id' => $this->operatorRole->id,
+        'revoked_at' => null,
+    ]);
+});
+
 it('rolls back a role change when access revocation fails', function () {
     $revoker = Mockery::mock(UserAccessRevoker::class);
     $revoker->shouldReceive('revokeSessionsAndTokens')

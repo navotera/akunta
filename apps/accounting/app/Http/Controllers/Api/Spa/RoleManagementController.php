@@ -127,11 +127,14 @@ class RoleManagementController extends Controller
                     ->whereNull('entity_id')
                     ->whereNull('role_id');
             })
-            ->whereDoesntHave('assignments', function ($query) use ($app): void {
+            ->whereDoesntHave('assignments', function ($query) use ($app, $entity): void {
                 $query->where('app_id', $app->id)
                     ->whereNull('revoked_at')
-                    ->where(function ($assignment): void {
-                        $assignment->whereNotNull('entity_id')->orWhereNotNull('role_id');
+                    ->where(function ($assignment) use ($entity): void {
+                        $assignment->where('entity_id', $entity->id)
+                            ->orWhere(function ($tenantWide): void {
+                                $tenantWide->whereNull('entity_id')->whereNotNull('role_id');
+                            });
                     });
             })
             ->orderBy('name')
@@ -185,8 +188,11 @@ class RoleManagementController extends Controller
         $alreadyAssigned = $user->assignments()
             ->where('app_id', $app->id)
             ->whereNull('revoked_at')
-            ->where(function ($query): void {
-                $query->whereNotNull('entity_id')->orWhereNotNull('role_id');
+            ->where(function ($query) use ($entity): void {
+                $query->where('entity_id', $entity->id)
+                    ->orWhere(function ($tenantWide): void {
+                        $tenantWide->whereNull('entity_id')->whereNotNull('role_id');
+                    });
             })
             ->exists();
         abort_if($alreadyAssigned, 422, 'User sudah terhubung ke entity atau workspace Akunta.');
