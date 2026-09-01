@@ -27,6 +27,11 @@ beforeEach(function () {
         'name' => 'Operator',
         'is_preset' => true,
     ]);
+    $this->operatorPermission = Permission::create([
+        'app_id' => $this->rbacApp->id,
+        'code' => 'journal.create',
+    ]);
+    $this->operatorRole->permissions()->attach($this->operatorPermission->id);
     $this->admin = User::create([
         'name' => 'Ecopa Admin',
         'email' => 'role-admin@example.test',
@@ -123,6 +128,45 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
     ]);
 });
 
+it('hides roles without configured permissions and rejects their assignment', function () {
+    $unconfiguredRole = Role::create([
+        'code' => 'approver',
+        'name' => 'Approver',
+        'is_preset' => true,
+    ]);
+    $unassignedUser = User::create([
+        'name' => 'Unassigned Ecopa User',
+        'email' => 'unconfigured-role-user@example.test',
+        'main_tier_user_id' => 'ecopa-unconfigured-role-user',
+        'password_hash' => bcrypt('x'),
+    ]);
+    $unassignedUser->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => null,
+        'role_id' => null,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonMissing(['id' => $unconfiguredRole->id])
+        ->assertJsonFragment(['id' => $this->operatorRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $unassignedUser->id,
+            'role_id' => $unconfiguredRole->id,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['role_id']);
+});
+
 it('assigns an unassigned Ecopa shadow user to the active entity with a local role', function () {
     $unassignedUser = User::create([
         'name' => 'Unassigned Ecopa User',
@@ -176,6 +220,66 @@ it('assigns an unassigned Ecopa shadow user to the active entity with a local ro
     $this->assertDatabaseHas('audit_log', [
         'action' => 'user.entity_assigned',
         'entity_id' => $this->entity->id,
+    ]);
+});
+
+it('allows an Ecopa shadow user to be assigned to multiple workspaces', function () {
+    $secondEntity = Entity::create([
+        'tenant_id' => $this->entity->tenant_id,
+        'name' => 'Second Role Entity',
+    ]);
+    $multiWorkspaceUser = User::create([
+        'name' => 'Multi Workspace User',
+        'email' => 'multi-workspace-role-user@example.test',
+        'main_tier_user_id' => 'ecopa-multi-workspace-role-user',
+        'password_hash' => bcrypt('x'),
+    ]);
+    $multiWorkspaceUser->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => null,
+        'role_id' => null,
+        'ecopa_role' => 'user',
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $multiWorkspaceUser->id,
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk();
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $secondEntity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonFragment(['user_id' => $multiWorkspaceUser->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $secondEntity->id)
+        ->postJson('/api/v1/spa/role-management/assignments', [
+            'user_id' => $multiWorkspaceUser->id,
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk();
+
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $multiWorkspaceUser->id,
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $this->operatorRole->id,
+        'revoked_at' => null,
+    ]);
+    $this->assertDatabaseHas('user_app_assignments', [
+        'user_id' => $multiWorkspaceUser->id,
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $secondEntity->id,
+        'role_id' => $this->operatorRole->id,
+        'revoked_at' => null,
     ]);
 });
 
@@ -284,6 +388,7 @@ it('limits changes to and from the admin role to super admins', function () {
         'name' => 'Admin',
         'is_preset' => true,
     ]);
+    $adminRole->permissions()->attach($this->operatorPermission->id);
     $this->assignment->update(['role_id' => $adminRole->id]);
 
     $this->actingAs($this->admin)

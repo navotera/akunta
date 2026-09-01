@@ -8,7 +8,11 @@
     type EcopaWebhookEventDefinition,
     type EcopaWebhookLog,
   } from '$lib/api/ecopa-integration.js';
-  import { roleManagementApi, type RoleManagementData } from '$lib/api/role-management.js';
+  import {
+    roleManagementApi,
+    type RoleManagementData,
+    type UnassignedUser,
+  } from '$lib/api/role-management.js';
   import {
     DEFAULT_DATE_FORMAT,
     formatDate,
@@ -124,9 +128,14 @@
   let roleManagementLoading = $state(false);
   let roleManagementSaving = $state<string | null>(null);
   let roleManagementMessage = $state<string | null>(null);
+  let userManagementTab = $state<'assigned' | 'available'>('assigned');
   let userAssignmentFormOpen = $state(false);
   let selectedUnassignedUserId = $state('');
   let selectedAssignmentRoleId = $state('');
+  let selectedAvailableUser = $derived(
+    roleManagement?.unassigned_users.find((user) => user.user_id === selectedUnassignedUserId) ??
+      null,
+  );
   let dateFormat = $state(DEFAULT_DATE_FORMAT);
   let themeColor = $state<string>('blue');
   let savedMessage = $state<string | null>(null);
@@ -686,11 +695,17 @@
     }
   }
 
-  function openUserAssignmentForm() {
-    selectedUnassignedUserId = '';
+  function openUserAssignmentForm(user: UnassignedUser) {
+    selectedUnassignedUserId = user.user_id;
     selectedAssignmentRoleId = '';
     roleManagementMessage = null;
     userAssignmentFormOpen = true;
+  }
+
+  function closeUserAssignmentForm() {
+    selectedUnassignedUserId = '';
+    selectedAssignmentRoleId = '';
+    userAssignmentFormOpen = false;
   }
 
   async function assignManagedUser() {
@@ -705,9 +720,8 @@
         tenant.id,
       );
       await loadRoleManagement();
-      userAssignmentFormOpen = false;
-      selectedUnassignedUserId = '';
-      selectedAssignmentRoleId = '';
+      closeUserAssignmentForm();
+      userManagementTab = 'assigned';
       roleManagementMessage = result.message;
     } catch (caught) {
       roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
@@ -2159,72 +2173,260 @@
         {:else if roleManagementLoading && !roleManagement}
           <p class="mt-5 text-sm text-text-muted">Memuat user dan role…</p>
         {:else}
-          <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-text-default">Akses entitas</h3>
-              <p class="mt-1 text-xs text-text-muted">
-                Assign user Ecopa yang belum terhubung ke workspace atau entitas mana pun.
-              </p>
+          <div class="mt-6">
+            <div
+              class="flex items-end gap-1 overflow-x-auto border-b border-border-default"
+              role="group"
+              aria-label="Manajemen user workspace"
+            >
+              <button
+                id="assigned-users-tab"
+                type="button"
+                aria-pressed={userManagementTab === 'assigned'}
+                class={`inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${userManagementTab === 'assigned' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:border-border-default hover:text-text-default'}`}
+                onclick={() => {
+                  userManagementTab = 'assigned';
+                  closeUserAssignmentForm();
+                }}
+              >
+                Assigned User
+                <span class="ak-pill bg-primary-light text-primary">
+                  {roleManagement?.users.length ?? 0}
+                </span>
+              </button>
+              <button
+                id="available-users-tab"
+                type="button"
+                aria-pressed={userManagementTab === 'available'}
+                class={`inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${userManagementTab === 'available' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:border-border-default hover:text-text-default'}`}
+                onclick={() => (userManagementTab = 'available')}
+              >
+                Available User
+                <span class="ak-pill bg-page-bg text-text-muted">
+                  {roleManagement?.unassigned_users.length ?? 0}
+                </span>
+              </button>
             </div>
-            <button
-              type="button"
-              class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-60"
-              onclick={openUserAssignmentForm}
-              disabled={roleManagementLoading || !(roleManagement?.unassigned_users.length ?? 0)}
-            >
-              Tambah user
-            </button>
-          </div>
 
-          {#if userAssignmentFormOpen}
-            <form
-              class="mt-4 rounded-lg border border-primary/20 bg-primary-light/40 p-4"
-              onsubmit={(event) => {
-                event.preventDefault();
-                void assignManagedUser();
-              }}
-            >
-              <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-semibold text-text-default">
-                    Assign user ke entitas ini
-                  </h3>
-                  <p class="mt-1 text-xs text-text-muted">
-                    User akan menerima role Akunta yang dipilih dan diminta login ulang.
-                  </p>
-                  <div
-                    class="mt-3 rounded-md border border-info/30 bg-info-light px-3 py-2 text-xs text-info"
-                  >
-                    Jika user tidak ditemukan di daftar ini, periksa apakah user sudah terdaftar dan aktif di Ecopa, lalu kembali ke sini untuk menetapkan role Akunta.
+            {#if userManagementTab === 'assigned'}
+              <section id="assigned-users-panel" class="mt-4" aria-labelledby="assigned-users-tab">
+                <div class="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-text-default">User di workspace ini</h3>
+                    <p class="mt-1 text-xs text-text-muted">
+                      Atur role Akunta dan akses impersonation untuk workspace aktif.
+                    </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  class="text-sm font-medium text-text-muted hover:text-text-default"
-                  onclick={() => (userAssignmentFormOpen = false)}
-                >
-                  Batal
-                </button>
-              </div>
-              <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                <label class="block">
-                  <span class="mb-1 block text-sm font-semibold text-text-default">User Ecopa</span>
-                  <select
-                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
-                    bind:value={selectedUnassignedUserId}
-                    required
+                <div class="mt-3 overflow-x-auto rounded-lg border border-border-default">
+                  <table class="ak-table min-w-[760px]">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Level Ecopa</th>
+                        <th>Role Akunta</th>
+                        <th>Status</th>
+                        <th>Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each roleManagement?.users ?? [] as managedUser (managedUser.assignment_id)}
+                        <tr>
+                          <td>
+                            <p class="font-semibold text-text-default">{managedUser.name}</p>
+                            <p class="text-xs text-text-muted">{managedUser.email}</p>
+                          </td>
+                          <td>
+                            <span class="ak-pill bg-primary-light text-primary">
+                              {managedUser.ecopa_role ?? 'user'}
+                            </span>
+                          </td>
+                          <td>
+                            <select
+                              class="min-w-48 rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                              value={managedUser.role_id ?? ''}
+                              disabled={!managedUser.can_update_role ||
+                                roleManagementSaving === managedUser.assignment_id ||
+                                !!managedUser.disabled_at}
+                              onchange={(event) =>
+                                updateManagedRole(
+                                  managedUser.assignment_id,
+                                  (event.currentTarget as HTMLSelectElement).value,
+                                )}
+                              aria-label={`Role Akunta untuk ${managedUser.name}`}
+                            >
+                              <option value="">Belum diberi role</option>
+                              {#if managedUser.role_id && !roleManagement?.roles.some((role) => role.id === managedUser.role_id)}
+                                <option value={managedUser.role_id} disabled>
+                                  {managedUser.role_name ??
+                                    managedUser.role_code ??
+                                    'Role tidak tersedia'}
+                                </option>
+                              {/if}
+                              {#each roleManagement?.roles ?? [] as role (role.id)}
+                                <option value={role.id}>{role.name}</option>
+                              {/each}
+                            </select>
+                            {#if !managedUser.can_update_role}
+                              <p class="mt-1 text-xs text-text-muted">
+                                {managedUser.role_code === 'super_admin'
+                                  ? 'Role Anda tidak dapat diubah.'
+                                  : managedUser.role_code === 'admin'
+                                    ? 'Role Anda hanya dapat diubah oleh Super Admin.'
+                                    : 'Role Anda hanya dapat diubah oleh admin lain.'}
+                              </p>
+                            {/if}
+                          </td>
+                          <td>
+                            <span
+                              class="ak-pill {managedUser.disabled_at
+                                ? 'bg-danger-light text-danger'
+                                : 'bg-paid-light text-paid'}"
+                            >
+                              {managedUser.disabled_at ? 'Dinonaktifkan Ecopa' : 'Aktif'}
+                            </span>
+                          </td>
+                          <td>
+                            {#if managedUser.can_impersonate && !auth.user?.is_impersonating}
+                              <button
+                                type="button"
+                                class="rounded-md border border-primary/30 px-3 py-1.5 text-sm font-semibold text-primary transition hover:bg-primary-light disabled:opacity-50"
+                                onclick={() => impersonateManagedUser(managedUser.assignment_id)}
+                                disabled={roleManagementSaving === managedUser.assignment_id}
+                              >
+                                {roleManagementSaving === managedUser.assignment_id
+                                  ? 'Memproses…'
+                                  : 'Impersonate'}
+                              </button>
+                            {:else}
+                              <span class="text-sm text-text-muted">—</span>
+                            {/if}
+                          </td>
+                        </tr>
+                      {:else}
+                        <tr>
+                          <td colspan="5" class="py-8 text-center text-text-muted">
+                            Belum ada user yang di-assign ke workspace ini.
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            {:else}
+              <section
+                id="available-users-panel"
+                class="mt-4"
+                aria-labelledby="available-users-tab"
+              >
+                <div class="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-text-default">User tersedia</h3>
+                    <p class="mt-1 text-xs text-text-muted">
+                      User Ecopa aktif yang belum di-assign ke workspace ini.
+                    </p>
+                  </div>
+                  <span class="text-xs text-text-muted"
+                    >Pilih Assign untuk menetapkan role Akunta.</span
                   >
-                    <option value="" disabled>Pilih user</option>
-                    {#each roleManagement?.unassigned_users ?? [] as user (user.user_id)}
-                      <option value={user.user_id}>{user.name} — {user.email}</option>
-                    {/each}
-                  </select>
-                </label>
-                <label class="block">
-                  <span class="mb-1 block text-sm font-semibold text-text-default">Role Akunta</span
+                </div>
+
+                <div class="mt-3 overflow-x-auto rounded-lg border border-border-default">
+                  <table class="ak-table min-w-[640px]">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Level Ecopa</th>
+                        <th>ID Ecopa</th>
+                        <th class="text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each roleManagement?.unassigned_users ?? [] as availableUser (availableUser.user_id)}
+                        <tr>
+                          <td>
+                            <p class="font-semibold text-text-default">{availableUser.name}</p>
+                            <p class="text-xs text-text-muted">{availableUser.email}</p>
+                          </td>
+                          <td>
+                            <span class="ak-pill bg-primary-light text-primary">Ecopa user</span>
+                          </td>
+                          <td class="text-xs text-text-muted">
+                            {availableUser.ecopa_user_id ?? '—'}
+                          </td>
+                          <td class="text-right">
+                            <button
+                              type="button"
+                              class="rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-60"
+                              onclick={() => openUserAssignmentForm(availableUser)}
+                              disabled={roleManagementLoading || !!roleManagementSaving}
+                            >
+                              Assign
+                            </button>
+                          </td>
+                        </tr>
+                      {:else}
+                        <tr>
+                          <td colspan="4" class="py-8 text-center text-text-muted">
+                            Semua user Ecopa yang tersedia sudah di-assign ke workspace ini.
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            {/if}
+          </div>
+
+          {#if userAssignmentFormOpen && selectedAvailableUser}
+            <div
+              class="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[1px]"
+              aria-hidden="true"
+            ></div>
+            <div
+              class="fixed inset-0 z-50 flex items-center justify-center p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="assign-user-dialog-title"
+              tabindex="-1"
+            >
+              <form
+                class="w-full max-w-lg rounded-xl border border-border-default bg-card-bg p-5 shadow-xl"
+                onsubmit={(event) => {
+                  event.preventDefault();
+                  void assignManagedUser();
+                }}
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 id="assign-user-dialog-title" class="text-base font-bold text-text-default">
+                      Assign user ke workspace
+                    </h3>
+                    <p class="mt-1 text-sm text-text-muted">Tentukan role Akunta untuk user ini.</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="rounded-md p-2 text-text-muted transition hover:bg-page-bg hover:text-text-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    onclick={closeUserAssignmentForm}
+                    aria-label="Tutup popup assign user"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div class="mt-5 rounded-lg border border-border-soft bg-page-bg px-4 py-3">
+                  <p class="font-semibold text-text-default">{selectedAvailableUser.name}</p>
+                  <p class="mt-1 text-sm text-text-muted">{selectedAvailableUser.email}</p>
+                </div>
+
+                <label class="mt-5 block">
+                  <span class="mb-1.5 block text-sm font-semibold text-text-default"
+                    >Role Akunta</span
                   >
                   <select
-                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
+                    class="w-full rounded-md border border-border-default bg-card-bg px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                     bind:value={selectedAssignmentRoleId}
                     required
                   >
@@ -2234,116 +2436,29 @@
                     {/each}
                   </select>
                 </label>
-              </div>
-              <div class="mt-4 flex justify-end">
-                <button
-                  type="submit"
-                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-wait disabled:opacity-60"
-                  disabled={roleManagementSaving === 'new-assignment' ||
-                    !selectedUnassignedUserId ||
-                    !selectedAssignmentRoleId}
-                >
-                  {roleManagementSaving === 'new-assignment' ? 'Menyimpan…' : 'Assign user'}
-                </button>
-              </div>
-            </form>
-          {/if}
 
-          <div class="mt-5 overflow-hidden rounded-lg border border-border-default">
-            <table class="ak-table">
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Level Ecopa</th>
-                  <th>Role Akunta</th>
-                  <th>Status</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each roleManagement?.users ?? [] as managedUser (managedUser.assignment_id)}
-                  <tr>
-                    <td>
-                      <p class="font-semibold text-text-default">{managedUser.name}</p>
-                      <p class="text-xs text-text-muted">{managedUser.email}</p>
-                    </td>
-                    <td>
-                      <span class="ak-pill bg-primary-light text-primary">
-                        {managedUser.ecopa_role ?? 'user'}
-                      </span>
-                    </td>
-                    <td>
-                      <select
-                        class="min-w-48 rounded-md border border-border-default bg-card-bg px-3 py-2 text-sm"
-                        value={managedUser.role_id ?? ''}
-                        disabled={!managedUser.can_update_role ||
-                          roleManagementSaving === managedUser.assignment_id ||
-                          !!managedUser.disabled_at}
-                        onchange={(event) =>
-                          updateManagedRole(
-                            managedUser.assignment_id,
-                            (event.currentTarget as HTMLSelectElement).value,
-                          )}
-                        aria-label={`Role Akunta untuk ${managedUser.name}`}
-                      >
-                        <option value="">Belum diberi role</option>
-                        {#if managedUser.role_id && !roleManagement?.roles.some((role) => role.id === managedUser.role_id)}
-                          <option value={managedUser.role_id} disabled>
-                            {managedUser.role_name ??
-                              managedUser.role_code ??
-                              'Role tidak tersedia'}
-                          </option>
-                        {/if}
-                        {#each roleManagement?.roles ?? [] as role (role.id)}
-                          <option value={role.id}>{role.name}</option>
-                        {/each}
-                      </select>
-                      {#if !managedUser.can_update_role}
-                        <p class="mt-1 text-xs text-text-muted">
-                          {managedUser.role_code === 'super_admin'
-                            ? 'Role Anda tidak dapat diubah.'
-                            : managedUser.role_code === 'admin'
-                              ? 'Role Anda hanya dapat diubah oleh Super Admin.'
-                              : 'Role Anda hanya dapat diubah oleh admin lain.'}
-                        </p>
-                      {/if}
-                    </td>
-                    <td>
-                      <span
-                        class="ak-pill {managedUser.disabled_at
-                          ? 'bg-danger-light text-danger'
-                          : 'bg-paid-light text-paid'}"
-                      >
-                        {managedUser.disabled_at ? 'Dinonaktifkan Ecopa' : 'Aktif'}
-                      </span>
-                    </td>
-                    <td>
-                      {#if managedUser.can_impersonate && !auth.user?.is_impersonating}
-                        <button
-                          type="button"
-                          class="rounded-md border border-primary/30 px-3 py-1.5 text-sm font-semibold text-primary disabled:opacity-50"
-                          onclick={() => impersonateManagedUser(managedUser.assignment_id)}
-                          disabled={roleManagementSaving === managedUser.assignment_id}
-                        >
-                          {roleManagementSaving === managedUser.assignment_id
-                            ? 'Memproses…'
-                            : 'Impersonate'}
-                        </button>
-                      {:else}
-                        <span class="text-sm text-text-muted">—</span>
-                      {/if}
-                    </td>
-                  </tr>
-                {:else}
-                  <tr>
-                    <td colspan="5" class="py-8 text-center text-text-muted">
-                      Belum ada user yang di-assign Ecopa ke entitas ini.
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
+                <div class="mt-6 flex flex-wrap-reverse justify-end gap-3">
+                  <button
+                    type="button"
+                    class="rounded-md px-3 py-2 text-sm font-semibold text-text-muted transition hover:bg-page-bg hover:text-text-default"
+                    onclick={closeUserAssignmentForm}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-active disabled:cursor-wait disabled:opacity-60"
+                    disabled={roleManagementSaving === 'new-assignment' ||
+                      !selectedAssignmentRoleId}
+                  >
+                    {roleManagementSaving === 'new-assignment'
+                      ? 'Menyimpan…'
+                      : 'Assign ke workspace'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          {/if}
         {/if}
         {#if roleManagementMessage}
           <p class="mt-3 text-sm text-text-muted" role="status">{roleManagementMessage}</p>
