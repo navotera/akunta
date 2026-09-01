@@ -27,7 +27,6 @@
     type FakeDataGroup,
     type FakeDatasetInfo,
     type FakeDatasetResetPreview,
-    type FakeUser,
   } from '$lib/api/fake-data.js';
   import {
     getWorkspaceTheme,
@@ -71,12 +70,6 @@
     label: 'Entity Profile',
     description: 'Profil legal dan kontak entitas',
     icon: 'E',
-  });
-  sections.splice(3, 0, {
-    id: 'fake-data',
-    label: 'Fake Data',
-    description: 'Data simulasi untuk demo',
-    icon: '🧪',
   });
   sections.splice(2, 0, {
     id: 'number-formats',
@@ -172,7 +165,6 @@
   let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
   let fakeDataMessage = $state<string | null>(null);
-  let fakeUsers = $state<FakeUser[]>([]);
   let fakeDataset = $state<FakeDatasetInfo | null>(null);
   let resetPreview = $state<FakeDatasetResetPreview | null>(null);
   let resetPreviewLoading = $state(false);
@@ -258,14 +250,12 @@
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
     if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
-    if (showFakeDataSettings) void loadFakeData();
   }
 
   async function loadFakeData() {
     try {
       const result = await fakeDataApi.list(tenant.id);
       fakeDataGroups = result.groups;
-      fakeUsers = result.users;
       fakeDataset = result.dataset;
     } catch (error) {
       fakeDataMessage = error instanceof Error ? error.message : 'Gagal memuat fake data.';
@@ -700,6 +690,21 @@
     try {
       const result = await roleManagementApi.update(assignmentId, roleId || null, tenant.id);
       await loadRoleManagement();
+      roleManagementMessage = result.message;
+    } catch (caught) {
+      roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      roleManagementSaving = null;
+    }
+  }
+
+  async function impersonateManagedUser(assignmentId: string) {
+    if (!tenant.id) return;
+    roleManagementSaving = assignmentId;
+    roleManagementMessage = null;
+    try {
+      const result = await roleManagementApi.impersonate(assignmentId, tenant.id);
+      await auth.refresh();
       roleManagementMessage = result.message;
     } catch (caught) {
       roleManagementMessage = caught instanceof Error ? caught.message : String(caught);
@@ -2049,38 +2054,6 @@
         {#if fakeDataMessage}<p class="mt-4 text-sm text-paid" role="status">
             {fakeDataMessage}
           </p>{/if}
-        <div class="mt-6 rounded-md border border-border-soft bg-card-bg p-4">
-          <h3 class="text-sm font-semibold">Akun Fake untuk Impersonation</h3>
-          <p class="mt-1 text-sm text-text-muted">
-            Gunakan akun ini untuk menguji tampilan dan hak akses operator, supervisor, atau
-            Inspector (read-only).
-          </p>
-          <div class="mt-3 space-y-2">
-            {#each fakeUsers as fakeUser (fakeUser.id)}
-              <div class="flex items-center justify-between rounded-md bg-page-bg px-3 py-2">
-                <div>
-                  <p class="text-sm font-semibold">{fakeUser.name}</p>
-                  <p class="text-xs text-text-muted">
-                    {fakeUser.email} · {fakeUser.roles.join(', ')}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="rounded-md border border-primary/30 px-3 py-1.5 text-sm font-semibold text-primary disabled:opacity-50"
-                  onclick={async () => {
-                    await fakeDataApi.impersonate(fakeUser.id, tenant.id);
-                    await auth.refresh();
-                  }}>Impersonate</button
-                >
-              </div>
-            {:else}
-              <p class="text-sm text-text-muted">
-                Akun impersonation belum tersedia. Gunakan Reset Dataset untuk membangun ulang
-                dataset bawaan.
-              </p>
-            {/each}
-          </div>
-        </div>
       {:else if activeSection === 'permissions'}
         <h2 class="text-lg font-bold">Permission Management</h2>
         <p class="mt-1 text-sm text-text-muted">
@@ -2134,6 +2107,9 @@
         <p class="mt-1 text-sm text-text-muted">
           Identitas user berasal dari Ecopa; role akuntansi ditentukan per entitas di Akunta.
         </p>
+        <p class="mt-1 text-sm text-text-muted">
+          Impersonation tersedia untuk user aktif dengan role yang sama atau lebih rendah.
+        </p>
         <div
           class="mt-6 rounded-md border border-border-soft bg-page-bg p-4 text-sm text-text-muted"
         >
@@ -2158,6 +2134,7 @@
                   <th>Level Ecopa</th>
                   <th>Role Akunta</th>
                   <th>Status</th>
+                  <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -2206,10 +2183,26 @@
                         {managedUser.disabled_at ? 'Dinonaktifkan Ecopa' : 'Aktif'}
                       </span>
                     </td>
+                    <td>
+                      {#if managedUser.can_impersonate && !auth.user?.is_impersonating}
+                        <button
+                          type="button"
+                          class="rounded-md border border-primary/30 px-3 py-1.5 text-sm font-semibold text-primary disabled:opacity-50"
+                          onclick={() => impersonateManagedUser(managedUser.assignment_id)}
+                          disabled={roleManagementSaving === managedUser.assignment_id}
+                        >
+                          {roleManagementSaving === managedUser.assignment_id
+                            ? 'Memproses…'
+                            : 'Impersonate'}
+                        </button>
+                      {:else}
+                        <span class="text-sm text-text-muted">—</span>
+                      {/if}
+                    </td>
                   </tr>
                 {:else}
                   <tr>
-                    <td colspan="4" class="py-8 text-center text-text-muted">
+                    <td colspan="5" class="py-8 text-center text-text-muted">
                       Belum ada user yang di-assign Ecopa ke entitas ini.
                     </td>
                   </tr>

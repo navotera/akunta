@@ -3,9 +3,7 @@ import { expect, test } from '@playwright/test';
 const FAKE_ENTITY = '01J00000000000000000000101';
 const DEMO_PERIOD = '01J00000000000000000000102';
 
-test('admin previews and confirms a marker-only Demo 2026 reset from Settings', async ({
-  page,
-}) => {
+test('admin cannot access Demo 2026 reset controls from Settings', async ({ page }) => {
   let resetPayload: Record<string, string> | null = null;
 
   await page.addInitScript((entityId) => {
@@ -150,22 +148,8 @@ test('admin previews and confirms a marker-only Demo 2026 reset from Settings', 
   });
 
   await page.goto('/settings');
-  await page.getByTestId('settings-nav-fake-data').click();
-  await expect(page.getByTestId('demo-dataset-version')).toHaveText('Demo 2026 · v2026.1.0');
-
-  await page.getByTestId('preview-demo-reset').click();
-  await expect(page.getByTestId('demo-reset-dialog')).toContainText('150');
-  await expect(page.getByTestId('demo-reset-dialog')).toContainText(
-    'Record manual yang dipertahankan',
-  );
-
-  await page.getByTestId('demo-reset-confirmation').fill('RESET DEMO 2026');
-  await page.getByTestId('execute-demo-reset').click();
-
-  await expect(page.getByRole('status')).toContainText('berhasil di-reset ke Demo 2026');
-  expect(resetPayload).toEqual({
-    confirmation: 'RESET DEMO 2026',
-    expected_version: '2026.1.0',
-    preview_token: 'a'.repeat(64),
-  });
+  await expect(page.getByTestId('settings-nav-fake-data')).toHaveCount(0);
+  await expect(page.getByTestId('preview-demo-reset')).toHaveCount(0);
+  await expect(page.getByTestId('demo-reset-dialog')).toHaveCount(0);
+  expect(resetPayload).toBeNull();
 });

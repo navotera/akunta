@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use App\Models\ApiToken;
@@ -220,5 +221,108 @@ it('rejects role management by a regular Ecopa user', function () {
     $this->actingAs($this->managedUser)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/role-management')
+        ->assertForbidden();
+});
+
+it('impersonates an active non-fake user through User & Roles', function () {
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.users.0.can_impersonate', true);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/'.$this->assignment->id.'/impersonate')
+        ->assertOk();
+
+    expect(auth('web')->id())->toBe($this->managedUser->id);
+
+    $this->postJson('/api/v1/spa/role-management/stop-impersonation')->assertOk();
+    expect(auth('web')->id())->toBe($this->admin->id);
+});
+
+it('prevents chained impersonation while an impersonation session is active', function () {
+    $session = [
+        'ecopa.app_role' => 'admin',
+        'impersonator_id' => $this->admin->id,
+        'impersonation_entity_id' => $this->entity->id,
+    ];
+
+    $this->actingAs($this->admin)
+        ->withSession($session)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.users.0.can_impersonate', false);
+
+    $this->actingAs($this->admin)
+        ->withSession($session)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/'.$this->assignment->id.'/impersonate')
+        ->assertConflict();
+});
+
+it('allows impersonation of a user with the same role', function () {
+    $workspaceManage = Permission::create([
+        'app_id' => $this->rbacApp->id,
+        'code' => 'workspace.manage',
+    ]);
+    $this->operatorRole->permissions()->attach($workspaceManage->id);
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $this->operatorRole->id,
+        'assigned_at' => now(),
+    ]);
+    $this->assignment->update(['role_id' => $this->operatorRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.users.0.can_impersonate', true);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/'.$this->assignment->id.'/impersonate')
+        ->assertOk();
+});
+
+it('does not impersonate a user with a higher role', function () {
+    $supervisorRole = Role::create([
+        'code' => 'supervisor',
+        'name' => 'Supervisor',
+        'is_preset' => true,
+    ]);
+    $adminRole = Role::create([
+        'code' => 'admin',
+        'name' => 'Admin',
+        'is_preset' => true,
+    ]);
+    $workspaceManage = Permission::create([
+        'app_id' => $this->rbacApp->id,
+        'code' => 'workspace.manage',
+    ]);
+    $supervisorRole->permissions()->attach($workspaceManage->id);
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $supervisorRole->id,
+        'assigned_at' => now(),
+    ]);
+    $this->assignment->update(['role_id' => $adminRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.users.0.can_impersonate', false);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/role-management/'.$this->assignment->id.'/impersonate')
         ->assertForbidden();
 });

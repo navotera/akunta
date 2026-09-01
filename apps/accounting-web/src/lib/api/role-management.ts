@@ -17,6 +17,7 @@ export interface ManagedUser {
   role_code: string | null;
   disabled_at: string | null;
   can_update_role: boolean;
+  can_impersonate: boolean;
 }
 
 export interface RoleManagementData {
@@ -40,4 +41,17 @@ export const roleManagementApi = {
         tenantSlug: entityId,
       },
     ).then((response) => response.data),
+
+  impersonate: (assignmentId: string, entityId: string) =>
+    api<{ data: { message: string } }>(`/api/v1/spa/role-management/${assignmentId}/impersonate`, {
+      method: 'POST',
+      json: {},
+      tenantSlug: entityId,
+    }).then((response) => response.data),
+
+  stopImpersonation: () =>
+    api<{ data: { message: string } }>('/api/v1/spa/role-management/stop-impersonation', {
+      method: 'POST',
+      json: {},
+    }).then((response) => response.data),
 };

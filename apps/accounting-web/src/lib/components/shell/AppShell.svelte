@@ -9,7 +9,7 @@
   import type { EcosystemApp, EcosystemStatus } from '$lib/api/ecosystem.js';
   import WorkspaceTabs from './WorkspaceTabs.svelte';
   import { formatDate } from '$lib/utils/date.js';
-  import { fakeDataApi } from '$lib/api/fake-data.js';
+  import { roleManagementApi } from '$lib/api/role-management.js';
   import { accessDenied } from '$lib/stores/access-denied.svelte.js';
   import AccessDeniedContent from './AccessDeniedContent.svelte';
 
@@ -235,7 +235,7 @@
   }
 
   async function stopImpersonation() {
-    await fakeDataApi.stopImpersonation();
+    await roleManagementApi.stopImpersonation();
     await auth.refresh();
     goto('/settings');
   }

@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Api\Spa;
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
-use App\Models\FakeDataRecord;
 use App\Models\User;
 use App\Services\FakeDataService;
 use App\Services\NativeFakeDataProvisioner;
@@ -35,7 +34,6 @@ class FakeDataController extends Controller
         return response()->json(['data' => [
             'groups' => $this->groups($entity),
             'users' => $this->service->fakeUsers($entity),
-            'impersonating' => session()->has('impersonator_id'),
             'dataset' => $this->dataset($entity),
         ]]);
     }
@@ -95,29 +93,6 @@ class FakeDataController extends Controller
         $this->ensureSelfServiceGroup($group);
 
         return response()->json(['data' => ['deleted' => $this->service->delete($entity, $group), 'groups' => $this->groups($entity), 'users' => $this->service->fakeUsers($entity)]]);
-    }
-
-    public function impersonate(Request $request, string $userId): JsonResponse
-    {
-        $entity = $this->entity($request);
-        $this->authorizeFakeData($entity);
-        $isFake = FakeDataRecord::where('entity_id', $entity->id)->where('group_key', 'users')->where('model_type', User::class)->where('model_id', $userId)->exists();
-        abort_unless($isFake, 404, 'Impersonation hanya tersedia untuk user fake.');
-        abort_if(session()->has('impersonator_id'), 409, 'Impersonation sedang aktif.');
-        session(['impersonator_id' => Auth::id(), 'impersonation_entity_id' => $entity->id]);
-        Auth::guard('web')->login(User::findOrFail($userId));
-
-        return response()->json(['data' => ['message' => 'Impersonation aktif.']]);
-    }
-
-    public function stopImpersonation(Request $request): JsonResponse
-    {
-        $originalId = session('impersonator_id');
-        abort_unless($originalId, 409, 'Tidak ada impersonation aktif.');
-        Auth::guard('web')->login(User::findOrFail($originalId));
-        session()->forget(['impersonator_id', 'impersonation_entity_id']);
-
-        return response()->json(['data' => ['message' => 'Kembali ke akun admin.']]);
     }
 
     private function entity(Request $request): Entity

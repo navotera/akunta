@@ -8,12 +8,14 @@ use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
+use Akunta\Rbac\Models\User as RbacUser;
 use Akunta\Rbac\Models\UserAppAssignment;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\UserAccessRevoker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -33,6 +35,27 @@ class RoleManagementController extends Controller
         'inspector',
     ];
 
+    private const ROLE_RANKS = [
+        'super_admin' => 90,
+        'admin' => 80,
+        'app_admin' => 80,
+        'owner' => 70,
+        'finance_manager' => 70,
+        'supervisor' => 60,
+        'approver' => 50,
+        'accountant' => 50,
+        'tax_officer' => 50,
+        'internal_auditor' => 50,
+        'operator' => 40,
+        'accountant_assistant' => 40,
+        'cashier' => 40,
+        'auditor_external' => 10,
+        'viewer' => 10,
+        'inspector' => 10,
+    ];
+
+    private const ECOPA_ADMIN_ROLE_RANK = 100;
+
     public function __construct(
         private readonly AuditLoggerContract $auditLogger,
         private readonly UserAccessRevoker $accessRevoker,
@@ -45,6 +68,7 @@ class RoleManagementController extends Controller
         /** @var User $actor */
         $actor = $request->user();
         $canChangeOwnRole = ! $this->isProtectedRoleManager($actor, $entity, $app);
+        $isImpersonating = session()->has('impersonator_id');
 
         $assignments = UserAppAssignment::query()
             ->where('app_id', $app->id)
@@ -54,7 +78,18 @@ class RoleManagementController extends Controller
             ->whereNull('revoked_at')
             ->with(['user:id,name,email,main_tier_user_id,disabled_at', 'role:id,code,name'])
             ->orderBy('assigned_at')
-            ->get()
+            ->get();
+        $roleRanksByUserId = $assignments
+            ->groupBy('user_id')
+            ->map(fn ($userAssignments): int => (int) $userAssignments
+                ->map(fn (UserAppAssignment $assignment): int => $this->assignmentRoleRank($assignment))
+                ->max());
+        $actorRoleRank = max(
+            $actor->isSsoAdmin() ? self::ECOPA_ADMIN_ROLE_RANK : 0,
+            (int) $roleRanksByUserId->get($actor->id, 0),
+        );
+
+        $users = $assignments
             ->map(fn (UserAppAssignment $assignment): array => [
                 'assignment_id' => $assignment->id,
                 'user_id' => $assignment->user_id,
@@ -67,6 +102,11 @@ class RoleManagementController extends Controller
                 'role_code' => $assignment->role?->code,
                 'disabled_at' => $assignment->user?->disabled_at?->toIso8601String(),
                 'can_update_role' => $assignment->user_id !== $actor->id || $canChangeOwnRole,
+                'can_impersonate' => ! $isImpersonating
+                    && $assignment->user_id !== $actor->id
+                    && $assignment->user !== null
+                    && $assignment->user?->disabled_at === null
+                    && (int) $roleRanksByUserId->get($assignment->user_id, 0) <= $actorRoleRank,
             ])
             ->values();
 
@@ -81,7 +121,7 @@ class RoleManagementController extends Controller
 
         return response()->json(['data' => [
             'entity_id' => $entity->id,
-            'users' => $assignments,
+            'users' => $users,
             'roles' => $roles,
         ]]);
     }
@@ -153,6 +193,53 @@ class RoleManagementController extends Controller
         ]]);
     }
 
+    public function impersonate(Request $request, string $assignmentId): JsonResponse
+    {
+        abort_if(session()->has('impersonator_id'), 409, 'Impersonation sedang aktif.');
+
+        $entity = $this->resolveManagedEntity($request);
+        $app = $this->accountingApp();
+        $assignment = UserAppAssignment::query()
+            ->whereKey($assignmentId)
+            ->where('app_id', $app->id)
+            ->where(function ($query) use ($entity): void {
+                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+            })
+            ->whereNull('revoked_at')
+            ->with('user')
+            ->firstOrFail();
+
+        /** @var User $actor */
+        $actor = $request->user();
+        abort_unless($assignment->user !== null, 404, 'User target tidak ditemukan.');
+        abort_if($assignment->user_id === $actor->id, 422, 'Anda tidak dapat mengimpersonasi akun sendiri.');
+        abort_if($assignment->user?->disabled_at !== null, 422, 'User yang dinonaktifkan tidak dapat diimpersonasi.');
+        abort_if(
+            $this->effectiveRoleRank($assignment->user, $entity, $app) > $this->effectiveRoleRank(
+                $actor,
+                $entity,
+                $app,
+                $actor->isSsoAdmin(),
+            ),
+            403,
+            'Anda tidak dapat mengimpersonasi user dengan role yang lebih tinggi.',
+        );
+        session(['impersonator_id' => Auth::id(), 'impersonation_entity_id' => $entity->id]);
+        Auth::guard('web')->login($assignment->user);
+
+        return response()->json(['data' => ['message' => 'Impersonation aktif.']]);
+    }
+
+    public function stopImpersonation(): JsonResponse
+    {
+        $originalId = session('impersonator_id');
+        abort_unless($originalId, 409, 'Tidak ada impersonation aktif.');
+        Auth::guard('web')->login(User::findOrFail($originalId));
+        session()->forget(['impersonator_id', 'impersonation_entity_id']);
+
+        return response()->json(['data' => ['message' => 'Kembali ke akun admin.']]);
+    }
+
     private function resolveManagedEntity(Request $request): Entity
     {
         $entityId = trim((string) $request->header('X-Tenant-Slug'));
@@ -173,6 +260,35 @@ class RoleManagementController extends Controller
     private function accountingApp(): RbacApp
     {
         return RbacApp::query()->where('code', 'accounting')->firstOrFail();
+    }
+
+    private function effectiveRoleRank(RbacUser $user, Entity $entity, RbacApp $app, bool $isEcopaAdmin = false): int
+    {
+        $roleRank = UserAppAssignment::query()
+            ->where('user_id', $user->id)
+            ->where('app_id', $app->id)
+            ->where(function ($query) use ($entity): void {
+                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+            })
+            ->whereNull('revoked_at')
+            ->with('role:id,code')
+            ->get()
+            ->map(fn (UserAppAssignment $assignment): int => $this->assignmentRoleRank($assignment))
+            ->max();
+
+        return max(
+            $isEcopaAdmin ? self::ECOPA_ADMIN_ROLE_RANK : 0,
+            (int) $roleRank,
+        );
+    }
+
+    private function assignmentRoleRank(UserAppAssignment $assignment): int
+    {
+        if ($assignment->ecopa_role === 'admin') {
+            return self::ECOPA_ADMIN_ROLE_RANK;
+        }
+
+        return self::ROLE_RANKS[$assignment->role?->code] ?? 0;
     }
 
     private function isProtectedRoleManager(User $user, Entity $entity, RbacApp $app): bool

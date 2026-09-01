@@ -823,9 +823,13 @@ contoh workflow lain tetap dapat dipakai untuk simulasi sesuai permission;
 perubahan resmi terhadap baseline dilakukan melalui Reset Dataset.
 
 Pada entitas non-demo, Settings hanya menyediakan import COA Teknologi & IT dan
-penyiapan user-role fake yang diperlukan untuk impersonation. Import All serta
-import periode, jurnal, template, jurnal berulang, dan raw auto-mapping tidak
-tersedia. Dataset lengkap hanya dimiliki PT. Fake Data.
+penyiapan user-role fake untuk demo. Aksi impersonation ditampilkan di User &
+Roles, bukan di Fake Data, dan tersedia untuk seluruh user aktif pada level
+role yang sama atau lebih rendah dari pelaku. API wajib menolak target dengan
+role lebih tinggi dan sesi impersonation aktif tidak boleh memulai impersonation
+lagi; pembatasan ini tidak boleh hanya mengandalkan UI. Import All
+serta import periode, jurnal, template, jurnal berulang, dan raw auto-mapping
+tidak tersedia. Dataset lengkap hanya dimiliki PT. Fake Data.
 
 Jurnal berulang native tetap ditampilkan sebagai contoh dengan status yang
 representatif, tetapi command background `accounting:run-recurring` wajib

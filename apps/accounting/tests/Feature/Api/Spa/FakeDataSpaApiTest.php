@@ -51,7 +51,7 @@ it('only exposes COA and impersonation users for a regular entity', function () 
         ->toBe(['accounts', 'users']);
 });
 
-it('imports COA and prepares scoped impersonation accounts', function () {
+it('imports COA and provisions scoped impersonation accounts for User & Roles', function () {
     $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -77,11 +77,7 @@ it('imports COA and prepares scoped impersonation accounts', function () {
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/impersonate/'.$fakeUserId)
-        ->assertOk();
-
-    expect(auth('web')->id())->toBe($fakeUserId);
-    $this->postJson('/api/v1/spa/fake-data/stop-impersonation')->assertOk();
-    expect(auth('web')->id())->toBe($this->user->id);
+        ->assertNotFound();
 });
 
 it('rejects Import All and financial demo groups for a regular entity', function () {
