@@ -146,6 +146,130 @@ it('rolls back a role change when access revocation fails', function () {
     ]);
 });
 
+it('returns the name of a persisted role that cannot be assigned through role management', function () {
+    $superAdminRole = Role::create([
+        'code' => 'super_admin',
+        'name' => 'Super Admin',
+        'is_preset' => true,
+    ]);
+    $this->assignment->update(['role_id' => $superAdminRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/role-management')
+        ->assertOk()
+        ->assertJsonPath('data.users.0.role_id', $superAdminRole->id)
+        ->assertJsonPath('data.users.0.role_code', 'super_admin')
+        ->assertJsonPath('data.users.0.role_name', 'Super Admin')
+        ->assertJsonCount(1, 'data.roles')
+        ->assertJsonPath('data.roles.0.code', 'operator');
+});
+
+it('prevents everyone from changing a super admin role', function () {
+    $superAdminRole = Role::create([
+        'code' => 'super_admin',
+        'name' => 'Super Admin',
+        'is_preset' => true,
+    ]);
+    $this->assignment->update(['role_id' => $superAdminRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertForbidden();
+
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $superAdminRole->id,
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertForbidden();
+
+    expect($this->assignment->fresh()->role_id)->toBe($superAdminRole->id);
+});
+
+it('lets a super admin change another user role', function () {
+    $superAdminRole = Role::create([
+        'code' => 'super_admin',
+        'name' => 'Super Admin',
+        'is_preset' => true,
+    ]);
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $superAdminRole->id,
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertOk();
+
+    expect($this->assignment->fresh()->role_id)->toBe($this->operatorRole->id);
+});
+
+it('limits changes to and from the admin role to super admins', function () {
+    $adminRole = Role::create([
+        'code' => 'admin',
+        'name' => 'Admin',
+        'is_preset' => true,
+    ]);
+    $this->assignment->update(['role_id' => $adminRole->id]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $this->operatorRole->id,
+        ])
+        ->assertForbidden();
+
+    $this->assignment->update(['role_id' => null]);
+
+    $this->actingAs($this->admin)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $adminRole->id,
+        ])
+        ->assertForbidden();
+
+    $superAdminRole = Role::create([
+        'code' => 'super_admin',
+        'name' => 'Super Admin',
+        'is_preset' => true,
+    ]);
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id,
+        'entity_id' => $this->entity->id,
+        'role_id' => $superAdminRole->id,
+        'assigned_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson('/api/v1/spa/role-management/'.$this->assignment->id, [
+            'role_id' => $adminRole->id,
+        ])
+        ->assertOk();
+
+    expect($this->assignment->fresh()->role_id)->toBe($adminRole->id);
+});
+
 it('prevents an Ecopa admin from changing their own local role', function () {
     $assignment = $this->admin->assignments()->create([
         'app_id' => $this->rbacApp->id,
