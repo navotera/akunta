@@ -15,6 +15,7 @@ export interface ManagedUser {
   ecopa_role: 'admin' | 'user' | null;
   role_id: string | null;
   role_code: string | null;
+  role_name: string | null;
   disabled_at: string | null;
   can_update_role: boolean;
   can_impersonate: boolean;

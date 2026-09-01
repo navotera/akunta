@@ -2164,15 +2164,24 @@
                         aria-label={`Role Akunta untuk ${managedUser.name}`}
                       >
                         <option value="">Belum diberi role</option>
+                        {#if managedUser.role_id && !roleManagement?.roles.some((role) => role.id === managedUser.role_id)}
+                          <option value={managedUser.role_id} disabled>
+                            {managedUser.role_name ?? managedUser.role_code ?? 'Role tidak tersedia'}
+                          </option>
+                        {/if}
                         {#each roleManagement?.roles ?? [] as role (role.id)}
                           <option value={role.id}>{role.name}</option>
                         {/each}
                       </select>
-                      {#if !managedUser.can_update_role}
-                        <p class="mt-1 text-xs text-text-muted">
-                          Role Anda hanya dapat diubah oleh admin lain.
-                        </p>
-                      {/if}
+                        {#if !managedUser.can_update_role}
+                          <p class="mt-1 text-xs text-text-muted">
+                            {managedUser.role_code === 'super_admin'
+                              ? 'Role Anda tidak dapat diubah.'
+                              : managedUser.role_code === 'admin'
+                                ? 'Role Anda hanya dapat diubah oleh Super Admin.'
+                                : 'Role Anda hanya dapat diubah oleh admin lain.'}
+                          </p>
+                        {/if}
                     </td>
                     <td>
                       <span

@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 const ENTITY_ID = '01J00000000000000000000701';
 const ASSIGNMENT_ID = '01J00000000000000000000702';
 const OPERATOR_ROLE_ID = '01J00000000000000000000703';
+const SUPER_ADMIN_ROLE_ID = '01J00000000000000000000710';
+const ADMIN_ROLE_ID = '01J00000000000000000000711';
 const ADMIN_USER_ID = '01J00000000000000000000704';
 const ADMIN_ASSIGNMENT_ID = '01J00000000000000000000707';
 
@@ -88,8 +90,9 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
                 email: 'admin@example.test',
                 ecopa_user_id: 'ecopa-admin',
                 ecopa_role: 'user',
-                role_id: null,
-                role_code: 'supervisor',
+                role_id: SUPER_ADMIN_ROLE_ID,
+                role_code: 'super_admin',
+                role_name: 'Super Admin',
                 disabled_at: null,
                 can_update_role: false,
                 can_impersonate: false,
@@ -103,6 +106,7 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
                 ecopa_role: 'user',
                 role_id: selectedRole,
                 role_code: selectedRole ? 'operator' : null,
+                role_name: selectedRole ? 'Operator' : null,
                 disabled_at: null,
                 can_update_role: true,
                 can_impersonate: true,
@@ -114,10 +118,11 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
                 email: 'higher-admin@example.test',
                 ecopa_user_id: 'ecopa-higher-admin',
                 ecopa_role: 'admin',
-                role_id: null,
+                role_id: ADMIN_ROLE_ID,
                 role_code: 'admin',
+                role_name: 'Admin',
                 disabled_at: null,
-                can_update_role: true,
+                can_update_role: false,
                 can_impersonate: false,
               },
             ],
@@ -162,7 +167,15 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
 
   const ownRoleSelect = page.getByLabel('Role Akunta untuk Admin Akunta');
   await expect(ownRoleSelect).toBeDisabled();
-  await expect(page.getByText('Role Anda hanya dapat diubah oleh admin lain.')).toBeVisible();
+  await expect(ownRoleSelect).toHaveValue(SUPER_ADMIN_ROLE_ID);
+  await expect(ownRoleSelect).toContainText('Super Admin');
+  await expect(page.getByText('Role Anda tidak dapat diubah.')).toBeVisible();
+
+  const higherAdminRoleSelect = page.getByLabel('Role Akunta untuk Admin Lebih Tinggi');
+  await expect(higherAdminRoleSelect).toBeDisabled();
+  await expect(
+    page.getByRole('row', { name: /Admin Lebih Tinggi/ }).getByText('Role Anda hanya dapat diubah oleh Super Admin.'),
+  ).toBeVisible();
 
   const otherUserRoleSelect = page.getByLabel('Role Akunta untuk User Ecopa');
   await expect(otherUserRoleSelect).toBeVisible();

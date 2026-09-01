@@ -67,6 +67,7 @@ class RoleManagementController extends Controller
         $app = $this->accountingApp();
         /** @var User $actor */
         $actor = $request->user();
+        $actorIsSuperAdmin = $this->hasSuperAdminRole($actor, $entity, $app);
         $canChangeOwnRole = ! $this->isProtectedRoleManager($actor, $entity, $app);
         $isImpersonating = session()->has('impersonator_id');
 
@@ -100,8 +101,11 @@ class RoleManagementController extends Controller
                 'scope' => $assignment->entity_id === null ? 'all_entities' : 'entity',
                 'role_id' => $assignment->role_id,
                 'role_code' => $assignment->role?->code,
+                'role_name' => $assignment->role?->name,
                 'disabled_at' => $assignment->user?->disabled_at?->toIso8601String(),
-                'can_update_role' => $assignment->user_id !== $actor->id || $canChangeOwnRole,
+                'can_update_role' => ($assignment->user_id !== $actor->id || $canChangeOwnRole)
+                    && $assignment->role?->code !== 'super_admin'
+                    && ($assignment->role?->code !== 'admin' || $actorIsSuperAdmin),
                 'can_impersonate' => ! $isImpersonating
                     && $assignment->user_id !== $actor->id
                     && $assignment->user !== null
@@ -112,6 +116,7 @@ class RoleManagementController extends Controller
 
         $roles = Role::query()
             ->whereIn('code', self::ACCOUNTING_ROLES)
+            ->when(! $actorIsSuperAdmin, fn ($query) => $query->where('code', '!=', 'admin'))
             ->where(function ($query) use ($entity): void {
                 $query->whereNull('tenant_id')->orWhere('tenant_id', $entity->tenant_id);
             })
@@ -153,6 +158,22 @@ class RoleManagementController extends Controller
 
         /** @var User $actor */
         $actor = $request->user();
+        $currentRoleCode = $assignment->role?->code;
+        $requestedRoleCode = isset($data['role_id']) && $data['role_id'] !== null
+            ? Role::query()->findOrFail($data['role_id'])->code
+            : null;
+        $actorIsSuperAdmin = $this->hasSuperAdminRole($actor, $entity, $app);
+
+        abort_if(
+            $currentRoleCode === 'super_admin',
+            403,
+            'Role Anda tidak dapat diubah.',
+        );
+        abort_if(
+            ($currentRoleCode === 'admin' || $requestedRoleCode === 'admin') && ! $actorIsSuperAdmin,
+            403,
+            'Role Anda hanya dapat diubah oleh Super Admin.',
+        );
         abort_if(
             $assignment->user_id === $actor->id && $this->isProtectedRoleManager($actor, $entity, $app),
             403,
@@ -289,6 +310,18 @@ class RoleManagementController extends Controller
         }
 
         return self::ROLE_RANKS[$assignment->role?->code] ?? 0;
+    }
+
+    private function hasSuperAdminRole(User $user, Entity $entity, RbacApp $app): bool
+    {
+        return $user->assignments()
+            ->where('app_id', $app->id)
+            ->whereNull('revoked_at')
+            ->where(function ($query) use ($entity): void {
+                $query->whereNull('entity_id')->orWhere('entity_id', $entity->id);
+            })
+            ->whereHas('role', fn ($query) => $query->where('code', 'super_admin'))
+            ->exists();
     }
 
     private function isProtectedRoleManager(User $user, Entity $entity, RbacApp $app): bool
