@@ -5,8 +5,9 @@ const FAKE_ENTITY = '01J00000000000000000000002';
 const PERIOD_2028 = '01J00000000000000000000003';
 const PERIOD_2026 = '01J00000000000000000000004';
 
-test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ page }) => {
+test('Fake Data settings are available only for the native demo entity', async ({ page }) => {
   const periodRequests: string[] = [];
+  const fakeDataRequests: string[] = [];
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -66,6 +67,31 @@ test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ pa
                 issue_report_url: null,
               },
             ],
+          },
+        },
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/v1/spa/fake-data') {
+      fakeDataRequests.push(entityId);
+      await route.fulfill({
+        json: {
+          data: {
+            groups: [],
+            users: [],
+            dataset:
+              entityId === FAKE_ENTITY
+                ? {
+                    label: 'Demo 2026',
+                    version: '2026.1.0',
+                    target_version: '2026.1.0',
+                    period_year: 2026,
+                    immutable_period: true,
+                    immutable_posted_journals: true,
+                    background_recurring_disabled: true,
+                  }
+                : null,
           },
         },
       });
@@ -152,14 +178,20 @@ test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ pa
 
     await route.fulfill({ json: { data: [] } });
   });
+  const initialSettingsReady = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/v1/spa/ecopa-integration',
+  );
 
-  await page.goto('/dashboard');
-  await expect.poll(() => pageErrors).toEqual([]);
-  await expect(page.getByTestId('period-switcher')).toContainText('Tahun 2028');
+  await page.goto('/settings');
+  await initialSettingsReady;
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId('settings-nav-fake-data')).toHaveCount(0);
+  expect(fakeDataRequests).toEqual([]);
 
   await page.getByTestId('entity-switcher').click();
   await page.getByTestId(`entity-option-${FAKE_ENTITY}`).click();
 
+  await expect(page.getByTestId('settings-nav-fake-data')).toBeVisible();
   await expect(page.getByTestId('entity-switcher')).toContainText('PT. Fake Data');
   await expect(page.getByTestId('active-demo-version')).toHaveText('Demo 2026 · v2026.1.0');
   await expect(page.getByTestId('period-switcher')).toContainText('Demo 2026');
@@ -168,4 +200,9 @@ test('switching from a 2028 entity loads the sole Demo 2026 period', async ({ pa
     .toBe(PERIOD_2026);
   expect(periodRequests).toContain(REGULAR_ENTITY);
   expect(periodRequests.at(-1)).toBe(FAKE_ENTITY);
+  expect(fakeDataRequests).toEqual([FAKE_ENTITY]);
+
+  await page.goto('/dashboard');
+  await expect.poll(() => pageErrors).toEqual([]);
+  await expect(page.getByTestId('period-switcher')).toContainText('Demo 2026');
 });
