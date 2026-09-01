@@ -2192,6 +2192,11 @@
                   <p class="mt-1 text-xs text-text-muted">
                     User akan menerima role Akunta yang dipilih dan diminta login ulang.
                   </p>
+                  <div
+                    class="mt-3 rounded-md border border-info/30 bg-info-light px-3 py-2 text-xs text-info"
+                  >
+                    Jika user tidak ditemukan di daftar ini, periksa apakah user sudah terdaftar dan aktif di Ecopa, lalu kembali ke sini untuk menetapkan role Akunta.
+                  </div>
                 </div>
                 <button
                   type="button"
