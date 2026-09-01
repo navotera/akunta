@@ -5,7 +5,9 @@ const FAKE_ENTITY = '01J00000000000000000000002';
 const PERIOD_2028 = '01J00000000000000000000003';
 const PERIOD_2026 = '01J00000000000000000000004';
 
-test('Fake Data settings are available only for the native demo entity', async ({ page }) => {
+test('Fake Data controls remain hidden when switching to the native demo entity', async ({
+  page,
+}) => {
   const periodRequests: string[] = [];
   const fakeDataRequests: string[] = [];
   const pageErrors: string[] = [];
@@ -191,7 +193,7 @@ test('Fake Data settings are available only for the native demo entity', async (
   await page.getByTestId('entity-switcher').click();
   await page.getByTestId(`entity-option-${FAKE_ENTITY}`).click();
 
-  await expect(page.getByTestId('settings-nav-fake-data')).toBeVisible();
+  await expect(page.getByTestId('settings-nav-fake-data')).toHaveCount(0);
   await expect(page.getByTestId('entity-switcher')).toContainText('PT. Fake Data');
   await expect(page.getByTestId('active-demo-version')).toHaveText('Demo 2026 · v2026.1.0');
   await expect(page.getByTestId('period-switcher')).toContainText('Demo 2026');
@@ -200,7 +202,7 @@ test('Fake Data settings are available only for the native demo entity', async (
     .toBe(PERIOD_2026);
   expect(periodRequests).toContain(REGULAR_ENTITY);
   expect(periodRequests.at(-1)).toBe(FAKE_ENTITY);
-  expect(fakeDataRequests).toEqual([FAKE_ENTITY]);
+  expect(fakeDataRequests).toEqual([]);
 
   await page.goto('/dashboard');
   await expect.poll(() => pageErrors).toEqual([]);

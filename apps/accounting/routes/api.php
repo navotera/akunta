@@ -127,8 +127,6 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::post('fake-data/import-all', [FakeDataController::class, 'importAll']);
         Route::post('fake-data/{group}/import', [FakeDataController::class, 'import']);
         Route::delete('fake-data/{group}', [FakeDataController::class, 'destroy']);
-        Route::post('fake-data/impersonate/{userId}', [FakeDataController::class, 'impersonate']);
-        Route::post('fake-data/stop-impersonation', [FakeDataController::class, 'stopImpersonation']);
 
         Route::get('auto-mapping', [AutoMappingController::class, 'index']);
         Route::get('auto-mapping/{id}', [AutoMappingController::class, 'show']);
@@ -154,6 +152,8 @@ Route::middleware(['web', 'auth:sanctum'])
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
         Route::patch('role-management/{assignmentId}', [RoleManagementController::class, 'update']);
+        Route::post('role-management/{assignmentId}/impersonate', [RoleManagementController::class, 'impersonate']);
+        Route::post('role-management/stop-impersonation', [RoleManagementController::class, 'stopImpersonation']);
 
         Route::get('onboarding/status', [OnboardingController::class, 'status']);
         Route::get('onboarding/coa-templates', [OnboardingController::class, 'coaTemplates']);

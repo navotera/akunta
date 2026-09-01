@@ -6,8 +6,10 @@ const OPERATOR_ROLE_ID = '01J00000000000000000000703';
 const ADMIN_USER_ID = '01J00000000000000000000704';
 const ADMIN_ASSIGNMENT_ID = '01J00000000000000000000707';
 
-test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
+test('Akunta admin manages roles and impersonates a lower-level user', async ({ page }) => {
   let selectedRole: string | null = null;
+  let impersonatedAssignmentId: string | null = null;
+  let isImpersonating = false;
 
   await page.addInitScript((entityId) => {
     localStorage.setItem('akunta.active_entity_id', entityId);
@@ -24,9 +26,11 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
             id: ADMIN_USER_ID,
             name: 'Admin Akunta',
             email: 'admin@example.test',
-            roles: ['admin'],
-            is_sso_admin: true,
+            roles: ['supervisor'],
+            is_sso_admin: false,
             is_admin: true,
+            is_impersonating: isImpersonating,
+            impersonator_id: isImpersonating ? ADMIN_USER_ID : null,
             tenants: [
               {
                 id: ENTITY_ID,
@@ -83,11 +87,12 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
                 name: 'Admin Akunta',
                 email: 'admin@example.test',
                 ecopa_user_id: 'ecopa-admin',
-                ecopa_role: 'admin',
+                ecopa_role: 'user',
                 role_id: null,
-                role_code: null,
+                role_code: 'supervisor',
                 disabled_at: null,
                 can_update_role: false,
+                can_impersonate: false,
               },
               {
                 assignment_id: ASSIGNMENT_ID,
@@ -100,12 +105,36 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
                 role_code: selectedRole ? 'operator' : null,
                 disabled_at: null,
                 can_update_role: true,
+                can_impersonate: true,
+              },
+              {
+                assignment_id: '01J00000000000000000000708',
+                user_id: '01J00000000000000000000709',
+                name: 'Admin Lebih Tinggi',
+                email: 'higher-admin@example.test',
+                ecopa_user_id: 'ecopa-higher-admin',
+                ecopa_role: 'admin',
+                role_id: null,
+                role_code: 'admin',
+                disabled_at: null,
+                can_update_role: true,
+                can_impersonate: false,
               },
             ],
             roles: [{ id: OPERATOR_ROLE_ID, code: 'operator', name: 'Operator' }],
           },
         },
       });
+      return;
+    }
+
+    if (
+      url.pathname === `/api/v1/spa/role-management/${ASSIGNMENT_ID}/impersonate` &&
+      request.method() === 'POST'
+    ) {
+      impersonatedAssignmentId = ASSIGNMENT_ID;
+      isImpersonating = true;
+      await route.fulfill({ json: { data: { message: 'Impersonation aktif.' } } });
       return;
     }
 
@@ -141,4 +170,15 @@ test('Akunta admin assigns a local role to an Ecopa user', async ({ page }) => {
 
   await expect(page.getByRole('status')).toContainText('Role Akunta berhasil diperbarui');
   expect(selectedRole).toBe(OPERATOR_ROLE_ID);
+
+  await expect(
+    page.getByRole('row', { name: /Admin Lebih Tinggi/ }).getByRole('button'),
+  ).toHaveCount(0);
+  await page
+    .getByRole('row', { name: /User Ecopa/ })
+    .getByRole('button')
+    .click();
+  await expect(page.getByRole('status')).toContainText('Impersonation aktif');
+  expect(impersonatedAssignmentId).toBe(ASSIGNMENT_ID);
+  await expect(page.getByRole('row', { name: /User Ecopa/ }).getByRole('button')).toHaveCount(0);
 });

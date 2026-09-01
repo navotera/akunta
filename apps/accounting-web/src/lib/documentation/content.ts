@@ -1184,7 +1184,7 @@ export const documentationArticles: DocumentationArticle[] = [
       {
         title: 'Fake Data',
         paragraphs: [
-          'PT. Fake Data menyediakan dataset lengkap dan berversi pada periode Demo 2026. Pada entitas biasa, import dibatasi ke COA dan akun impersonation.',
+          'PT. Fake Data menyediakan dataset lengkap dan berversi pada periode Demo 2026. Pada entitas biasa, import dibatasi ke COA dan penyiapan akun demo; gunakan User & Roles untuk memulai impersonation ke user aktif dengan role yang sama atau lebih rendah.',
         ],
         bullets: [
           'Saat berpindah ke PT. Fake Data, periode aktif otomatis menggunakan Demo 2026.',

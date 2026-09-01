@@ -46,7 +46,6 @@ interface FakeDataResponse {
     deleted?: number;
     groups: FakeDataGroup[];
     users: FakeUser[];
-    impersonating?: boolean;
     dataset: FakeDatasetInfo | null;
   };
 }
@@ -84,15 +83,4 @@ export const fakeDataApi = {
         dataset: FakeDatasetInfo;
       };
     }>('/api/v1/spa/fake-data/reset', { json: input, tenantSlug }).then((r) => r.data),
-  impersonate: (userId: string, tenantSlug?: string | null) =>
-    api<{ data: { message: string } }>(`/api/v1/spa/fake-data/impersonate/${userId}`, {
-      method: 'POST',
-      json: {},
-      tenantSlug,
-    }).then((r) => r.data),
-  stopImpersonation: () =>
-    api<{ data: { message: string } }>('/api/v1/spa/fake-data/stop-impersonation', {
-      method: 'POST',
-      json: {},
-    }).then((r) => r.data),
 };
