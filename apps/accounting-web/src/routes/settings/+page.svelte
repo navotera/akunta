@@ -171,7 +171,6 @@
   let workspaceError = $state<string | null>(null);
   let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
-  let fakeDataBusy = $state<string | null>(null);
   let fakeDataMessage = $state<string | null>(null);
   let fakeUsers = $state<FakeUser[]>([]);
   let fakeDataset = $state<FakeDatasetInfo | null>(null);
@@ -202,8 +201,9 @@
       auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
     ),
   );
+  let showFakeDataSettings = $derived(currentWorkspaceIsFake && canManageFakeData);
   let visibleSections = $derived(
-    sections.filter((section) => section.id !== 'fake-data' || canManageFakeData),
+    sections.filter((section) => section.id !== 'fake-data' || showFakeDataSettings),
   );
 
   function selectLogo(event: Event) {
@@ -258,7 +258,7 @@
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
     if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
-    if (canManageFakeData) void loadFakeData();
+    if (showFakeDataSettings) void loadFakeData();
   }
 
   async function loadFakeData() {
@@ -267,19 +267,6 @@
       fakeDataGroups = result.groups;
       fakeUsers = result.users;
       fakeDataset = result.dataset;
-
-      // Older demo imports predate the Inspector account. Re-run the scoped
-      // users importer once when the demo group already exists so the account
-      // appears without requiring a manual refresh or database intervention.
-      const usersGroup = result.groups.find((group) => group.key === 'users');
-      const hasInspector = result.users.some((user) =>
-        user.roles.some((role) => role.toLowerCase() === 'inspector'),
-      );
-      if (usersGroup && usersGroup.count > 0 && !hasInspector) {
-        const refreshed = await fakeDataApi.import('users', tenant.id);
-        fakeDataGroups = refreshed.groups;
-        fakeUsers = refreshed.users;
-      }
     } catch (error) {
       fakeDataMessage = error instanceof Error ? error.message : 'Gagal memuat fake data.';
     }
@@ -329,41 +316,6 @@
       fakeDataGroups.find((group) => group.key === key)?.label ??
       (key === 'native_fake_entity' ? 'Master Data, Integrasi & Lampiran' : key)
     );
-  }
-
-  async function importFakeData(group: string) {
-    fakeDataBusy = group;
-    fakeDataMessage = null;
-    try {
-      const result = await fakeDataApi.import(group, tenant.id);
-      fakeDataGroups = result.groups;
-      fakeUsers = result.users;
-      fakeDataMessage = `Berhasil mengimpor ${result.created ?? 0} data fake.`;
-    } catch (error) {
-      fakeDataMessage = error instanceof Error ? error.message : 'Import fake data gagal.';
-    } finally {
-      fakeDataBusy = null;
-    }
-  }
-
-  async function deleteFakeData(group: FakeDataGroup) {
-    if (
-      !window.confirm(
-        `Hapus hanya data fake kelompok ${group.label}? Data manual tidak akan dihapus.`,
-      )
-    )
-      return;
-    fakeDataBusy = group.key;
-    try {
-      const result = await fakeDataApi.remove(group.key, tenant.id);
-      fakeDataGroups = result.groups;
-      fakeUsers = result.users;
-      fakeDataMessage = `Berhasil menghapus ${result.deleted ?? 0} data fake.`;
-    } catch (error) {
-      fakeDataMessage = error instanceof Error ? error.message : 'Penghapusan fake data gagal.';
-    } finally {
-      fakeDataBusy = null;
-    }
   }
 
   async function loadWorkspaces() {
@@ -1926,100 +1878,55 @@
         >
           Pengaturan notifikasi akan tersedia pada tahap berikutnya.
         </div>
-      {:else if activeSection === 'fake-data'}
+      {:else if activeSection === 'fake-data' && showFakeDataSettings}
         <h2 class="text-lg font-bold">Fake Data</h2>
         <p class="mt-1 text-sm text-text-muted">
           Gunakan data simulasi untuk mencoba alur aplikasi tanpa data produksi.
         </p>
-        {#if currentWorkspaceIsFake}
-          <div
-            class="mt-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <strong>Dataset bawaan aktif.</strong>
-                  <span
-                    class="rounded-full border border-warning/30 bg-card-bg px-2.5 py-1 text-xs font-bold text-warning"
-                    data-testid="demo-dataset-version"
-                  >
-                    {fakeDataset?.label ?? 'Demo 2026'} · v{fakeDataset?.version ?? 'legacy'}
-                  </span>
-                </div>
-                <p class="mt-2 leading-6">
-                  PT. Fake Data berisi satu periode Demo 2026. Periode dan jurnal Tersimpan bersifat
-                  read-only. Jurnal berulang hanya contoh dan tidak diproses scheduler.
-                </p>
+        <div
+          class="mt-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <strong>Dataset bawaan aktif.</strong>
+                <span
+                  class="rounded-full border border-warning/30 bg-card-bg px-2.5 py-1 text-xs font-bold text-warning"
+                  data-testid="demo-dataset-version"
+                >
+                  {fakeDataset?.label ?? 'Demo 2026'} · v{fakeDataset?.version ?? 'legacy'}
+                </span>
               </div>
-              <button
-                type="button"
-                class="rounded-md border border-warning/40 bg-card-bg px-3 py-2 text-sm font-semibold text-warning hover:border-warning disabled:opacity-50"
-                onclick={previewDatasetReset}
-                disabled={resetPreviewLoading || resetBusy}
-                data-testid="preview-demo-reset"
-              >
-                {resetPreviewLoading ? 'Menyiapkan preview…' : 'Tinjau Reset Dataset'}
-              </button>
+              <p class="mt-2 leading-6">
+                PT. Fake Data berisi satu periode Demo 2026. Periode dan jurnal Tersimpan bersifat
+                read-only. Jurnal berulang hanya contoh dan tidak diproses scheduler.
+              </p>
             </div>
+            <button
+              type="button"
+              class="rounded-md border border-warning/40 bg-card-bg px-3 py-2 text-sm font-semibold text-warning hover:border-warning disabled:opacity-50"
+              onclick={previewDatasetReset}
+              disabled={resetPreviewLoading || resetBusy}
+              data-testid="preview-demo-reset"
+            >
+              {resetPreviewLoading ? 'Menyiapkan preview…' : 'Tinjau Reset Dataset'}
+            </button>
           </div>
-          <div class="mt-4 grid gap-3 sm:grid-cols-3">
-            <div class="rounded-md border border-border-soft bg-card-bg p-3">
-              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Periode</p>
-              <p class="mt-1 text-sm font-bold">Demo 2026 terkunci</p>
-            </div>
-            <div class="rounded-md border border-border-soft bg-card-bg p-3">
-              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Jurnal</p>
-              <p class="mt-1 text-sm font-bold">Tersimpan read-only</p>
-            </div>
-            <div class="rounded-md border border-border-soft bg-card-bg p-3">
-              <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Pemulihan</p>
-              <p class="mt-1 text-sm font-bold">Marker-only &amp; diaudit</p>
-            </div>
+        </div>
+        <div class="mt-4 grid gap-3 sm:grid-cols-3">
+          <div class="rounded-md border border-border-soft bg-card-bg p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Periode</p>
+            <p class="mt-1 text-sm font-bold">Demo 2026 terkunci</p>
           </div>
-        {:else}
-          <div
-            class="mt-5 rounded-md border border-[#c27a00]/60 bg-[#fff4cc] p-4 text-sm font-medium text-[#6b3f00]"
-          >
-            Import dataset keuangan demo telah dinonaktifkan untuk entitas biasa. Halaman ini hanya
-            menyediakan COA Teknologi &amp; IT dan akun khusus untuk menguji impersonation. Tombol
-            hapus tetap mengikuti marker provenance sehingga data manual user tidak ikut terhapus.
+          <div class="rounded-md border border-border-soft bg-card-bg p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Jurnal</p>
+            <p class="mt-1 text-sm font-bold">Tersimpan read-only</p>
           </div>
-          <div class="mt-4 space-y-3">
-            {#each fakeDataGroups as group (group.key)}
-              <div
-                class="flex items-center justify-between gap-4 rounded-md border border-border-soft bg-card-bg p-4"
-              >
-                <div>
-                  <h3 class="text-sm font-semibold">{group.label}</h3>
-                  <p class="mt-1 text-sm text-text-muted">{group.description}</p>
-                  <span
-                    class="mt-2 inline-flex rounded-full bg-page-bg px-2 py-1 text-xs text-text-muted"
-                    >{group.count} data fake tersimpan</span
-                  >
-                </div>
-                <div class="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    class="rounded-md border border-danger/30 px-3 py-2 text-sm font-semibold text-danger disabled:opacity-50"
-                    onclick={() => deleteFakeData(group)}
-                    disabled={fakeDataBusy !== null || group.count === 0}>Hapus Fake</button
-                  >
-                  <button
-                    type="button"
-                    class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                    onclick={() => importFakeData(group.key)}
-                    disabled={fakeDataBusy !== null}
-                    >{fakeDataBusy === group.key
-                      ? 'Mengimpor…'
-                      : group.key === 'users'
-                        ? 'Siapkan Akun'
-                        : 'Import COA'}</button
-                  >
-                </div>
-              </div>
-            {/each}
+          <div class="rounded-md border border-border-soft bg-card-bg p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Pemulihan</p>
+            <p class="mt-1 text-sm font-bold">Marker-only &amp; diaudit</p>
           </div>
-        {/if}
+        </div>
         {#if resetPreview}
           <div
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -2163,14 +2070,13 @@
                   onclick={async () => {
                     await fakeDataApi.impersonate(fakeUser.id, tenant.id);
                     await auth.refresh();
-                  }}
-                  disabled={fakeDataBusy !== null}>Impersonate</button
+                  }}>Impersonate</button
                 >
               </div>
             {:else}
               <p class="text-sm text-text-muted">
-                Klik <span class="font-semibold">Siapkan Akun</span> pada kelompok User &amp; Roles Demo
-                untuk menambahkan akun operator, supervisor, dan Inspector.
+                Akun impersonation belum tersedia. Gunakan Reset Dataset untuk membangun ulang
+                dataset bawaan.
               </p>
             {/each}
           </div>
