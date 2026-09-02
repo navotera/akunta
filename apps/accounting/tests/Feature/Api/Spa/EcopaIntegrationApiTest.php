@@ -74,6 +74,31 @@ it('registers from the public first-access wizard without enabling integration p
     $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'integration_status']);
 });
 
+it('cancels a pending registration locally so setup can start again', function () {
+    foreach ([
+        'app_name' => 'Akunta',
+        'app_slug' => 'accounting',
+        'base_url' => 'https://accounting.example.test',
+        'ecopa_url' => 'https://ecopa.example.test',
+        'webhook_url' => 'https://accounting.example.test/webhooks/ecopa',
+        'registration_status' => 'pending',
+        'registration_request_id' => 'registration-123',
+        'registration_verification_secret' => Crypt::encryptString('registration-token'),
+        'key_integration' => Crypt::encryptString(str_repeat('a', 64)),
+    ] as $name => $value) {
+        EcopaConfigIntegration::query()->create(compact('name', 'value'));
+    }
+
+    $this->postJson('/api/auth/ecopa-registration/cancel')
+        ->assertOk()
+        ->assertJsonPath('data.configured', false)
+        ->assertJsonPath('data.registration_status', null)
+        ->assertJsonPath('data.registration_request_id', null);
+
+    $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'registration_status']);
+    $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'registration_verification_secret']);
+});
+
 it('allows an HTTP localhost Ecopa URL in production', function () {
     $this->withoutMiddleware(ValidateCsrfToken::class);
 

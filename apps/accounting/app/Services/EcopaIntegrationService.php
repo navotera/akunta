@@ -114,6 +114,30 @@ class EcopaIntegrationService
     }
 
     /**
+     * Clear a locally pending registration so the first-access wizard can be
+     * started again. Akunta owns only its local bootstrap state at this stage.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelPendingRegistration(): array
+    {
+        $current = $this->status();
+        if ($current['registration_status'] !== 'pending') {
+            return $current;
+        }
+
+        EcopaConfigIntegration::query()
+            ->whereIn('name', [
+                'app_name', 'app_slug', 'base_url', 'ecopa_url', 'webhook_url',
+                'registration_status', 'registration_request_id', 'registration_message',
+                'registration_verification_secret', 'key_integration',
+            ])
+            ->delete();
+
+        return $this->status();
+    }
+
+    /**
      * @param  array<string, mixed>  $subject
      * @return array<string, mixed>
      */

@@ -113,6 +113,80 @@ it('allows an admin to switch active period while the previous period has drafts
     expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
 });
 
+it('allows an accountant assigned to the entity to switch the active period', function () {
+    $accountant = Role::create([
+        'code' => 'accountant',
+        'name' => 'Accountant',
+        'is_preset' => true,
+    ]);
+    $this->user->assignments()->firstOrFail()->update(['role_id' => $accountant->id]);
+
+    $current = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Lama',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+    $next = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Baru',
+        'start_date' => '2026-02-01', 'end_date' => '2026-02-28',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->assertOk()
+        ->assertJsonPath('data.status', Period::STATUS_OPEN);
+
+    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
+});
+
+it('allows a local admin role to switch the active period', function (string $roleCode) {
+    $role = Role::create([
+        'code' => $roleCode,
+        'name' => str_replace('_', ' ', ucfirst($roleCode)),
+        'is_preset' => true,
+    ]);
+    $this->user->assignments()->firstOrFail()->update(['role_id' => $role->id]);
+
+    $current = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Lama',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+    $next = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Baru',
+        'start_date' => '2026-02-01', 'end_date' => '2026-02-28',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->assertOk();
+
+    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED)
+        ->and($next->refresh()->status)->toBe(Period::STATUS_OPEN);
+})->with(['admin', 'super_admin']);
+
+it('does not let another role switch the active period', function () {
+    $current = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Lama',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+    $next = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Baru',
+        'start_date' => '2026-02-01', 'end_date' => '2026-02-28',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->assertForbidden();
+
+    expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
+        ->and($next->refresh()->status)->toBe(Period::STATUS_CLOSED);
+});
+
 it('blocks closing when drafts exist', function () {
     $period = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'M',

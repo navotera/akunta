@@ -23,6 +23,9 @@
   let totalPages = $derived(Math.max(1, Math.ceil(items.length / pageSize)));
   let visibleItems = $derived(items.slice((currentPage - 1) * pageSize, currentPage * pageSize));
   const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
+  const canSwitchPeriod = $derived(
+    Boolean(isAdmin || auth.user?.roles.some((role) => role.toLowerCase() === 'accountant')),
+  );
   const isNativeFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
@@ -216,7 +219,7 @@
                     p.status,
                   )}"
                   onclick={(event) => togglePeriod(p, event)}
-                  disabled={isNativeFake || !isAdmin || p.status === 'closing'}
+                  disabled={isNativeFake || !canSwitchPeriod || p.status === 'closing'}
                 >
                   <span
                     class="relative h-4 w-7 rounded-full {p.status === 'open'
