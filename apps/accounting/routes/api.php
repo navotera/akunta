@@ -41,6 +41,7 @@ Route::middleware('web')->group(function () {
     Route::get('auth/integration-status', [EcopaIntegrationController::class, 'publicStatus']);
     Route::post('auth/ecopa-registration', [EcopaIntegrationController::class, 'register'])
         ->middleware('throttle:5,1');
+    Route::post('auth/ecopa-registration/cancel', [EcopaIntegrationController::class, 'cancel']);
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::post('auth/local-login', [AuthController::class, 'localLogin']);
     Route::post('auth/logout', [AuthController::class, 'logout']);

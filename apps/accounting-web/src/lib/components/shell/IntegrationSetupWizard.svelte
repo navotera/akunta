@@ -7,6 +7,7 @@
   let status = $state<EcopaIntegrationStatus | null>(null);
   let loading = $state(true);
   let saving = $state(false);
+  let cancelling = $state(false);
   let error = $state<string | null>(null);
   let ecopaUrl = $state('');
   let registrationToken = $state('');
@@ -48,6 +49,21 @@
       error = caught instanceof Error ? caught.message : String(caught);
     } finally {
       saving = false;
+    }
+  }
+
+  async function cancelRegistration() {
+    if (!window.confirm('Batalkan setup integrasi dan mulai dari awal?')) return;
+
+    cancelling = true;
+    error = null;
+    try {
+      status = await ecopaIntegrationApi.cancelRegistration();
+      registrationToken = '';
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      cancelling = false;
     }
   }
 </script>
@@ -96,6 +112,15 @@
           onclick={() => loadStatus()}
         >
           Periksa sekarang
+        </button>
+        <button
+          type="button"
+          class="mt-3 rounded-md border border-danger px-4 py-2 text-sm font-medium text-danger hover:bg-danger-light disabled:opacity-60"
+          onclick={cancelRegistration}
+          disabled={cancelling}
+          data-testid="ecopa-registration-cancel"
+        >
+          {cancelling ? 'Membatalkanâ€¦' : 'Cancel integration'}
         </button>
       </div>
     {:else}

@@ -198,6 +198,9 @@
 
   const ecosystemOpen = $derived(isGroupOpen('Ekosistem'));
   const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
+  const canSwitchPeriod = $derived(
+    Boolean(isAdmin || auth.user?.roles.some((role) => role.toLowerCase() === 'accountant')),
+  );
   const isInspector = $derived(
     auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
   );
@@ -359,7 +362,7 @@
   let displayedApps = $derived(showingPreview ? ECO_PREVIEW : ecosystem.apps);
 
   function pickPeriod(id: string) {
-    if (!isAdmin) return;
+    if (!canSwitchPeriod) return;
     period.switch(id);
     periodMenuOpen = false;
     // Dashboard and reports are period-scoped. Remount every page so no data
@@ -756,7 +759,7 @@
                         ? 'bg-primary-light/40 text-primary-active font-semibold'
                         : 'text-text-default'}"
                       onclick={() => pickPeriod(p.id)}
-                      disabled={!isAdmin || p.status !== 'open'}
+                      disabled={!canSwitchPeriod || p.status !== 'open'}
                       role="option"
                       aria-selected={isActive}
                     >

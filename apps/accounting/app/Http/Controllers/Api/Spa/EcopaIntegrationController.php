@@ -35,6 +35,11 @@ class EcopaIntegrationController extends Controller
         return response()->json(['data' => $status]);
     }
 
+    public function cancel(): JsonResponse
+    {
+        return response()->json(['data' => $this->integration->cancelPendingRegistration()]);
+    }
+
     public function show(): JsonResponse
     {
         return response()->json(['data' => $this->integration->status()]);

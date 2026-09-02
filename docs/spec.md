@@ -771,6 +771,11 @@ sebelumnya wajib dibuang ketika workspace diganti; karena PT. Fake Data hanya
 memiliki periode native 2026, periode itulah yang aktif walaupun user berpindah
 dari entitas dengan periode 2028 atau tahun lain.
 
+Admin, Super Admin, dan user dengan role `accountant` dapat mengganti periode
+aktif pada entitas yang menjadi scope assignment-nya. Aktivasi tersebut menutup
+periode aktif sebelumnya secara atomik; role lain tidak memperoleh izin
+aktivasi hanya karena dapat membaca daftar periode.
+
 `PT. Fake Data` dapat diaktifkan atau dinonaktifkan secara independen dari
 Settings. Entitas nonaktif tetap tampil di daftar Settings tetapi tidak muncul
 di pemilih entitas pada toolbar. Entitas demo aktif diberi badge dataset dan

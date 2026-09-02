@@ -149,7 +149,7 @@ class PeriodController extends Controller
         $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
-        $this->assertAdminCanActivate();
+        $this->assertCanActivate($entity->id);
 
         DB::transaction(function () use ($entity, $period): void {
             $current = Period::query()
@@ -209,19 +209,26 @@ class PeriodController extends Controller
         }
     }
 
-    private function assertAdminCanActivate(): void
+    private function assertCanActivate(string $entityId): void
     {
         $user = Auth::user();
-        $isAdmin = $user !== null
+        $canActivate = $user !== null
             && ((method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
                 || session('ecopa.app_role') === 'admin'
                 || $user->assignments()
                     ->whereNull('revoked_at')
-                    ->whereHas('role', fn ($query) => $query->whereIn('code', ['admin', 'super_admin']))
+                    ->where(function ($query) use ($entityId): void {
+                        $query->whereNull('entity_id')->orWhere('entity_id', $entityId);
+                    })
+                    ->whereHas('role', fn ($query) => $query->whereIn('code', [
+                        'accountant',
+                        'admin',
+                        'super_admin',
+                    ]))
                     ->exists());
 
-        if (! $isAdmin) {
-            abort(403, 'Hanya admin yang dapat mengaktifkan periode.');
+        if (! $canActivate) {
+            abort(403, 'Hanya admin, super admin, atau accountant yang dapat mengaktifkan periode.');
         }
     }
 

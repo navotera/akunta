@@ -65,4 +65,10 @@ export const ecopaIntegrationApi = {
       json: input,
       skipAuthRedirect: true,
     }).then((r) => r.data),
+
+  cancelRegistration: () =>
+    api<{ data: EcopaIntegrationStatus }>('/api/auth/ecopa-registration/cancel', {
+      method: 'POST',
+      skipAuthRedirect: true,
+    }).then((r) => r.data),
 };

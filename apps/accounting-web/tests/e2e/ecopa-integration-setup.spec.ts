@@ -30,6 +30,23 @@ test('first access asks only for Ecopa URL and registration token, then waits fo
   await expect(page.getByText('https://accounting.example.test/webhooks/ecopa')).toBeVisible();
 });
 
+test('cancels a pending registration so setup can start again', async ({ page }) => {
+  let pending = true;
+
+  await page.route('**/api/auth/integration-status', async (route) => {
+    await route.fulfill({ json: { data: integrationStatus(pending) } });
+  });
+  await page.route('**/api/auth/ecopa-registration/cancel', async (route) => {
+    pending = false;
+    await route.fulfill({ json: { data: integrationStatus(false) } });
+  });
+
+  await page.goto('/');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByTestId('ecopa-registration-cancel').click();
+  await expect(page.getByTestId('ecopa-registration-token')).toBeVisible();
+});
+
 test('configured but inactive integration shows the local login form', async ({ page }) => {
   const status = {
     ...integrationStatus(false),
