@@ -221,14 +221,13 @@ class PeriodController extends Controller
                         $query->whereNull('entity_id')->orWhere('entity_id', $entityId);
                     })
                     ->whereHas('role', fn ($query) => $query->whereIn('code', [
-                        'accountant',
                         'admin',
                         'super_admin',
                     ]))
                     ->exists());
 
         if (! $canActivate) {
-            abort(403, 'Hanya admin, super admin, atau accountant yang dapat mengaktifkan periode.');
+            abort(403, 'Hanya admin atau super admin yang dapat mengaktifkan kembali periode.');
         }
     }
 

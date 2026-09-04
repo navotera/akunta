@@ -113,7 +113,7 @@ it('allows an admin to switch active period while the previous period has drafts
     expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
 });
 
-it('allows an accountant assigned to the entity to switch the active period', function () {
+it('does not allow an accountant assigned to the entity to reactivate a period', function () {
     $accountant = Role::create([
         'code' => 'accountant',
         'name' => 'Accountant',
@@ -134,10 +134,10 @@ it('allows an accountant assigned to the entity to switch the active period', fu
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
-        ->assertOk()
-        ->assertJsonPath('data.status', Period::STATUS_OPEN);
+        ->assertForbidden();
 
-    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
+    expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
+        ->and($next->refresh()->status)->toBe(Period::STATUS_CLOSED);
 });
 
 it('allows a local admin role to switch the active period', function (string $roleCode) {
