@@ -4,7 +4,7 @@ const ENTITY_ID = '01J00000000000000000001001';
 const OPEN_PERIOD_ID = '01J00000000000000000001002';
 const CLOSED_PERIOD_ID = '01J00000000000000000001003';
 
-test('accountant can activate another accounting period', async ({ page }) => {
+test('admin can activate another accounting period', async ({ page }) => {
   let activePeriodId = OPEN_PERIOD_ID;
   let reopenRequests = 0;
 
@@ -20,16 +20,16 @@ test('accountant can activate another accounting period', async ({ page }) => {
         json: {
           data: {
             id: '01J00000000000000000001004',
-            name: 'Accountant User',
-            email: 'accountant@example.test',
-            roles: ['accountant'],
+            name: 'Admin User',
+            email: 'admin@example.test',
+            roles: ['admin'],
             is_sso_admin: false,
-            is_admin: false,
+            is_admin: true,
             tenants: [
               {
                 id: ENTITY_ID,
                 tenant_id: '01J00000000000000000001005',
-                name: 'PT Accountant',
+                name: 'PT Admin',
                 slug: null,
                 theme_color: 'blue',
                 logo_url: null,

@@ -70,10 +70,15 @@ class SuperAdminSeeder extends Seeder
             $year = Carbon::now()->year;
 
             foreach ($entities as $entityName) {
-                $entity = Entity::firstOrCreate(
+                Entity::firstOrCreate(
                     ['tenant_id' => $tenant->id, 'name' => $entityName],
                     ['relation_type' => 'independent'],
                 );
+            }
+
+            // The seeded Super Admin must retain access when additional
+            // workspaces already exist under this tenant.
+            foreach (Entity::query()->where('tenant_id', $tenant->id)->get() as $entity) {
 
                 UserAppAssignment::firstOrCreate(
                     [

@@ -18,13 +18,21 @@
   let form = $state<PeriodInput>({ name: '', start_date: '', end_date: '' });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
+  let reopenDenied = $state(false);
   const pageSize = 10;
   let currentPage = $state(1);
   let totalPages = $derived(Math.max(1, Math.ceil(items.length / pageSize)));
   let visibleItems = $derived(items.slice((currentPage - 1) * pageSize, currentPage * pageSize));
-  const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
-  const canSwitchPeriod = $derived(
-    Boolean(isAdmin || auth.user?.roles.some((role) => role.toLowerCase() === 'accountant')),
+  const canReopenPeriod = $derived(
+    Boolean(
+      auth.user?.is_sso_admin ||
+      auth.user?.roles.some((role) => ['admin', 'super_admin'].includes(role.toLowerCase())),
+    ),
+  );
+  const canClosePeriod = $derived(
+    Boolean(
+      canReopenPeriod || auth.user?.roles.some((role) => role.toLowerCase() === 'accountant'),
+    ),
   );
   const isNativeFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
@@ -113,6 +121,10 @@
       closeForm();
       await load();
     } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        reopenDenied = true;
+        return;
+      }
       alert(e instanceof Error ? e.message : String(e));
     }
   }
@@ -219,7 +231,9 @@
                     p.status,
                   )}"
                   onclick={(event) => togglePeriod(p, event)}
-                  disabled={isNativeFake || !canSwitchPeriod || p.status === 'closing'}
+                  disabled={isNativeFake ||
+                    (p.status === 'open' ? !canClosePeriod : false) ||
+                    p.status === 'closing'}
                 >
                   <span
                     class="relative h-4 w-7 rounded-full {p.status === 'open'
@@ -370,6 +384,27 @@
           {/if}
         </div>
       </div>
+    </div>
+  </div>
+{/if}
+
+{#if reopenDenied}
+  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+    <div
+      class="w-full max-w-sm rounded-lg bg-card-bg p-6 text-center shadow-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reopen-denied-title"
+    >
+      <h2 id="reopen-denied-title" class="text-lg font-bold">Akses Ditolak</h2>
+      <p class="mt-3 text-sm text-text-muted">Hubungi admin untuk mengaktifkan periode lain</p>
+      <button
+        type="button"
+        class="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={() => (reopenDenied = false)}
+      >
+        Tutup
+      </button>
     </div>
   </div>
 {/if}
