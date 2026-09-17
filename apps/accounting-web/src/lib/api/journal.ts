@@ -70,6 +70,8 @@ export interface JournalAuditTrailItem {
   snapshot: JournalAuditSnapshot | null;
   attachment_change: string | null;
   review_note?: string | null;
+  status_from?: JournalStatus | null;
+  status_to?: JournalStatus | null;
 }
 
 export interface JournalListResponse {
@@ -148,6 +150,13 @@ export const journalApi = {
 
   submit: (id: string, tenantSlug?: string | null) =>
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/submit`, {
+      method: 'POST',
+      json: {},
+      tenantSlug,
+    }).then((r) => r.data),
+
+  cancelReview: (id: string, tenantSlug?: string | null) =>
+    api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/cancel-review`, {
       method: 'POST',
       json: {},
       tenantSlug,

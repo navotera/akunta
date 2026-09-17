@@ -326,6 +326,44 @@ it('allows an admin to edit a submitted journal mode and send it for revision', 
         ->assertJsonPath('data.review_note', 'Lengkapi bukti transaksi.');
 });
 
+it('allows a submitter to cancel review and records the status transition', function () {
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-051',
+        'date' => '2026-05-15',
+        'memo' => 'Cancel review test',
+        'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 1,
+        'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 2,
+        'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100,
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/journals/{$journal->id}/cancel-review");
+
+    $response->assertOk()
+        ->assertJsonPath('data.status', Journal::STATUS_DRAFT)
+        ->assertJsonPath('data.audit_trail.0.action', 'journal.cancel_review')
+        ->assertJsonPath('data.audit_trail.0.status_from', Journal::STATUS_SUBMITTED)
+        ->assertJsonPath('data.audit_trail.0.status_to', Journal::STATUS_DRAFT);
+
+    $audit = AuditLog::query()
+        ->where('resource_id', $journal->id)
+        ->where('action', 'journal.cancel_review')
+        ->firstOrFail();
+
+    expect($audit->metadata['status_from'])->toBe(Journal::STATUS_SUBMITTED);
+});
+
 it('rejects unbalanced journal create with 422', function () {
     $payload = [
         'number' => 'JU-X',

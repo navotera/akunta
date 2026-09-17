@@ -63,7 +63,8 @@ it('imports COA and provisions scoped impersonation accounts for User & Roles', 
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/users/import')
         ->assertOk()
-        ->assertJsonCount(3, 'data.users');
+        ->assertJsonCount(3, 'data.users')
+        ->assertJsonPath('data.users.0.roles.0', 'Accountant');
 
     $fakeUserId = $users->json('data.users.0.id');
     expect(Account::where('entity_id', $this->entity->id)->exists())->toBeTrue()

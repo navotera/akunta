@@ -5,7 +5,7 @@ const OPEN_PERIOD_ID = '01J00000000000000000001002';
 const CLOSED_PERIOD_ID = '01J00000000000000000001003';
 
 test('admin can activate another accounting period', async ({ page }) => {
-  let activePeriodId = OPEN_PERIOD_ID;
+  let targetActivated = false;
   let reopenRequests = 0;
 
   await page.addInitScript((entityId) => {
@@ -53,7 +53,7 @@ test('admin can activate another accounting period', async ({ page }) => {
 
     if (url.pathname === `/api/v1/spa/periods/${CLOSED_PERIOD_ID}/reopen`) {
       reopenRequests += 1;
-      activePeriodId = CLOSED_PERIOD_ID;
+      targetActivated = true;
       await route.fulfill({ json: { data: periodRecord(CLOSED_PERIOD_ID, '2025', 'open') } });
       return;
     }
@@ -65,12 +65,12 @@ test('admin can activate another accounting period', async ({ page }) => {
             periodRecord(
               OPEN_PERIOD_ID,
               '2026',
-              activePeriodId === OPEN_PERIOD_ID ? 'open' : 'closed',
+              'open',
             ),
             periodRecord(
               CLOSED_PERIOD_ID,
               '2025',
-              activePeriodId === CLOSED_PERIOD_ID ? 'open' : 'closed',
+              targetActivated ? 'open' : 'closed',
             ),
           ],
         },

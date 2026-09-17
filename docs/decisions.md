@@ -1277,3 +1277,13 @@ timing, and a bounded message are retained for 12 months. Read access is
 limited to Admin Aplikasi through Settings > Integration and the authenticated
 SPA API; scheduled pruning covers both ordinary webhook deliveries and Ecopa
 inbound webhook logs.
+
+## Locked 2026-09-17 — multiple open periods for admin activation
+
+Admin dan Super Admin boleh mengaktifkan lebih dari satu periode yang tidak
+saling tumpang tindih pada satu entitas. Endpoint aktivasi (`reopen`) hanya
+membuka periode target dan tidak lagi menutup periode terbuka lain. Periode
+aktif untuk dashboard dan input jurnal tetap dipilih per sesi/browser melalui
+`ActivePeriod`; status `open` adalah syarat periode dapat dipilih, bukan tanda
+bahwa entitas hanya memiliki satu periode aktif. Accountant dan role lain tetap
+tidak boleh melakukan reaktivasi kecuali diberi otorisasi produk tersendiri.

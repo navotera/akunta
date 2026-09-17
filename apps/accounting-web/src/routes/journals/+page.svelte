@@ -70,7 +70,9 @@
         ? 'bg-danger-light text-danger'
         : s === 'submitted'
           ? 'bg-warning-light text-warning'
-          : 'bg-info-light text-info';
+          : s === 'draft'
+            ? 'bg-[#f1df9a] text-[#b38c00]'
+            : 'bg-info-light text-info';
   }
 
   function statusLabel(s: JournalSummary['status']): string {

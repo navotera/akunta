@@ -14,6 +14,7 @@ export interface JournalDraft {
   reference: string;
   entries_debit: JournalDraftRow[];
   entries_credit: JournalDraftRow[];
+  attachments_not_available?: boolean;
 }
 
 function storageKey(pathname: string): string {

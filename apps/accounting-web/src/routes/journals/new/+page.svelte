@@ -131,7 +131,7 @@
       const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
       await Promise.all(
         journals.map((journal) =>
-          auth.user?.roles?.includes('operator')
+          auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')
             ? journalApi.submit(journal.id)
             : journalApi.post(journal.id),
         ),

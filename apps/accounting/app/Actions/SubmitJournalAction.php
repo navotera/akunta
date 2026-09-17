@@ -19,6 +19,7 @@ class SubmitJournalAction extends BaseAction
             throw new \DomainException('Jurnal hanya dapat diajukan dari status draft atau ditolak.');
         }
 
+        $statusFrom = $journal->status;
         $this->validator->validate($journal);
         $journal->forceFill([
             'status' => Journal::STATUS_SUBMITTED,
@@ -26,7 +27,12 @@ class SubmitJournalAction extends BaseAction
             'reviewed_by' => null,
             'reviewed_at' => null,
         ])->save();
-        $this->audit('journal.submit', Journal::class, $journal->id, $journal->entity_id, ['journal_number' => $journal->number], $user?->id);
+        $this->audit('journal.submit', Journal::class, $journal->id, $journal->entity_id, [
+            'journal_number' => $journal->number,
+            'status_from' => $statusFrom,
+            'status_to' => Journal::STATUS_SUBMITTED,
+        ], $user?->id);
+
         return $journal->refresh();
     }
 }

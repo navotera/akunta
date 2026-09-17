@@ -36,6 +36,8 @@ async function fillAmount(
 ) {
   const input = panel.getByTestId('entry-amount').nth(rowIndex);
   await input.fill(amount);
+  const expectedDisplay = amount.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  await expect(input).toHaveValue(expectedDisplay);
   await input.blur();
 }
 
@@ -54,6 +56,9 @@ test('creates a balanced draft journal and posts it', async ({ page }) => {
 
   const debit = page.getByTestId('debit-panel');
   const credit = page.getByTestId('credit-panel');
+  await expect(debit.getByTestId('entry-amount')).toHaveCount(1);
+  const noAttachment = page.getByTestId('journal-no-attachment');
+  await expect(noAttachment).toBeVisible();
 
   await pickFirstAccount(debit, 0);
   await fillAmount(debit, 0, '100000');
@@ -64,6 +69,13 @@ test('creates a balanced draft journal and posts it', async ({ page }) => {
   // Posting button must be enabled when balanced.
   const postingBtn = page.getByTestId('posting-jurnal');
   await expect(postingBtn).toBeEnabled();
+
+  await postingBtn.click();
+  await expect(page.getByTestId('error-attachments')).toHaveText(
+    'Lampiran wajib diisi atau centang “Lampiran tidak ada”.',
+  );
+  await noAttachment.check();
+  await expect(page.getByTestId('error-attachments')).toHaveCount(0);
 
   const createReq = page.waitForResponse(
     (r) =>

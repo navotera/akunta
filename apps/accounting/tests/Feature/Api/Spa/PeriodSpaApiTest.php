@@ -50,6 +50,25 @@ it('creates a period and rejects overlap', function () {
         ->assertStatus(422);
 });
 
+it('rejects a new period fully contained by an existing period', function () {
+    Period::create([
+        'entity_id' => $this->entity->id,
+        'name' => 'Tahun 2025',
+        'start_date' => '2025-01-01',
+        'end_date' => '2025-12-31',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/periods', [
+            'name' => 'Juli-November 2025',
+            'start_date' => '2025-07-04',
+            'end_date' => '2025-11-04',
+        ])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['start_date']);
+});
+
 it('closes a period without drafts and reopens it', function () {
     $period = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'Apr',
@@ -87,7 +106,7 @@ it('creates a new period as closed while another period is active', function () 
         ->assertJsonPath('data.status', 'closed');
 });
 
-it('allows an admin to switch active period while the previous period has drafts', function () {
+it('allows an admin to activate another period while the previous period has drafts', function () {
     $current = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'Periode Lama',
         'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
@@ -110,7 +129,8 @@ it('allows an admin to switch active period while the previous period has drafts
         ->assertOk()
         ->assertJsonPath('data.status', 'open');
 
-    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED);
+    expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
+        ->and($next->refresh()->status)->toBe(Period::STATUS_OPEN);
 });
 
 it('does not allow an accountant assigned to the entity to reactivate a period', function () {
@@ -163,9 +183,38 @@ it('allows a local admin role to switch the active period', function (string $ro
         ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
         ->assertOk();
 
-    expect($current->refresh()->status)->toBe(Period::STATUS_CLOSED)
+    expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
         ->and($next->refresh()->status)->toBe(Period::STATUS_OPEN);
 })->with(['admin', 'super_admin']);
+
+it('allows an admin to activate multiple periods without closing earlier ones', function () {
+    $first = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Pertama',
+        'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
+    ]);
+    $second = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Kedua',
+        'start_date' => '2026-02-01', 'end_date' => '2026-02-28',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+    $third = Period::create([
+        'entity_id' => $this->entity->id, 'name' => 'Periode Ketiga',
+        'start_date' => '2026-03-01', 'end_date' => '2026-03-31',
+        'status' => Period::STATUS_CLOSED,
+    ]);
+
+    $request = fn (string $periodId) => $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson("/api/v1/spa/periods/{$periodId}/reopen", []);
+
+    $request($second->id)->assertOk();
+    $request($third->id)->assertOk();
+
+    expect($first->refresh()->status)->toBe(Period::STATUS_OPEN)
+        ->and($second->refresh()->status)->toBe(Period::STATUS_OPEN)
+        ->and($third->refresh()->status)->toBe(Period::STATUS_OPEN);
+});
 
 it('does not let another role switch the active period', function () {
     $current = Period::create([

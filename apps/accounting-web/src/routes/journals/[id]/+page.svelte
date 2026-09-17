@@ -132,7 +132,7 @@
           attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
         ),
       );
-      if (auth.user?.roles?.includes('operator')) {
+      if (auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')) {
         await journalApi.submit(updated.id);
       } else {
         await journalApi.post(updated.id);
@@ -182,7 +182,7 @@
 
   async function rejectReview(payload: FormPayload) {
     if (!detail) return;
-    const note = window.prompt('Catatan revisi untuk operator:');
+    const note = window.prompt('Catatan revisi untuk accountant:');
     if (!note?.trim()) return;
     saving = true;
     serverErrors = null;
@@ -219,6 +219,23 @@
       saving = false;
     }
   }
+
+  async function cancelReview() {
+    if (!detail || !window.confirm('Batalkan pengajuan review dan kembalikan jurnal ke Draft?'))
+      return;
+
+    saving = true;
+    serverErrors = null;
+    serverMessage = null;
+    try {
+      await journalApi.cancelReview(detail.id);
+      goto('/journals');
+    } catch (e) {
+      captureError(e);
+    } finally {
+      saving = false;
+    }
+  }
 </script>
 
 {#if !detail}
@@ -235,7 +252,7 @@
           <p class="mt-1 text-sm text-text-muted">
             {isNativeFake
               ? 'Jurnal demo Tersimpan bersifat read-only untuk semua role. Gunakan Reset Dataset Demo untuk memulihkan data bawaan.'
-              : 'Jurnal Tersimpan dan terkunci untuk operator.'}
+              : 'Jurnal Tersimpan dan terkunci untuk accountant.'}
           </p>
         </div>
         <span class="rounded-full bg-paid px-3 py-1 text-xs font-semibold text-white"
@@ -315,13 +332,23 @@
     auditTrail={detail.audit_trail}
   />
 {:else if detail.status === 'submitted'}
-  <div class="mx-auto max-w-3xl space-y-4 p-6">
-    <div class="rounded-xl border border-warning/30 bg-warning-light p-5">
-      <h1 class="text-xl font-bold">Jurnal {detail.number} menunggu review</h1>
-      <p class="mt-1 text-sm text-text-muted">Jurnal sedang menunggu pemeriksaan supervisor.</p>
-      {#if serverMessage}<p class="mt-3 text-sm text-danger">{serverMessage}</p>{/if}
-    </div>
-  </div>
+  <JournalForm
+    initial={detail}
+    {accounts}
+    {templates}
+    {saving}
+    {serverErrors}
+    {serverMessage}
+    readOnly={true}
+    allowPosting={false}
+    title={`Jurnal ${detail.number}`}
+    breadcrumb={`Transaksi / Review Jurnal / ${detail.number}`}
+    onSaveDraft={saveDraft}
+    onPosting={postingJurnal}
+    onCancelReview={cancelReview}
+    onCancel={cancel}
+    auditTrail={detail.audit_trail}
+  />
 {:else}
   <JournalForm
     initial={detail}

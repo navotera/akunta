@@ -43,7 +43,7 @@ class FakeDataService
         'journal_templates' => ['label' => 'Template Jurnal IT', 'description' => 'Template SaaS, hosting, cloud, payroll, dan penyusutan untuk latihan.'],
         'recurring_journals' => ['label' => 'Jurnal Berulang', 'description' => 'Jadwal berulang untuk SaaS, cloud, dan payroll pada periode pilihan.', 'requires_period' => true],
         'journals' => ['label' => 'Jurnal & Laporan Demo', 'description' => 'Jurnal Intern dan Fiskal yang mengisi dashboard, neraca saldo, neraca, buku besar, dan buku pembantu.', 'requires_period' => true],
-        'users' => ['label' => 'User & Roles Demo', 'description' => 'Akun operator, supervisor, dan Inspector untuk menguji alur review jurnal serta inspeksi read-only.'],
+        'users' => ['label' => 'User & Roles Demo', 'description' => 'Akun accountant, supervisor, dan Inspector untuk menguji alur review jurnal serta inspeksi read-only.'],
         'auto_mapping' => ['label' => 'Auto Mapping Raw Data', 'description' => '30 contoh JSON transaksi dari payroll, kas kecil, POS, bank, pajak, dan sumber eksternal lain.'],
     ];
 
@@ -755,7 +755,7 @@ class FakeDataService
             throw new \RuntimeException('Aplikasi accounting belum terdaftar.');
         }
         $created = 0;
-        foreach ([['operator', 'Demo Operator', 'operator'], ['supervisor', 'Demo Supervisor', 'supervisor'], ['inspector', 'Demo Inspector', 'inspector']] as [$key, $name, $roleCode]) {
+        foreach ([['accountant', 'Demo Accountant', 'accountant'], ['supervisor', 'Demo Supervisor', 'supervisor'], ['inspector', 'Demo Inspector', 'inspector']] as [$key, $name, $roleCode]) {
             $legacyEmail = "{$key}.fake@akunta.local";
             $legacyUser = User::where('email', $legacyEmail)->first();
             $legacyIsMarkedHere = $legacyUser && FakeDataRecord::where('entity_id', $entity->id)
@@ -778,7 +778,7 @@ class FakeDataService
                 ['code' => $roleCode, 'tenant_id' => null],
                 [
                     'name' => match ($roleCode) {
-                        'operator' => 'Operator',
+                        'accountant' => 'Accountant',
                         'supervisor' => 'Supervisor',
                         'inspector' => 'Inspector',
                         default => ucfirst($roleCode),

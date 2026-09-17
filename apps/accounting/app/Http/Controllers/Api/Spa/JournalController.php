@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\Spa;
 use Akunta\Audit\Models\AuditLog;
 use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\Entity;
+use App\Actions\CancelJournalReviewAction;
 use App\Actions\PostJournalAction;
 use App\Actions\RejectJournalAction;
 use App\Actions\ReverseJournalAction;
@@ -34,6 +35,7 @@ class JournalController extends Controller
 
     public function __construct(
         private readonly PostJournalAction $postJournal,
+        private readonly CancelJournalReviewAction $cancelJournalReview,
         private readonly SubmitJournalAction $submitJournal,
         private readonly RejectJournalAction $rejectJournal,
         private readonly ReverseJournalAction $reverseJournal,
@@ -346,6 +348,23 @@ class JournalController extends Controller
         }
 
         return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
+    }
+
+    public function cancelReview(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.submit', $entity);
+        $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+
+        try {
+            $journal = $this->cancelJournalReview->execute($journal, Auth::user());
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages(['cancel_review' => $e->getMessage()]);
+        }
+
+        return response()->json(['data' => array_merge($this->detail($journal->fresh('entries.account')), [
+            'audit_trail' => $this->auditTrail($journal),
+        ])]);
     }
 
     public function reject(Request $request, string $id): JsonResponse
@@ -664,7 +683,15 @@ class JournalController extends Controller
         return AuditLog::query()->with('actor:id,name')
             ->where('resource_type', Journal::class)
             ->where('resource_id', $j->id)
-            ->whereIn('action', ['journal.updated', 'journal.attachment_changed', 'journal.reject'])
+            ->whereIn('action', [
+                'journal.updated',
+                'journal.attachment_changed',
+                'journal.submit',
+                'journal.reject',
+                'journal.cancel_review',
+                'journal.post',
+                'journal.reverse',
+            ])
             ->latest('created_at')->get()->map(fn (AuditLog $log): array => [
                 'id' => $log->id,
                 'action' => $log->action,
@@ -673,6 +700,8 @@ class JournalController extends Controller
                 'snapshot' => data_get($log->metadata, 'snapshot'),
                 'attachment_change' => data_get($log->metadata, 'attachment_change'),
                 'review_note' => data_get($log->metadata, 'note'),
+                'status_from' => data_get($log->metadata, 'status_from'),
+                'status_to' => data_get($log->metadata, 'status_to'),
             ])->values()->all();
     }
 }

@@ -19,11 +19,12 @@ class ReverseJournalAction extends BaseAction
             throw JournalException::notPosted($journal->status);
         }
 
+        $statusFrom = $journal->status;
         $journal->loadMissing('entries');
 
         $this->fireBefore(Hooks::JOURNAL_BEFORE_REVERSE, $journal, $user);
 
-        $reversal = $this->runInTransaction(function () use ($journal, $user, $reason) {
+        $reversal = $this->runInTransaction(function () use ($journal, $user, $reason, $statusFrom) {
             $reversal = Journal::create([
                 'entity_id' => $journal->entity_id,
                 'period_id' => $journal->period_id,
@@ -67,6 +68,8 @@ class ReverseJournalAction extends BaseAction
                     'original_number' => $journal->number,
                     'reversal_id' => $reversal->id,
                     'reason' => $reason,
+                    'status_from' => $statusFrom,
+                    'status_to' => Journal::STATUS_REVERSED,
                 ],
                 actorUserId: $user?->id,
             );
