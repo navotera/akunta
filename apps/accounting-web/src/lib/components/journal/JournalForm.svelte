@@ -73,6 +73,7 @@
     date: string;
     memo: string;
     reference: string | null;
+    is_bookmarked?: boolean;
     attachments: File[];
     entries_debit: Row[];
     entries_credit: Row[];
@@ -202,6 +203,7 @@
     })),
   );
   let appliedTemplateId = $state<string | null>(null);
+  let bookmarkTemplate = $state(false);
 
   // ensure starting rows
   if (debits.length === 0) debits = [blankRow()];
@@ -217,6 +219,7 @@
 
     journalMode = currentTemplate.journal_mode;
     memo = currentTemplate.description ?? '';
+    bookmarkTemplate = currentTemplate.is_bookmarked === true;
     debits = currentTemplate.lines
       .filter((line) => line.side === 'debit')
       .map((line) => ({
@@ -400,6 +403,7 @@
       date,
       memo,
       reference: reference || null,
+      is_bookmarked: templateMode ? bookmarkTemplate : undefined,
       attachments,
       entries_debit: clean(debits),
       entries_credit: clean(credits),
@@ -673,73 +677,75 @@
           <AddLineButton side="credit" onclick={addCredit} />
         </section>
 
-        <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
-          <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
-            Lampiran{#if !templateMode && !initial}
-              <span class="text-danger">*</span>{/if}
-          </h2>
-          <input
-            bind:this={attachmentInput}
-            class="sr-only"
-            type="file"
-            accept="application/pdf,image/jpeg,image/png"
-            multiple
-            onchange={(event) => selectAttachments(event.currentTarget.files)}
-            data-testid="journal-attachments-input"
-          />
-          <button
-            type="button"
-            class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
-            onclick={() => attachmentInput?.click()}
-            data-testid="journal-attachments-picker"
-          >
-            Klik untuk pilih file
-            <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span>
-          </button>
-          {#if !templateMode && !initial}
-            <label class="mt-3 flex items-center gap-2 text-sm text-text-muted">
-              <input
-                type="checkbox"
-                checked={noAttachment}
-                onchange={toggleNoAttachment}
-                data-testid="journal-no-attachment"
-              />
-              <span>Lampiran tidak ada</span>
-            </label>
-          {/if}
-          {#if attachmentError}
-            <span class="mt-2 block text-xs text-danger" data-testid="error-attachments"
-              >{attachmentError}</span
+        {#if !templateMode}
+          <section class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">
+              Lampiran{#if !templateMode && !initial}
+                <span class="text-danger">*</span>{/if}
+            </h2>
+            <input
+              bind:this={attachmentInput}
+              class="sr-only"
+              type="file"
+              accept="application/pdf,image/jpeg,image/png"
+              multiple
+              onchange={(event) => selectAttachments(event.currentTarget.files)}
+              data-testid="journal-attachments-input"
+            />
+            <button
+              type="button"
+              class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
+              onclick={() => attachmentInput?.click()}
+              data-testid="journal-attachments-picker"
             >
-          {/if}
-          {#if attachments.length > 0}
-            <ul class="mt-3 space-y-2">
-              {#each attachments as file, index (file.name + file.lastModified)}
-                <li
-                  class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
-                >
-                  <button
-                    type="button"
-                    class="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary"
-                    onclick={() => openAttachmentPreview(file)}
-                    title="Klik untuk melihat lampiran"
-                    data-testid="journal-attachment-preview-{index}"
+              Klik untuk pilih file
+              <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span>
+            </button>
+            {#if !templateMode && !initial}
+              <label class="mt-3 flex items-center gap-2 text-sm text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={noAttachment}
+                  onchange={toggleNoAttachment}
+                  data-testid="journal-no-attachment"
+                />
+                <span>Lampiran tidak ada</span>
+              </label>
+            {/if}
+            {#if attachmentError}
+              <span class="mt-2 block text-xs text-danger" data-testid="error-attachments"
+                >{attachmentError}</span
+              >
+            {/if}
+            {#if attachments.length > 0}
+              <ul class="mt-3 space-y-2">
+                {#each attachments as file, index (file.name + file.lastModified)}
+                  <li
+                    class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
                   >
-                    <span class="shrink-0 text-xs font-semibold uppercase text-text-muted">
-                      {file.type === 'application/pdf' ? 'PDF' : 'IMG'}
-                    </span>
-                    <span class="min-w-0 truncate">{file.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    class="shrink-0 text-xs font-medium text-danger hover:underline"
-                    onclick={() => (attachmentToRemove = index)}>Hapus</button
-                  >
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary"
+                      onclick={() => openAttachmentPreview(file)}
+                      title="Klik untuk melihat lampiran"
+                      data-testid="journal-attachment-preview-{index}"
+                    >
+                      <span class="shrink-0 text-xs font-semibold uppercase text-text-muted">
+                        {file.type === 'application/pdf' ? 'PDF' : 'IMG'}
+                      </span>
+                      <span class="min-w-0 truncate">{file.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="shrink-0 text-xs font-medium text-danger hover:underline"
+                      onclick={() => (attachmentToRemove = index)}>Hapus</button
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </section>
+        {/if}
       </div>
 
       <!-- Sidebar -->
@@ -859,6 +865,32 @@
                 >
               {/if}
             </label>
+            {#if templateMode}
+              <label
+                class="flex cursor-pointer items-center gap-3 rounded-md border border-border-default bg-page-bg px-3 py-2.5 text-sm hover:border-primary"
+                data-testid="template-bookmark"
+              >
+                <input
+                  type="checkbox"
+                  bind:checked={bookmarkTemplate}
+                  class="h-4 w-4 rounded border-border-default text-primary focus:ring-primary"
+                />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill={bookmarkTemplate ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  class="h-5 w-5 text-primary"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M6 3.75A1.75 1.75 0 0 1 7.75 2h8.5A1.75 1.75 0 0 1 18 3.75v17.1a.5.5 0 0 1-.78.41L12 17.72l-5.22 3.54a.5.5 0 0 1-.78-.41V3.75Z"
+                  />
+                </svg>
+                <span class="font-medium">Bookmark Template ini</span>
+              </label>
+            {/if}
           </div>
         </section>
         {#if templateError}

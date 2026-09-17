@@ -43,6 +43,7 @@ it('creates a template with lines', function () {
     $payload = [
         'code' => 'TPL-SAL', 'name' => 'Penjualan Tunai',
         'journal_mode' => Journal::MODE_FISCAL,
+        'is_bookmarked' => true,
         'lines' => [
             ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0', 'memo' => null],
             ['account_id' => $this->revenue->id, 'side' => 'credit', 'amount' => '0', 'memo' => null],
@@ -56,6 +57,7 @@ it('creates a template with lines', function () {
     $res->assertCreated()
         ->assertJsonPath('data.code', 'TPL-SAL')
         ->assertJsonPath('data.journal_mode', Journal::MODE_FISCAL)
+        ->assertJsonPath('data.is_bookmarked', true)
         ->assertJsonCount(2, 'data.lines');
 
     expect(JournalTemplate::where('code', 'TPL-SAL')->exists())->toBeTrue();

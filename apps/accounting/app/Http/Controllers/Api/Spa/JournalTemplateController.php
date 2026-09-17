@@ -80,6 +80,7 @@ class JournalTemplateController extends Controller
                 'default_memo' => $data['default_memo'] ?? null,
                 'default_reference' => $data['default_reference'] ?? null,
                 'is_active' => $data['is_active'] ?? true,
+                'is_bookmarked' => $data['is_bookmarked'] ?? false,
                 'created_by' => Auth::id(),
             ]);
 
@@ -108,6 +109,7 @@ class JournalTemplateController extends Controller
                 'default_memo' => $data['default_memo'] ?? null,
                 'default_reference' => $data['default_reference'] ?? null,
                 'is_active' => $data['is_active'] ?? $template->is_active,
+                'is_bookmarked' => $data['is_bookmarked'] ?? $template->is_bookmarked,
             ])->save();
 
             $template->lines()->delete();

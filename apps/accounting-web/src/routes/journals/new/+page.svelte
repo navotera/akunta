@@ -165,6 +165,7 @@
         name: name.trim(),
         description: payload.memo || null,
         journal_mode: payload.journal_mode,
+        is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
           ...payload.entries_debit.map((line) => ({ ...line, side: 'debit' as const })),
           ...payload.entries_credit.map((line) => ({ ...line, side: 'credit' as const })),
@@ -191,6 +192,7 @@
         name: template.name,
         description: payload.memo || null,
         journal_mode: payload.journal_mode,
+        is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
           ...payload.entries_debit.map((line) => ({ ...line, side: 'debit' as const })),
           ...payload.entries_credit.map((line) => ({ ...line, side: 'credit' as const })),

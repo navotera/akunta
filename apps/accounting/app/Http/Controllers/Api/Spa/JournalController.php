@@ -56,20 +56,13 @@ class JournalController extends Controller
         }
         $perPage = min(100, max(5, (int) ($request->query('per_page', 20))));
 
-        $query = Journal::query()
-            ->where('entity_id', $entity->id)
-            ->withSum('entries as total_debit', 'debit')
-            ->latest('date')
-            ->latest('created_at');
+        $query = Journal::query()->where('entity_id', $entity->id);
 
         if ($mode !== null) {
             $this->authorizeBookRead($request, $mode);
             $query->where('journal_mode', $mode);
         }
 
-        if ($status = $request->query('status')) {
-            $query->where('status', $status);
-        }
         if ($periodId = $request->query('period_id')) {
             $query->where('period_id', $periodId);
         }
@@ -82,7 +75,34 @@ class JournalController extends Controller
             });
         }
 
-        $page = $query->paginate($perPage);
+        $statusQuery = clone $query;
+        $statusCounts = $statusQuery
+            ->reorder()
+            ->select('status', DB::raw('COUNT(*) as aggregate'))
+            ->groupBy('status')
+            ->pluck('aggregate', 'status')
+            ->map(fn ($count): int => (int) $count)
+            ->all();
+        $statusCounts = array_replace(
+            array_fill_keys([
+                Journal::STATUS_DRAFT,
+                Journal::STATUS_SUBMITTED,
+                Journal::STATUS_REJECTED,
+                Journal::STATUS_POSTED,
+                Journal::STATUS_REVERSED,
+            ], 0),
+            $statusCounts,
+        );
+
+        if ($status = $request->query('status')) {
+            $query->where('status', $status);
+        }
+
+        $page = $query
+            ->withSum('entries as total_debit', 'debit')
+            ->latest('date')
+            ->latest('created_at')
+            ->paginate($perPage);
 
         return response()->json([
             'data' => collect($page->items())->map(fn (Journal $j) => $this->summary($j))->all(),
@@ -91,6 +111,7 @@ class JournalController extends Controller
                 'last_page' => $page->lastPage(),
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
+                'status_counts' => $statusCounts,
             ],
         ]);
     }

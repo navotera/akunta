@@ -117,7 +117,9 @@ it('lists journals scoped to the tenant', function () {
     $res->assertOk()
         ->assertJsonPath('data.0.number', 'JU-2026-05-001')
         ->assertJsonPath('data.0.journal_mode', 'internal')
-        ->assertJsonPath('meta.total', 1);
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('meta.status_counts.draft', 1)
+        ->assertJsonPath('meta.status_counts.submitted', 0);
 });
 
 it('previews the next journal number for the selected date and mode', function () {
