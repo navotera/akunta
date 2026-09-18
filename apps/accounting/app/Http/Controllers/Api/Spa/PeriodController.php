@@ -151,24 +151,11 @@ class PeriodController extends Controller
 
         $this->assertCanActivate($entity->id);
 
-        DB::transaction(function () use ($entity, $period): void {
-            $current = Period::query()
-                ->where('entity_id', $entity->id)
-                ->where('status', Period::STATUS_OPEN)
-                ->where('id', '!=', $period->id)
-                ->first();
-
-            if ($current) {
-                // An explicit admin period switch may close the current
-                // period with drafts; the drafts remain attached to that
-                // period and can be handled when it is active again.
-                $current->forceFill([
-                    'status' => Period::STATUS_CLOSED,
-                    'closed_at' => now(),
-                    'closed_by' => Auth::id(),
-                ])->save();
-            }
-
+        DB::transaction(function () use ($period): void {
+            // Activation is scoped to the requesting session/browser. Keep
+            // other periods open so an admin can work across multiple
+            // non-overlapping periods without implicitly closing one that is
+            // still in progress (including periods with draft journals).
             $period->forceFill([
                 'status' => Period::STATUS_OPEN,
                 'closed_at' => null,
@@ -193,13 +180,11 @@ class PeriodController extends Controller
         $exists = Period::query()
             ->where('entity_id', $entityId)
             ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))
-            ->where(function ($q) use ($start, $end) {
-                $q->whereBetween('start_date', [$start, $end])
-                    ->orWhereBetween('end_date', [$start, $end])
-                    ->orWhere(function ($q2) use ($start, $end) {
-                        $q2->where('start_date', '<=', $start)->where('end_date', '>=', $end);
-                    });
-            })
+            // Two inclusive date ranges overlap when each starts before the
+            // other one ends. This catches contained, containing, partial,
+            // and exactly matching periods.
+            ->whereDate('start_date', '<=', $end)
+            ->whereDate('end_date', '>=', $start)
             ->exists();
 
         if ($exists) {

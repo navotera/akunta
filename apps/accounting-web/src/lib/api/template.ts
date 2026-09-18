@@ -42,6 +42,7 @@ export interface JournalTemplateInput {
   default_memo?: string | null;
   default_reference?: string | null;
   is_active?: boolean;
+  is_bookmarked?: boolean;
   lines: Array<{
     account_id: string;
     side: 'debit' | 'credit';

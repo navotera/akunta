@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { formatRupiah, parseRupiah } from '@akunta/ui';
   import type { AccountOption } from '$lib/api/account.js';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
@@ -42,12 +43,72 @@
   function setMemo(e: Event) {
     onChange({ ...row, memo: (e.target as HTMLInputElement).value || null });
   }
+
+  function formatAmountInput(raw: string): string {
+    const sanitized = raw.replace(/[^\d,]/g, '');
+    if (!sanitized) return '';
+
+    const commaIndex = sanitized.indexOf(',');
+    const integerDigits = (commaIndex >= 0 ? sanitized.slice(0, commaIndex) : sanitized).replace(
+      /\D/g,
+      '',
+    );
+    const decimalDigits = commaIndex >= 0 ? sanitized.slice(commaIndex + 1).replace(/\D/g, '') : '';
+    const integerDisplay = formatRupiah(integerDigits || '0', { withSymbol: false });
+
+    return commaIndex >= 0 ? `${integerDisplay},${decimalDigits}` : integerDisplay;
+  }
+
+  function restoreCaret(input: HTMLInputElement, raw: string, formatted: string, cursor: number) {
+    const prefix = raw.slice(0, cursor);
+    const digitsBefore = (prefix.match(/\d/g) ?? []).length;
+    const commaBefore = prefix.includes(',');
+
+    if (commaBefore) {
+      const commaPosition = formatted.indexOf(',');
+      if (commaPosition >= 0) {
+        const decimalDigitsBefore = (prefix.slice(prefix.indexOf(',') + 1).match(/\d/g) ?? [])
+          .length;
+        const position = Math.min(commaPosition + 1 + decimalDigitsBefore, formatted.length);
+        input.setSelectionRange(position, position);
+        return;
+      }
+    }
+
+    if (digitsBefore === 0) {
+      input.setSelectionRange(0, 0);
+      return;
+    }
+
+    let seen = 0;
+    for (let position = 0; position < formatted.length; position += 1) {
+      if (!/\d/.test(formatted[position])) continue;
+      seen += 1;
+      if (seen === digitsBefore) {
+        const caret = position + 1;
+        input.setSelectionRange(caret, caret);
+        return;
+      }
+    }
+
+    input.setSelectionRange(formatted.length, formatted.length);
+  }
+
   function setAmount(e: Event) {
-    const raw = (e.target as HTMLInputElement).value;
-    amountDisplay = raw;
+    const input = e.target as HTMLInputElement;
+    const raw = input.value;
+    const cursor = input.selectionStart ?? raw.length;
     const parsed = parseRupiah(raw);
+    const formatted = formatAmountInput(raw);
+
+    amountDisplay = formatted;
+    input.value = formatted;
     syncedAmount = parsed.toFixed(2);
     onChange({ ...row, amount: parsed.toFixed(2) });
+
+    void tick().then(() => {
+      if (document.activeElement === input) restoreCaret(input, raw, formatted, cursor);
+    });
   }
   function blurAmount() {
     if (amountDisplay) {

@@ -824,7 +824,7 @@
         <span>Anda sedang melihat aplikasi sebagai user fake.</span>
         <button
           type="button"
-          class="rounded bg-white/20 px-3 py-1 text-xs hover:bg-white/30"
+          class="rounded bg-[#0F172A] px-3 py-1 text-xs text-white hover:bg-[#1E293B]"
           onclick={stopImpersonation}>Kembali ke akun admin</button
         >
       </div>

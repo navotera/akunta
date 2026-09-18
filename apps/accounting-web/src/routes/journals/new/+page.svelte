@@ -131,7 +131,7 @@
       const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
       await Promise.all(
         journals.map((journal) =>
-          auth.user?.roles?.includes('operator')
+          auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')
             ? journalApi.submit(journal.id)
             : journalApi.post(journal.id),
         ),
@@ -165,6 +165,7 @@
         name: name.trim(),
         description: payload.memo || null,
         journal_mode: payload.journal_mode,
+        is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
           ...payload.entries_debit.map((line) => ({ ...line, side: 'debit' as const })),
           ...payload.entries_credit.map((line) => ({ ...line, side: 'credit' as const })),
@@ -191,6 +192,7 @@
         name: template.name,
         description: payload.memo || null,
         journal_mode: payload.journal_mode,
+        is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
           ...payload.entries_debit.map((line) => ({ ...line, side: 'debit' as const })),
           ...payload.entries_credit.map((line) => ({ ...line, side: 'credit' as const })),

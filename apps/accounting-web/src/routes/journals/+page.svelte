@@ -33,17 +33,19 @@
     loading = true;
     error = null;
     try {
-      const [res, ...countResponses] = await Promise.all([
-        journalApi.list({ per_page: 50, journal_mode: journalMode, status: statusTab }),
-        ...statusTabs.map((tab) =>
-          journalApi.list({ per_page: 5, journal_mode: journalMode, status: tab.value }),
-        ),
-      ]);
+      const res = await journalApi.list({
+        per_page: 50,
+        journal_mode: journalMode,
+        status: statusTab,
+      });
       items = res.data;
       total = res.meta.total;
-      statusCounts = Object.fromEntries(
-        statusTabs.map((tab, index) => [tab.value, countResponses[index].meta.total]),
-      ) as Record<JournalStatusTab, number>;
+      statusCounts = {
+        draft: res.meta.status_counts?.draft ?? 0,
+        submitted: res.meta.status_counts?.submitted ?? 0,
+        posted: res.meta.status_counts?.posted ?? 0,
+        rejected: res.meta.status_counts?.rejected ?? 0,
+      };
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -70,7 +72,9 @@
         ? 'bg-danger-light text-danger'
         : s === 'submitted'
           ? 'bg-warning-light text-warning'
-          : 'bg-info-light text-info';
+          : s === 'draft'
+            ? 'bg-[#f1df9a] text-[#b38c00]'
+            : 'bg-info-light text-info';
   }
 
   function statusLabel(s: JournalSummary['status']): string {

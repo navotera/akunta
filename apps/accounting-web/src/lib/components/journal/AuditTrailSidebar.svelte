@@ -16,6 +16,18 @@
       new Date(value),
     );
   }
+
+  function statusLabel(status: string): string {
+    return (
+      {
+        draft: 'Draft',
+        submitted: 'Di review',
+        rejected: 'Perlu Revisi',
+        posted: 'Tersimpan',
+        reversed: 'Dibatalkan',
+      }[status] ?? status
+    );
+  }
 </script>
 
 <section
@@ -85,6 +97,20 @@
                   {#if item.review_note}
                     <span class="mt-0.5 block text-xs text-text-muted">{item.review_note}</span>
                   {/if}
+                  {#if item.status_from && item.status_to}
+                    <span class="mt-0.5 block text-xs text-text-muted"
+                      >Status: {statusLabel(item.status_from)} → {statusLabel(item.status_to)}</span
+                    >
+                  {/if}
+                {:else if item.status_from && item.status_to}
+                  <span class="mt-1 block text-xs font-medium text-warning">
+                    {item.action === 'journal.cancel_review'
+                      ? 'Review dibatalkan'
+                      : 'Perubahan status'}
+                  </span>
+                  <span class="mt-0.5 block text-xs text-text-muted"
+                    >Status: {statusLabel(item.status_from)} → {statusLabel(item.status_to)}</span
+                  >
                 {:else if item.attachment_change}
                   <span class="mt-1 block text-xs font-medium text-warning"
                     >{item.attachment_change}</span
@@ -93,12 +119,14 @@
                   <span class="mt-1 block text-xs text-text-muted">Jurnal changed</span>
                 {/if}
               </span>
-              <span
-                class="ml-auto shrink-0 self-center text-xs font-semibold text-[#1b84ff] {activeId ===
-                item.id
-                  ? 'opacity-100'
-                  : 'opacity-0 group-hover:opacity-100'}">Restore</span
-              >
+              {#if item.snapshot}
+                <span
+                  class="ml-auto shrink-0 self-center text-xs font-semibold text-[#1b84ff] {activeId ===
+                  item.id
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'}">Restore</span
+                >
+              {/if}
             </span>
           </button>
         {/each}

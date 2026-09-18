@@ -22,10 +22,11 @@ class PostJournalAction extends BaseAction
         }
 
         $this->validate($journal);
+        $statusFrom = $journal->status;
 
         $this->fireBefore(Hooks::JOURNAL_BEFORE_POST, $journal, $user);
 
-        $this->runInTransaction(function () use ($journal, $user) {
+        $this->runInTransaction(function () use ($journal, $user, $statusFrom) {
             $journal->forceFill([
                 'status' => Journal::STATUS_POSTED,
                 'posted_at' => now(),
@@ -41,6 +42,8 @@ class PostJournalAction extends BaseAction
                     'journal_number' => $journal->number,
                     'period_id' => $journal->period_id,
                     'total' => $journal->totalDebit(),
+                    'status_from' => $statusFrom,
+                    'status_to' => Journal::STATUS_POSTED,
                 ],
                 actorUserId: $user?->id,
             );
