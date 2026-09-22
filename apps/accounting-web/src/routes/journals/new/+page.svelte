@@ -64,12 +64,9 @@
         return;
       }
     }
-    const [internalTemplates, fiscalTemplates] = await Promise.all([
-      templateApi.list(50, undefined, 'internal'),
-      templateApi.list(50, undefined, 'fiscal'),
-    ]);
+    const availableTemplates = await templateApi.list(50);
     await refreshAccounts();
-    templates = [...internalTemplates, ...fiscalTemplates];
+    templates = availableTemplates;
     if (templateId) editingTemplate = await templateApi.show(templateId);
   });
 
@@ -146,10 +143,12 @@
   }
 
   async function saveAsTemplate(payload: FormPayload) {
-    if (payload.journal_mode === 'both') return;
-
-    const name = window.prompt('Nama template jurnal:', payload.memo || 'Template Jurnal');
-    if (!name?.trim()) return;
+    const name = payload.memo.trim();
+    if (!name) {
+      serverErrors = { name: ['Nama template wajib diisi.'] };
+      serverMessage = 'Nama template wajib diisi.';
+      return;
+    }
     const code = window.prompt(
       'Kode template jurnal:',
       payload.transaction_code || `TPL-${new Date().getTime()}`,
@@ -162,8 +161,8 @@
     try {
       await templateApi.create({
         code: code.trim(),
-        name: name.trim(),
-        description: payload.memo || null,
+        name,
+        description: payload.description.trim() || null,
         journal_mode: payload.journal_mode,
         is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
@@ -181,7 +180,12 @@
   }
 
   async function updateTemplate(payload: FormPayload, template: JournalTemplateDetail) {
-    if (payload.journal_mode === 'both') return;
+    const name = payload.memo.trim();
+    if (!name) {
+      serverErrors = { name: ['Nama template wajib diisi.'] };
+      serverMessage = 'Nama template wajib diisi.';
+      return;
+    }
 
     saving = true;
     serverErrors = null;
@@ -189,8 +193,8 @@
     try {
       await templateApi.update(template.id, {
         code: template.code,
-        name: template.name,
-        description: payload.memo || null,
+        name,
+        description: payload.description.trim() || null,
         journal_mode: payload.journal_mode,
         is_bookmarked: payload.is_bookmarked ?? false,
         lines: [
@@ -208,7 +212,7 @@
 
   function cancel() {
     clearJournalDraft('/journals/new');
-    goto('/journals');
+    goto(templateMode ? '/template-jurnal' : '/journals');
   }
 </script>
 

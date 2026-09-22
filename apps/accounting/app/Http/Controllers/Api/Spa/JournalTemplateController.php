@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class JournalTemplateController extends Controller
@@ -39,9 +40,12 @@ class JournalTemplateController extends Controller
 
         if ($journalMode !== null) {
             $request->validate([
-                'journal_mode' => 'in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+                'journal_mode' => 'in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL.',both',
             ]);
-            $query->where('journal_mode', $journalMode);
+            $query->whereIn(
+                'journal_mode',
+                $journalMode === 'both' ? ['both'] : [$journalMode, 'both'],
+            );
         }
 
         $templates = $query->get(['id', 'name', 'code', 'description', 'journal_type', 'journal_mode', 'is_active', 'is_bookmarked', 'entity_id']);
@@ -97,7 +101,7 @@ class JournalTemplateController extends Controller
         $entity = $this->resolveEntity($request);
         $template = JournalTemplate::where('entity_id', $entity->id)->findOrFail($id);
 
-        $data = $this->validatePayload($request, $entity->id, $template->id);
+        $data = $this->validatePayload($request, $entity->id, $template->id, $template->journal_mode);
 
         DB::transaction(function () use ($template, $data) {
             $template->fill([
@@ -139,18 +143,30 @@ class JournalTemplateController extends Controller
         return response()->json(['data' => $this->summary($template->fresh()->loadCount('lines'))]);
     }
 
-    private function validatePayload(Request $request, string $entityId, ?string $templateId = null): array
-    {
+    private function validatePayload(
+        Request $request,
+        string $entityId,
+        ?string $templateId = null,
+        ?string $currentJournalMode = null,
+    ): array {
         $codeUnique = $templateId
             ? "unique:journal_templates,code,{$templateId},id,entity_id,{$entityId}"
             : "unique:journal_templates,code,NULL,id,entity_id,{$entityId}";
+        $journalMode = $request->input('journal_mode') ?? $currentJournalMode ?? Journal::MODE_INTERNAL;
+        $nameUnique = Rule::unique('journal_templates', 'name')
+            ->where(fn ($query) => $query
+                ->where('entity_id', $entityId)
+                ->where('journal_mode', $journalMode));
+        if ($templateId !== null) {
+            $nameUnique->ignore($templateId);
+        }
 
         return $request->validate([
             'code' => "required|string|max:80|{$codeUnique}",
-            'name' => 'required|string|max:160',
+            'name' => ['required', 'string', 'max:160', $nameUnique],
             'description' => 'nullable|string|max:500',
             'journal_type' => 'nullable|in:general,adjustment,closing,reversing,opening',
-            'journal_mode' => 'nullable|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL,
+            'journal_mode' => 'nullable|in:'.Journal::MODE_INTERNAL.','.Journal::MODE_FISCAL.',both',
             'default_memo' => 'nullable|string|max:400',
             'default_reference' => 'nullable|string|max:120',
             'is_active' => 'sometimes|boolean',

@@ -111,6 +111,18 @@ it('instantiates a fiscal journal from a fiscal template', function () {
     expect($journal->journal_mode)->toBe(Journal::MODE_FISCAL);
 });
 
+it('does not materialize a combined-scope template as a third ledger', function () {
+    $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
+    $tmpl->update(['journal_mode' => 'both']);
+
+    expect(fn () => app(InstantiateJournalTemplateAction::class)->execute(
+        template: $tmpl->fresh(),
+        date: '2026-04-15',
+    ))->toThrow(JournalException::class);
+
+    expect(Journal::where('template_id', $tmpl->id)->count())->toBe(0);
+});
+
 it('rejects unbalanced overrides', function () {
     $tmpl = makeRentTemplate($this->entity, $this->rent, $this->cash);
 

@@ -6,15 +6,17 @@
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
   import { journalApi, type JournalDetail } from '$lib/api/journal.js';
+  import { attachmentApi, type Attachment } from '$lib/api/attachment.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
+  import SavedAttachments from '$lib/components/journal/SavedAttachments.svelte';
   import { ApiError } from '$lib/api/client.js';
-  import { attachmentApi } from '$lib/api/attachment.js';
   import { formatMessageDates } from '$lib/utils/date.js';
 
   const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
   let detail = $state<JournalDetail | null>(null);
+  let savedAttachments = $state<Attachment[]>([]);
   let accounts = $state<AccountOption[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
   let saving = $state(false);
@@ -65,6 +67,15 @@
     }
   }
 
+  async function uploadAttachments(updated: JournalDetail, files: File[]) {
+    const journals = [updated, ...(updated.paired_journal ? [updated.paired_journal] : [])];
+    await Promise.all(
+      journals.flatMap((journal) =>
+        files.map((file) => attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, journal.id, file)),
+      ),
+    );
+  }
+
   onMount(async () => {
     if (!auth.user) {
       const u = await auth.refresh();
@@ -78,7 +89,14 @@
       goto('/journals', { replaceState: true });
       return;
     }
-    [detail, templates] = await Promise.all([journalApi.show(id), templateApi.list(4)]);
+    const [loadedDetail, loadedTemplates, loadedAttachments] = await Promise.all([
+      journalApi.show(id),
+      templateApi.list(4),
+      attachmentApi.listFor(JOURNAL_ATTACHABLE_TYPE, id),
+    ]);
+    detail = loadedDetail;
+    templates = loadedTemplates;
+    savedAttachments = loadedAttachments;
     await refreshAccounts();
   });
 
@@ -98,11 +116,8 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
-      await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
-        ),
-      );
+      await uploadAttachments(updated, payload.attachments);
+      savedAttachments = await attachmentApi.listFor(JOURNAL_ATTACHABLE_TYPE, updated.id);
       detail = await journalApi.show(updated.id);
     } catch (e) {
       captureError(e);
@@ -127,11 +142,7 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
-      await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
-        ),
-      );
+      await uploadAttachments(updated, payload.attachments);
       if (auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')) {
         await journalApi.submit(updated.id);
       } else {
@@ -165,11 +176,7 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
-      await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
-        ),
-      );
+      await uploadAttachments(updated, payload.attachments);
       const journalsToPost = [updated, ...(updated.paired_journal ? [updated.paired_journal] : [])];
       await Promise.all(journalsToPost.map((journal) => journalApi.post(journal.id)));
       goto('/journals');
@@ -198,11 +205,7 @@
         entries_debit: payload.entries_debit,
         entries_credit: payload.entries_credit,
       });
-      await Promise.all(
-        payload.attachments.map((file) =>
-          attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file),
-        ),
-      );
+      await uploadAttachments(updated, payload.attachments);
       const journalsToRevise = [
         updated,
         ...(updated.paired_journal ? [updated.paired_journal] : []),
@@ -275,6 +278,7 @@
       </div>
       <p class="mt-4 text-sm">{detail.memo}</p>
     </div>
+    <SavedAttachments attachments={savedAttachments} />
     <div class="overflow-x-auto rounded-xl border border-border-default bg-card-bg">
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-left text-xs uppercase tracking-wider text-text-muted">
@@ -320,6 +324,7 @@
     {saving}
     {serverErrors}
     {serverMessage}
+    {savedAttachments}
     reviewMode={true}
     allowPosting={false}
     title={`Review Jurnal ${detail.number}`}
@@ -339,6 +344,7 @@
     {saving}
     {serverErrors}
     {serverMessage}
+    {savedAttachments}
     readOnly={true}
     allowPosting={false}
     title={`Jurnal ${detail.number}`}
@@ -357,6 +363,7 @@
     {saving}
     {serverErrors}
     {serverMessage}
+    {savedAttachments}
     allowPosting={detail.status !== 'posted'}
     title={`Jurnal ${detail.number}`}
     breadcrumb={`Transaksi / Jurnal / ${detail.number}`}

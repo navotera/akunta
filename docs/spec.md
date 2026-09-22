@@ -476,7 +476,7 @@ Kalau 4 kontrak di atas dipenuhi, fitur-fitur berikut jadi **ADDITIVE** (tinggal
 | **Multi-factor approval** | Module yang intercept di `before_*` hook | Hook-ready |
 | **Bulk import/export dengan validation** ✅ | Handler generic yang pakai action class + validasi per resource | Design-ready |
 | **Scheduled journal (depresiasi otomatis, recurring entries)** ✅ | Laravel Scheduler + `JournalTemplate` + action dispatch | Design-ready |
-| **Document attachment per journal** ✅ | Polymorphic `attachments` table + storage driver (local/S3) | Design-ready |
+| **Document attachment per journal** ✅ | Polymorphic `attachments` table + storage driver (local/S3). Upload gambar raster dikompresi ke WebP, sisi terpanjang dibatasi 2.560 px tanpa upscaling, dan thumbnail 320 px dibuat terpisah. | Design-ready |
 | **Webhook outbound ke sistem eksternal** ✅ | Module listen ke semua `after_*` hook, forward ke subscriber URL | Design-ready |
 | **Activity-based permissions** | Module yang combine audit log query + permission check | Hook-ready |
 
@@ -678,6 +678,14 @@ ditelusuri, tetapi ID, nomor, entries, attachment, status workflow, posting,
 reversal, dan saldo tetap independen. Sesudah create tidak ada sinkronisasi
 otomatis antarpasangan. Mode gabungan hanya menerima akun
 `availability=both`.
+
+Template jurnal juga dapat memiliki scope `Intern`, `Fiskal`, atau `Intern &
+Fiskal`. Template scope `Intern & Fiskal` hanya menerima akun
+`availability=both` dan dapat dipakai pada input Intern, Fiskal, maupun input
+gabungan. Saat dipakai pada input gabungan, persistensi tetap mengikuti aturan
+di atas: dua jurnal draft independen dibuat secara atomik.
+Nama template harus unik dalam entity/workspace dan scope jurnal yang sama;
+nama yang sama tetap boleh digunakan pada scope yang berbeda.
 
 Akun dengan `availability=fiskal` atau `availability=both` wajib menyimpan
 dasar hukum pajak. Akun `availability=intern` tidak mewajibkan metadata ini.

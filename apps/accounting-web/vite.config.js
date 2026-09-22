@@ -9,12 +9,13 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     proxy: {
-      // Forward API + Sanctum + SSO bounce endpoints to the Laravel app on :8000.
+      // Forward API, protected storage, Sanctum, and SSO endpoints to Laravel.
       '/api': { target: 'http://127.0.0.1:8000', changeOrigin: false },
       '/sanctum': { target: 'http://127.0.0.1:8000', changeOrigin: false },
       '/auth': { target: 'http://127.0.0.1:8000', changeOrigin: false },
       '/sso': { target: 'http://127.0.0.1:8000', changeOrigin: false },
       '/oidc': { target: 'http://127.0.0.1:8000', changeOrigin: false },
+      '/storage': { target: 'http://127.0.0.1:8000', changeOrigin: false },
     },
   },
 });

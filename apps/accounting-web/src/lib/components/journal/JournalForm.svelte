@@ -7,6 +7,7 @@
   import TemplateSidebar from './TemplateSidebar.svelte';
   import AuditTrailSidebar from './AuditTrailSidebar.svelte';
   import type { AccountOption } from '$lib/api/account.js';
+  import type { Attachment } from '$lib/api/attachment.js';
   import {
     journalApi,
     type JournalMode,
@@ -23,6 +24,7 @@
   import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import { auth } from '$lib/stores/auth.svelte.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import SavedAttachments from './SavedAttachments.svelte';
   import { page } from '$app/stores';
   import {
     loadJournalDraft,
@@ -52,6 +54,7 @@
     templateMode?: boolean;
     template?: JournalTemplateDetail | null;
     auditTrail?: JournalAuditTrailItem[];
+    savedAttachments?: Attachment[];
     onSaveDraft: (payload: FormPayload) => Promise<void> | void;
     onPosting: (payload: FormPayload) => Promise<void> | void;
     onApprove?: (payload: FormPayload) => Promise<void> | void;
@@ -72,6 +75,7 @@
     type: JournalType;
     date: string;
     memo: string;
+    description: string;
     reference: string | null;
     is_bookmarked?: boolean;
     attachments: File[];
@@ -95,6 +99,7 @@
     templateMode = false,
     template = null,
     auditTrail = [],
+    savedAttachments = [],
     onSaveDraft,
     onPosting,
     onApprove,
@@ -137,8 +142,11 @@
     restoredDraft?.type ?? (initial?.type as JournalType | undefined) ?? 'general',
   );
   let memo = $state(
-    templateMode ? (template?.description ?? '') : (restoredDraft?.memo ?? initial?.memo ?? ''),
+    templateMode
+      ? (template?.name ?? template?.description ?? '')
+      : (restoredDraft?.memo ?? initial?.memo ?? ''),
   );
+  let description = $state(templateMode ? (template?.description ?? '') : '');
   let reference = $state(
     templateMode ? '' : (restoredDraft?.reference ?? initial?.reference ?? ''),
   );
@@ -218,7 +226,8 @@
     if (!templateMode || !currentTemplate || appliedTemplateId === currentTemplate.id) return;
 
     journalMode = currentTemplate.journal_mode;
-    memo = currentTemplate.description ?? '';
+    memo = currentTemplate.name ?? currentTemplate.description ?? '';
+    description = currentTemplate.description ?? '';
     bookmarkTemplate = currentTemplate.is_bookmarked === true;
     debits = currentTemplate.lines
       .filter((line) => line.side === 'debit')
@@ -302,13 +311,15 @@
     ),
   );
   const visibleTemplates = $derived(
-    journalMode === 'both'
-      ? []
-      : templates.filter(
-          (template) =>
-            (template.journal_mode ?? 'internal') === journalMode &&
-            template.is_bookmarked === true,
-        ),
+    templates.filter((template) => {
+      const templateMode = template.journal_mode ?? 'internal';
+      const isApplicable =
+        journalMode === 'both'
+          ? templateMode === 'both'
+          : templateMode === journalMode || templateMode === 'both';
+
+      return isApplicable && template.is_bookmarked === true;
+    }),
   );
   const displayedNumber = $derived(number || previewNumber || 'Memuat nomor jurnal…');
 
@@ -402,6 +413,7 @@
       type: journalType,
       date,
       memo,
+      description: templateMode ? description.trim() : '',
       reference: reference || null,
       is_bookmarked: templateMode ? bookmarkTemplate : undefined,
       attachments,
@@ -510,7 +522,9 @@
     templateLoading = true;
     templateError = null;
     try {
-      journalMode = t.journal_mode ?? 'internal';
+      if (t.journal_mode !== 'both') {
+        journalMode = t.journal_mode ?? 'internal';
+      }
       const detail = await templateApi.show(t.id);
       const dRows: Row[] = [];
       const cRows: Row[] = [];
@@ -683,6 +697,11 @@
               Lampiran{#if !templateMode && !initial}
                 <span class="text-danger">*</span>{/if}
             </h2>
+            {#if savedAttachments.length > 0}
+              <div class="mb-4">
+                <SavedAttachments attachments={savedAttachments} />
+              </div>
+            {/if}
             <input
               bind:this={attachmentInput}
               class="sr-only"
@@ -843,29 +862,55 @@
             {/if}
             <label class="text-sm">
               <span class="block font-medium mb-1"
-                >{templateMode ? 'Deskripsi Template' : 'Keterangan'}{#if !templateMode}
-                  <span class="text-danger">*</span>
-                {/if}</span
+                >{templateMode ? 'Nama template' : 'Keterangan'}
+                <span class="text-danger">*</span></span
               >
-              <textarea
-                class="w-full resize-y rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
-                  'memo',
-                )
-                  ? 'border-danger'
-                  : 'border-border-default'}"
-                placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
-                bind:value={memo}
-                rows="3"
-                required={!templateMode}
-                data-testid="journal-memo"
-              ></textarea>
-              {#if fieldError('memo')}
-                <span class="block mt-1 text-xs text-danger" data-testid="error-memo"
-                  >{fieldError('memo')}</span
+              {#if templateMode}
+                <input
+                  type="text"
+                  class="w-full rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
+                    'name',
+                  )
+                    ? 'border-danger'
+                    : 'border-border-default'}"
+                  placeholder="Mis. Penjualan tunai"
+                  bind:value={memo}
+                  required
+                  data-testid="template-name"
+                />
+              {:else}
+                <textarea
+                  class="w-full resize-y rounded-md border px-2 py-1.5 focus:outline-none focus:border-primary {fieldError(
+                    'memo',
+                  )
+                    ? 'border-danger'
+                    : 'border-border-default'}"
+                  placeholder="Mis. Pembelian persediaan dari PT Surya Distribusi"
+                  bind:value={memo}
+                  rows="3"
+                  required
+                  data-testid="journal-memo"
+                ></textarea>
+              {/if}
+              {#if fieldError(templateMode ? 'name' : 'memo')}
+                <span
+                  class="block mt-1 text-xs text-danger"
+                  data-testid={templateMode ? 'error-template-name' : 'error-memo'}
+                  >{fieldError(templateMode ? 'name' : 'memo')}</span
                 >
               {/if}
             </label>
             {#if templateMode}
+              <label class="text-sm">
+                <span class="block font-medium mb-1">Deskripsi</span>
+                <textarea
+                  class="w-full resize-y rounded-md border border-border-default bg-page-bg px-2 py-1.5 focus:outline-none focus:border-primary"
+                  bind:value={description}
+                  placeholder="Mis. Template untuk transaksi penjualan tunai"
+                  rows="2"
+                  data-testid="template-description"
+                ></textarea>
+              </label>
               <label
                 class="flex cursor-pointer items-center gap-3 rounded-md border border-border-default bg-page-bg px-3 py-2.5 text-sm hover:border-primary"
                 data-testid="template-bookmark"
@@ -932,10 +977,7 @@
             template && onUpdateTemplate
               ? onUpdateTemplate(payload(), template)
               : onSaveAsTemplate?.(payload())}
-          disabled={saving || journalMode === 'both'}
-          title={journalMode === 'both'
-            ? 'Template hanya dapat dibuat untuk satu buku.'
-            : undefined}
+          disabled={saving}
           class="rounded-md border border-primary/40 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
           data-testid="save-as-template"
         >

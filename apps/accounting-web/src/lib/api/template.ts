@@ -7,7 +7,7 @@ export interface JournalTemplateSummary {
   description: string | null;
   lines_count: number;
   journal_type?: string | null;
-  journal_mode?: 'internal' | 'fiscal';
+  journal_mode?: 'internal' | 'fiscal' | 'both';
   is_active?: boolean;
   is_bookmarked?: boolean;
   is_global?: boolean;
@@ -28,7 +28,7 @@ export interface JournalTemplateDetail {
   code: string;
   name: string;
   description: string | null;
-  journal_mode: 'internal' | 'fiscal';
+  journal_mode: 'internal' | 'fiscal' | 'both';
   is_bookmarked?: boolean;
   lines: JournalTemplateLine[];
 }
@@ -38,7 +38,7 @@ export interface JournalTemplateInput {
   name: string;
   description?: string | null;
   journal_type?: 'general' | 'adjustment' | 'closing' | 'reversing' | 'opening' | null;
-  journal_mode?: 'internal' | 'fiscal';
+  journal_mode?: 'internal' | 'fiscal' | 'both';
   default_memo?: string | null;
   default_reference?: string | null;
   is_active?: boolean;
@@ -52,7 +52,7 @@ export interface JournalTemplateInput {
 }
 
 export const templateApi = {
-  list: (limit = 4, tenantSlug?: string | null, journalMode?: 'internal' | 'fiscal') => {
+  list: (limit = 4, tenantSlug?: string | null, journalMode?: 'internal' | 'fiscal' | 'both') => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (journalMode) params.set('journal_mode', journalMode);
 

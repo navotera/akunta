@@ -47,6 +47,10 @@ class InstantiateJournalTemplateAction
             throw JournalException::notPosted('inactive_template');
         }
 
+        if ($template->journal_mode === 'both') {
+            throw JournalException::combinedTemplateRequiresInput();
+        }
+
         $template->loadMissing('lines');
 
         if ($template->lines->count() < 2) {
