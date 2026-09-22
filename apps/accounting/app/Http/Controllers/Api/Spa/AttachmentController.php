@@ -11,11 +11,15 @@ use App\Http\Controllers\Controller;
 use App\Models\Attachment;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Services\AttachmentImageProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class AttachmentController extends Controller
 {
@@ -24,7 +28,10 @@ class AttachmentController extends Controller
 
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
-    public function __construct(private readonly AuditLoggerContract $auditLogger) {}
+    public function __construct(
+        private readonly AuditLoggerContract $auditLogger,
+        private readonly AttachmentImageProcessor $imageProcessor,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -67,24 +74,64 @@ class AttachmentController extends Controller
         $file = $request->file('file');
         $disk = config('filesystems.default');
         $directory = "attachments/{$entity->id}/".date('Y/m');
+        $storedPaths = [];
 
-        $path = Storage::disk($disk)->putFile($directory, $file);
+        try {
+            $processed = $this->imageProcessor->process($file);
+            if ($processed !== null) {
+                $basename = Str::random(40);
+                $path = "{$directory}/{$basename}.{$processed['extension']}";
+                $thumbnailPath = "{$directory}/thumbnails/{$basename}.{$processed['extension']}";
+                $this->storeContent($disk, $path, $processed['content']);
+                $storedPaths[] = $path;
+                $this->storeContent($disk, $thumbnailPath, $processed['thumbnail_content']);
+                $storedPaths[] = $thumbnailPath;
 
-        $checksum = hash_file('sha256', $file->getRealPath()) ?: null;
+                $originalFilename = $file->getClientOriginalName() ?: 'image';
+                $filename = pathinfo($originalFilename, PATHINFO_FILENAME).'.'.$processed['extension'];
+                $mimeType = $processed['mime_type'];
+                $size = strlen($processed['content']);
+                $checksum = hash('sha256', $processed['content']);
+                $metadata = array_merge($processed['metadata'], [
+                    'original_filename' => $originalFilename,
+                    'thumbnail' => array_merge($processed['metadata']['thumbnail'], [
+                        'path' => $thumbnailPath,
+                    ]),
+                ]);
+            } else {
+                $path = Storage::disk($disk)->putFile($directory, $file);
+                if (! is_string($path)) {
+                    throw new RuntimeException('Lampiran gagal disimpan.');
+                }
+                $storedPaths[] = $path;
+                $filename = $file->getClientOriginalName() ?: basename($path);
+                $mimeType = $file->getClientMimeType();
+                $size = (int) $file->getSize();
+                $checksum = hash_file('sha256', $file->getRealPath()) ?: null;
+                $metadata = null;
+            }
 
-        $attachment = Attachment::create([
-            'attachable_type' => $data['attachable_type'],
-            'attachable_id' => $data['attachable_id'],
-            'entity_id' => $entity->id,
-            'filename' => $file->getClientOriginalName() ?: basename($path),
-            'mime_type' => $file->getClientMimeType(),
-            'size_bytes' => $file->getSize(),
-            'disk' => $disk,
-            'path' => $path,
-            'checksum_sha256' => $checksum,
-            'description' => $data['description'] ?? null,
-            'uploaded_by' => Auth::id(),
-        ]);
+            $attachment = Attachment::create([
+                'attachable_type' => $data['attachable_type'],
+                'attachable_id' => $data['attachable_id'],
+                'entity_id' => $entity->id,
+                'filename' => $filename,
+                'mime_type' => $mimeType,
+                'size_bytes' => $size,
+                'disk' => $disk,
+                'path' => $path,
+                'checksum_sha256' => $checksum,
+                'description' => $data['description'] ?? null,
+                'uploaded_by' => Auth::id(),
+                'metadata' => $metadata,
+            ]);
+        } catch (Throwable $exception) {
+            if ($storedPaths !== []) {
+                Storage::disk($disk)->delete($storedPaths);
+            }
+
+            throw $exception;
+        }
 
         if ($attachment->attachable_type === Journal::class) {
             $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
@@ -101,10 +148,7 @@ class AttachmentController extends Controller
 
         return response()->json([
             'data' => array_merge($this->serialize($attachment), [
-                'url' => Storage::disk($attachment->disk)->temporaryUrl(
-                    $attachment->path,
-                    now()->addMinutes(5),
-                ),
+                'url' => $this->temporaryUrl($attachment->disk, $attachment->path),
             ]),
         ]);
     }
@@ -138,10 +182,30 @@ class AttachmentController extends Controller
             'mime_type' => $a->mime_type,
             'size_bytes' => (int) $a->size_bytes,
             'description' => $a->description,
+            'thumbnail_url' => $this->temporaryUrl(
+                $a->disk,
+                (string) data_get($a->metadata, 'thumbnail.path'),
+            ),
             'created_at' => optional($a->created_at)?->toIso8601String(),
             'uploaded_by' => $a->uploaded_by,
             'deleted_at' => optional($a->deleted_at)?->toIso8601String(),
         ];
+    }
+
+    private function storeContent(string $disk, string $path, string $content): void
+    {
+        if (! Storage::disk($disk)->put($path, $content)) {
+            throw new RuntimeException('Lampiran gambar gagal disimpan.');
+        }
+    }
+
+    private function temporaryUrl(string $disk, string $path): ?string
+    {
+        if ($path === '' || ! Storage::disk($disk)->exists($path)) {
+            return null;
+        }
+
+        return Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(5));
     }
 
     private function auditAttachment(string $journalId, string $entityId, string $change): void

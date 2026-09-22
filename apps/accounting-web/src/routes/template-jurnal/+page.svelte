@@ -20,10 +20,40 @@
     memo: string;
   }
 
+  const templateTabs = [
+    { key: 'all', label: 'Semua' },
+    { key: 'internal', label: 'Intern' },
+    { key: 'fiscal', label: 'Fiskal' },
+    { key: 'both', label: 'Intern & Fiskal' },
+  ] as const;
+  type TemplateTab = (typeof templateTabs)[number]['key'];
+
   let items = $state<JournalTemplateSummary[]>([]);
   let accounts = $state<Account[]>([]);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let activeTab = $state<TemplateTab>('all');
+  let searchQuery = $state('');
+
+  const templateCounts = $derived({
+    all: items.length,
+    internal: items.filter((item) => (item.journal_mode ?? 'internal') === 'internal').length,
+    fiscal: items.filter((item) => item.journal_mode === 'fiscal').length,
+    both: items.filter((item) => item.journal_mode === 'both').length,
+  });
+  const visibleItems = $derived(
+    items.filter((item) => {
+      const matchesTab = activeTab === 'all' || (item.journal_mode ?? 'internal') === activeTab;
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !query ||
+        [item.name, item.description, item.code].some((value) =>
+          value?.toLowerCase().includes(query),
+        );
+
+      return matchesTab && matchesSearch;
+    }),
+  );
 
   let editing = $state<JournalTemplateDetail | null>(null);
   let creating = $state(false);
@@ -223,27 +253,62 @@
       {error}
     </div>
   {:else}
+    <div class="mb-4 flex items-end gap-3 border-b border-border-default">
+      <div class="min-w-0 flex-1 overflow-x-auto">
+        <div class="flex min-w-max gap-1" role="tablist" aria-label="Filter mode template jurnal">
+          {#each templateTabs as tab}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              class="inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors {activeTab ===
+              tab.key
+                ? 'border-primary text-primary'
+                : 'border-transparent text-text-muted hover:border-border-default hover:text-text-default'}"
+              onclick={() => (activeTab = tab.key)}
+            >
+              <span>{tab.label}</span>
+              <span
+                class="rounded-full px-2 py-0.5 text-xs {activeTab === tab.key
+                  ? 'bg-primary-light text-primary'
+                  : 'bg-page-bg text-text-muted'}"
+              >
+                {templateCounts[tab.key]}
+              </span>
+            </button>
+          {/each}
+        </div>
+      </div>
+      <label class="mb-2 flex shrink-0 items-center gap-2 text-sm">
+        <span class="sr-only">Cari template jurnal</span>
+        <input
+          type="search"
+          class="w-56 rounded-md border border-border-default bg-card-bg px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+          placeholder="Cari template..."
+          aria-label="Cari template jurnal"
+          bind:value={searchQuery}
+        />
+      </label>
+    </div>
     <div class="overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs">
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
             <th class="w-12 px-4 py-3 text-center">#</th>
-            <th class="px-4 py-3 text-left">Kode</th>
             <th class="px-4 py-3 text-left">Nama</th>
-            <th class="px-4 py-3 text-center">Mode</th>
+            <th class="w-44 min-w-[10rem] whitespace-nowrap px-4 py-3 text-center">Mode</th>
             <th class="px-4 py-3 text-left">Deskripsi</th>
             <th class="px-4 py-3 text-center">Baris</th>
             <th class="px-4 py-3 text-center">Aktif</th>
           </tr>
         </thead>
         <tbody>
-          {#each items as t, i (t.id)}
+          {#each visibleItems as t, i (t.id)}
             <tr
               class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
               onclick={() => openEdit(t)}
             >
               <td class="px-4 py-2 text-center text-text-muted">{i + 1}</td>
-              <td class="px-4 py-2 font-mono">{t.code}</td>
               <td class="px-4 py-2 font-medium">
                 <span class="flex items-center gap-2">
                   <button
@@ -275,14 +340,20 @@
                   <span>{t.name}</span>
                 </span>
               </td>
-              <td class="px-4 py-2 text-center">
+              <td class="w-44 min-w-[10rem] whitespace-nowrap px-4 py-2 text-center">
                 <span
-                  class="rounded-full px-2 py-1 text-[0.7125rem] font-semibold {t.journal_mode ===
+                  class="rounded-full px-2 py-1 text-[0.7125rem] font-semibold whitespace-nowrap {t.journal_mode ===
                   'fiscal'
-                    ? 'bg-warning-light text-warning'
-                    : 'bg-paid-light text-paid'}"
+                    ? 'bg-[#facc15] text-[#5a4300]'
+                    : t.journal_mode === 'both'
+                      ? 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'
+                      : 'bg-[#22c55e] text-white'}"
                 >
-                  {t.journal_mode === 'fiscal' ? 'Fiskal' : 'Intern'}
+                  {t.journal_mode === 'fiscal'
+                    ? 'Fiskal'
+                    : t.journal_mode === 'both'
+                      ? 'Intern & Fiskal'
+                      : 'Intern'}
                 </span>
               </td>
               <td class="px-4 py-2 text-text-muted">{t.description ?? '—'}</td>
@@ -291,8 +362,8 @@
             </tr>
           {:else}
             <tr
-              ><td colspan="7" class="px-4 py-10 text-center text-text-muted"
-                >Belum ada template.</td
+              ><td colspan="6" class="px-4 py-10 text-center text-text-muted"
+                >{searchQuery.trim() ? 'Template tidak ditemukan.' : 'Belum ada template.'}</td
               ></tr
             >
           {/each}

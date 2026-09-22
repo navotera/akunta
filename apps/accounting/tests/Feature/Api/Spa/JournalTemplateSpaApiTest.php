@@ -63,6 +63,70 @@ it('creates a template with lines', function () {
     expect(JournalTemplate::where('code', 'TPL-SAL')->exists())->toBeTrue();
 });
 
+it('creates a combined-scope template using only accounts available to both books', function () {
+    $res = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            'code' => 'TPL-BOTH',
+            'name' => 'Template Intern dan Fiskal',
+            'journal_mode' => 'both',
+            'is_bookmarked' => true,
+            'lines' => [
+                ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
+                ['account_id' => $this->revenue->id, 'side' => 'credit', 'amount' => '0'],
+            ],
+        ]);
+
+    $res->assertCreated()
+        ->assertJsonPath('data.journal_mode', 'both')
+        ->assertJsonPath('data.is_bookmarked', true);
+});
+
+it('requires template names to be unique within an entity and journal scope', function () {
+    JournalTemplate::create([
+        'entity_id' => $this->entity->id,
+        'code' => 'TPL-EXISTING',
+        'name' => 'Nama Sama',
+        'journal_mode' => Journal::MODE_INTERNAL,
+    ]);
+
+    $payload = [
+        'name' => 'Nama Sama',
+        'lines' => [
+            ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
+            ['account_id' => $this->revenue->id, 'side' => 'credit', 'amount' => '0'],
+        ],
+    ];
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            ...$payload,
+            'code' => 'TPL-DUPLICATE-INTERNAL',
+            'journal_mode' => Journal::MODE_INTERNAL,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('name');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            ...$payload,
+            'code' => 'TPL-SAME-NAME-FISCAL',
+            'journal_mode' => Journal::MODE_FISCAL,
+        ])
+        ->assertCreated();
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            ...$payload,
+            'code' => 'TPL-SAME-NAME-BOTH',
+            'journal_mode' => 'both',
+        ])
+        ->assertCreated();
+});
+
 it('filters templates by journal mode', function () {
     JournalTemplate::create([
         'entity_id' => $this->entity->id,
@@ -76,14 +140,20 @@ it('filters templates by journal mode', function () {
         'name' => 'Template Fiskal',
         'journal_mode' => Journal::MODE_FISCAL,
     ]);
+    JournalTemplate::create([
+        'entity_id' => $this->entity->id,
+        'code' => 'TPL-BOTH',
+        'name' => 'Template Intern dan Fiskal',
+        'journal_mode' => 'both',
+    ]);
 
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/journal-templates?journal_mode=fiscal')
         ->assertOk()
-        ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.code', 'TPL-FIS')
-        ->assertJsonPath('data.0.journal_mode', Journal::MODE_FISCAL);
+        ->assertJsonCount(2, 'data')
+        ->assertJsonFragment(['code' => 'TPL-FIS', 'journal_mode' => Journal::MODE_FISCAL])
+        ->assertJsonFragment(['code' => 'TPL-BOTH', 'journal_mode' => 'both']);
 });
 
 it('only lists templates belonging to the active entity', function () {
@@ -152,6 +222,18 @@ it('rejects template lines unavailable for the template mode', function () {
             'code' => 'TPL-BAD',
             'name' => 'Invalid Fiscal Template',
             'journal_mode' => Journal::MODE_FISCAL,
+            'lines' => [
+                ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
+            ],
+        ])
+        ->assertStatus(422);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journal-templates', [
+            'code' => 'TPL-BAD-BOTH',
+            'name' => 'Invalid Combined Template',
+            'journal_mode' => 'both',
             'lines' => [
                 ['account_id' => $this->cash->id, 'side' => 'debit', 'amount' => '0'],
             ],

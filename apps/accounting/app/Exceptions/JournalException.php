@@ -26,6 +26,11 @@ class JournalException extends RuntimeException
         return new self("Account [{$code}] is not available for {$mode} journals.");
     }
 
+    public static function combinedTemplateRequiresInput(): self
+    {
+        return new self('Combined-scope journal templates must be applied through the journal input form.');
+    }
+
     public static function notDraft(string $status): self
     {
         return new self("Journal must be in draft status to post; current status [{$status}].");

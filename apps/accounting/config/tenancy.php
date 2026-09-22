@@ -38,6 +38,10 @@ return [
         '/api/v1/tenants/*',
         '/livewire/*',
         '/_ignition/*',
+        // Private local files are served only through Laravel's temporary
+        // signed storage URLs. Browser image/PDF requests cannot attach the
+        // tenant header, while the route signature remains the access guard.
+        '/storage/*',
         // Public well-known + Ecopa SSO + webhook receivers
         '/.well-known/*',
         '/auth/ecopa/*',

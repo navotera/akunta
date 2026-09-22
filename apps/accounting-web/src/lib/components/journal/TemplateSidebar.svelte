@@ -45,9 +45,15 @@
               <span
                 class="rounded-full px-1.5 py-0.5 text-[10px] font-semibold {template.journal_mode ===
                 'fiscal'
-                  ? 'bg-warning-light text-warning'
-                  : 'bg-primary-light text-primary'}"
-                >{template.journal_mode === 'fiscal' ? 'Fiskal' : 'Intern'}</span
+                  ? 'bg-[#facc15] text-[#5a4300]'
+                  : template.journal_mode === 'both'
+                    ? 'bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white'
+                    : 'bg-[#22c55e] text-white'}"
+                >{template.journal_mode === 'fiscal'
+                  ? 'Fiskal'
+                  : template.journal_mode === 'both'
+                    ? 'Intern & Fiskal'
+                    : 'Intern'}</span
               >
               <span class="truncate">{template.description ?? `${template.lines_count} baris`}</span
               >

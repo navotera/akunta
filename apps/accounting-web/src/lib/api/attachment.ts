@@ -11,6 +11,7 @@ export interface Attachment {
   created_at: string | null;
   uploaded_by: string | null;
   url?: string | null;
+  thumbnail_url?: string | null;
 }
 
 export const attachmentApi = {
