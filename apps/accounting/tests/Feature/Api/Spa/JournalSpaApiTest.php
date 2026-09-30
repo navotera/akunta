@@ -366,6 +366,113 @@ it('allows a submitter to cancel review and records the status transition', func
     expect($audit->metadata['status_from'])->toBe(Journal::STATUS_SUBMITTED);
 });
 
+it('soft deletes draft journals, lists them in trashed, and restores them as draft', function () {
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-051',
+        'date' => '2026-05-15',
+        'memo' => 'Active submitted journal',
+        'status' => Journal::STATUS_SUBMITTED,
+    ]);
+
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-052',
+        'date' => '2026-05-16',
+        'memo' => 'Trash workflow test',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+
+    $request = fn (string $method, string $url) => $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->{$method}($url);
+
+    $request('delete', "/api/v1/spa/journals/{$journal->id}")->assertNoContent();
+
+    expect(Journal::find($journal->id))->toBeNull()
+        ->and(Journal::withTrashed()->find($journal->id)?->trashed())->toBeTrue();
+
+    $request('get', '/api/v1/spa/journals?status=draft')
+        ->assertOk()
+        ->assertJsonPath('meta.total', 0);
+
+    $request('get', '/api/v1/spa/journals?status=trashed')
+        ->assertOk()
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('meta.status_counts.submitted', 1)
+        ->assertJsonPath('meta.status_counts.draft', 0)
+        ->assertJsonPath('data.0.number', 'JU-202605-052')
+        ->assertJsonPath('data.0.status', Journal::STATUS_DRAFT);
+
+    $request('post', "/api/v1/spa/journals/{$journal->id}/restore")
+        ->assertOk()
+        ->assertJsonPath('data.status', Journal::STATUS_DRAFT);
+
+    expect(Journal::find($journal->id))->not->toBeNull()
+        ->and(Journal::find($journal->id)?->status)->toBe(Journal::STATUS_DRAFT);
+});
+
+it('allows a supervisor to trash a saved journal and records the audit trail', function () {
+    $this->user->assignments()->first()->role->update(['code' => 'supervisor']);
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-053',
+        'date' => '2026-05-17',
+        'memo' => 'Saved journal for supervisor trash',
+        'status' => Journal::STATUS_POSTED,
+        'posted_at' => now(),
+        'posted_by' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson("/api/v1/spa/journals/{$journal->id}")
+        ->assertNoContent();
+
+    expect(Journal::find($journal->id))->toBeNull()
+        ->and(Journal::withTrashed()->find($journal->id)?->trashed())->toBeTrue()
+        ->and(AuditLog::query()
+            ->where('action', 'journal.trash')
+            ->where('resource_id', $journal->id)
+            ->first()?->metadata['status_from'])->toBe(Journal::STATUS_POSTED);
+});
+
+it('rejects an operator from trashing a saved journal', function () {
+    $this->user->assignments()->first()->role->update(['code' => 'operator']);
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-054',
+        'date' => '2026-05-18',
+        'memo' => 'Saved journal for operator restriction',
+        'status' => Journal::STATUS_POSTED,
+        'posted_at' => now(),
+        'posted_by' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson("/api/v1/spa/journals/{$journal->id}")
+        ->assertForbidden();
+
+    expect(Journal::find($journal->id))->not->toBeNull()
+        ->and(AuditLog::query()
+            ->where('action', 'journal.trash')
+            ->where('resource_id', $journal->id)
+            ->exists())->toBeFalse();
+});
+
 it('rejects unbalanced journal create with 422', function () {
     $payload = [
         'number' => 'JU-X',

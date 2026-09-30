@@ -42,6 +42,13 @@ Schedule::command('accounting:prune-webhook-logs')
     ->onOneServer()
     ->name('accounting:prune-webhook-logs');
 
+// Daily 00:25 — permanently remove journals trashed for more than 30 days.
+Schedule::command('accounting:prune-trashed-journals')
+    ->dailyAt('00:25')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->name('accounting:prune-trashed-journals');
+
 // Daily 00:30 — enqueue permanent deletion after the one-year archive retention period.
 Schedule::command('accounting:queue-workspace-purges')
     ->dailyAt('00:30')

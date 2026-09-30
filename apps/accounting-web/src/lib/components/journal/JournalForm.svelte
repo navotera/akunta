@@ -60,6 +60,7 @@
     onApprove?: (payload: FormPayload) => Promise<void> | void;
     onRevise?: (payload: FormPayload) => Promise<void> | void;
     onCancelReview?: () => Promise<void> | void;
+    onDelete?: () => Promise<void> | void;
     onSaveAsTemplate?: (payload: FormPayload) => Promise<void> | void;
     onUpdateTemplate?: (
       payload: FormPayload,
@@ -105,6 +106,7 @@
     onApprove,
     onRevise,
     onCancelReview,
+    onDelete,
     onSaveAsTemplate,
     onUpdateTemplate,
     onCancel,
@@ -1027,6 +1029,17 @@
           data-testid="cancel-review"
         >
           Batalkan Review
+        </button>
+      {/if}
+      {#if !readOnly && !templateMode && ['draft', 'posted'].includes(initial?.status ?? '') && onDelete}
+        <button
+          type="button"
+          onclick={() => void onDelete?.()}
+          disabled={saving}
+          class="rounded-md border border-danger/50 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger-light disabled:cursor-not-allowed disabled:opacity-50"
+          data-testid="delete-journal"
+        >
+          Hapus
         </button>
       {/if}
       <button

@@ -47,6 +47,8 @@ class JournalController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $this->requirePermission('journal.read', $entity);
+        $status = $request->query('status');
+        $isTrashed = $status === 'trashed';
         $mode = $request->query('journal_mode');
         if ($this->isInspector($request)) {
             $mode = Journal::MODE_FISCAL;
@@ -56,26 +58,36 @@ class JournalController extends Controller
         }
         $perPage = min(100, max(5, (int) ($request->query('per_page', 20))));
 
-        $query = Journal::query()->where('entity_id', $entity->id);
-
         if ($mode !== null) {
             $this->authorizeBookRead($request, $mode);
-            $query->where('journal_mode', $mode);
         }
 
-        if ($periodId = $request->query('period_id')) {
-            $query->where('period_id', $periodId);
-        }
-        if ($search = $request->query('search')) {
-            $query->where(function ($q) use ($search) {
-                $q->where('number', 'like', "%{$search}%")
-                    ->orWhere('transaction_code', 'like', "%{$search}%")
-                    ->orWhere('reference', 'like', "%{$search}%")
-                    ->orWhere('memo', 'like', "%{$search}%");
-            });
-        }
+        $applyListFilters = function ($query) use ($mode, $request, $entity): void {
+            $query->where('entity_id', $entity->id);
 
-        $statusQuery = clone $query;
+            if ($mode !== null) {
+                $query->where('journal_mode', $mode);
+            }
+
+            if ($periodId = $request->query('period_id')) {
+                $query->where('period_id', $periodId);
+            }
+
+            if ($search = $request->query('search')) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('number', 'like', "%{$search}%")
+                        ->orWhere('transaction_code', 'like', "%{$search}%")
+                        ->orWhere('reference', 'like', "%{$search}%")
+                        ->orWhere('memo', 'like', "%{$search}%");
+                });
+            }
+        };
+
+        $query = $isTrashed ? Journal::onlyTrashed() : Journal::query();
+        $applyListFilters($query);
+
+        $statusQuery = Journal::query();
+        $applyListFilters($statusQuery);
         $statusCounts = $statusQuery
             ->reorder()
             ->select('status', DB::raw('COUNT(*) as aggregate'))
@@ -94,7 +106,7 @@ class JournalController extends Controller
             $statusCounts,
         );
 
-        if ($status = $request->query('status')) {
+        if ($status !== null && ! $isTrashed) {
             $query->where('status', $status);
         }
 
@@ -112,6 +124,7 @@ class JournalController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
                 'status_counts' => $statusCounts,
+                'trashed_count' => $this->trashedCount($entity->id, $mode),
             ],
         ]);
     }
@@ -331,14 +344,69 @@ class JournalController extends Controller
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
 
-        $this->requirePermission('journal.delete', $entity);
-        if ($journal->status !== Journal::STATUS_DRAFT) {
-            throw ValidationException::withMessages(['status' => 'Only draft journals can be deleted.']);
+        if ($journal->status === Journal::STATUS_POSTED) {
+            abort_unless(
+                $this->isSupervisorLevel($request, $entity),
+                403,
+                'Hanya Supervisor yang dapat memindahkan jurnal Tersimpan ke Trashed.',
+            );
+        } else {
+            $this->requirePermission('journal.delete', $entity);
+            if ($journal->status !== Journal::STATUS_DRAFT) {
+                throw ValidationException::withMessages(['status' => 'Only draft journals can be deleted.']);
+            }
         }
 
-        $journal->delete();
+        $before = $this->snapshot($journal->load('entries.account'));
+        $statusFrom = $journal->status;
+        DB::transaction(function () use ($journal, $entity, $before, $statusFrom): void {
+            $journal->delete();
+            $this->auditLogger->record(
+                'journal.trash', Journal::class, $journal->id, $entity->id,
+                ['snapshot' => $before, 'status_from' => $statusFrom], Auth::id(),
+            );
+        });
 
         return response()->json(null, 204);
+    }
+
+    public function restore(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        abort_unless(
+            Auth::user()?->hasPermission('journal.delete', $entity->id)
+                || $this->isSupervisorLevel($request, $entity),
+            403,
+            'Anda tidak memiliki izin untuk memulihkan jurnal dari Trashed.',
+        );
+        /** @var Journal $journal */
+        $journal = Journal::withTrashed()->where('entity_id', $entity->id)->findOrFail($id);
+        if (! $journal->trashed()) {
+            throw ValidationException::withMessages(['status' => 'Only trashed journals can be restored.']);
+        }
+
+        DB::transaction(function () use ($journal, $entity): void {
+            $journal->restore();
+            $journal->forceFill([
+                'status' => Journal::STATUS_DRAFT,
+                'review_note' => null,
+                'reviewed_by' => null,
+                'reviewed_at' => null,
+            ])->save();
+            $this->auditLogger->record(
+                'journal.restore', Journal::class, $journal->id, $entity->id,
+                [
+                    'status_from' => Journal::STATUS_DRAFT,
+                    'status_to' => Journal::STATUS_DRAFT,
+                ], Auth::id(),
+            );
+        });
+
+        $restored = $journal->load('entries.account');
+
+        return response()->json(['data' => array_merge($this->detail($restored), [
+            'audit_trail' => $this->auditTrail($restored),
+        ])]);
     }
 
     public function post(Request $request, string $id): JsonResponse
@@ -647,7 +715,18 @@ class JournalController extends Controller
             'review_note' => $j->review_note,
             'memo' => $j->memo,
             'total' => (string) ($j->total_debit ?? 0),
+            'deleted_at' => optional($j->deleted_at)?->toIso8601String(),
         ];
+    }
+
+    private function trashedCount(string $entityId, ?string $mode): int
+    {
+        $query = Journal::onlyTrashed()->where('entity_id', $entityId);
+        if ($mode !== null) {
+            $query->where('journal_mode', $mode);
+        }
+
+        return $query->count();
     }
 
     private function detail(Journal $j): array
@@ -707,6 +786,8 @@ class JournalController extends Controller
             ->whereIn('action', [
                 'journal.updated',
                 'journal.attachment_changed',
+                'journal.trash',
+                'journal.restore',
                 'journal.submit',
                 'journal.reject',
                 'journal.cancel_review',

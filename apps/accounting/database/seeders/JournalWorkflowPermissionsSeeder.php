@@ -16,7 +16,7 @@ class JournalWorkflowPermissionsSeeder extends Seeder
             ['code' => 'journal.read', 'description' => 'Melihat jurnal', 'category' => 'journal'],
             ['code' => 'journal.create', 'description' => 'Membuat jurnal', 'category' => 'journal'],
             ['code' => 'journal.update', 'description' => 'Mengubah jurnal draft atau ditolak', 'category' => 'journal'],
-            ['code' => 'journal.delete', 'description' => 'Menghapus jurnal draft', 'category' => 'journal'],
+            ['code' => 'journal.delete', 'description' => 'Memindahkan jurnal draft ke Trashed dan memulihkannya; Supervisor dapat memindahkan jurnal Tersimpan', 'category' => 'journal'],
             ['code' => 'journal.submit', 'description' => 'Mengajukan jurnal untuk review', 'category' => 'journal'],
             ['code' => 'journal.review', 'description' => 'Menyetujui atau menolak jurnal', 'category' => 'journal'],
             ['code' => 'journal.post', 'description' => 'Posting jurnal', 'category' => 'journal'],
@@ -31,7 +31,7 @@ class JournalWorkflowPermissionsSeeder extends Seeder
 
         $roles = [
             'admin' => array_keys($permissions->all()),
-            'supervisor' => ['journal.read', 'journal.review', 'journal.post', 'journal.reverse', 'journal.update', 'automapping.manage', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
+            'supervisor' => ['journal.read', 'journal.review', 'journal.post', 'journal.reverse', 'journal.update', 'journal.delete', 'automapping.manage', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
             'operator' => ['journal.read', 'journal.create', 'journal.update', 'journal.delete', 'journal.submit'],
             'accountant' => ['journal.read', 'journal.create', 'journal.update', 'journal.delete', 'journal.submit', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],
             'tax_officer' => ['journal.read', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.adjustment.approve', 'fiscal.tax_provision.read', 'fiscal.tax_provision.manage'],

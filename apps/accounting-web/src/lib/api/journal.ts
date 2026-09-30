@@ -16,6 +16,7 @@ export interface JournalSummary {
   status: JournalStatus;
   memo: string | null;
   total: string;
+  deleted_at?: string | null;
 }
 
 export interface JournalEntry {
@@ -82,6 +83,7 @@ export interface JournalListResponse {
     per_page: number;
     total: number;
     status_counts?: Partial<Record<JournalStatus, number>>;
+    trashed_count?: number;
   };
 }
 
@@ -146,6 +148,13 @@ export const journalApi = {
 
   destroy: (id: string, tenantSlug?: string | null) =>
     api<void>(`/api/v1/spa/journals/${id}`, { method: 'DELETE', tenantSlug }),
+
+  restore: (id: string, tenantSlug?: string | null) =>
+    api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/restore`, {
+      method: 'POST',
+      json: {},
+      tenantSlug,
+    }).then((r) => r.data),
 
   post: (id: string, tenantSlug?: string | null) =>
     api<{ data: JournalDetail }>(`/api/v1/spa/journals/${id}/post`, {
