@@ -821,7 +821,7 @@
       <div
         class="flex items-center justify-between gap-3 bg-warning px-6 py-2 text-sm font-semibold text-white"
       >
-        <span>Anda sedang melihat aplikasi sebagai user fake.</span>
+        <span class="text-black">Anda sedang melihat aplikasi sebagai user fake.</span>
         <button
           type="button"
           class="rounded bg-[#0F172A] px-3 py-1 text-xs text-white hover:bg-[#1E293B]"

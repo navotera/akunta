@@ -125,3 +125,57 @@ test('blocks posting when unbalanced and surfaces server error', async ({ page }
   expect(res.status()).toBe(422);
   await expect(page.getByTestId('form-banner')).toBeVisible();
 });
+
+test('trashes a draft journal and restores it as draft', async ({ page }) => {
+  await login(page);
+
+  await page.goto('/journals/new');
+  await expect(page.getByTestId('journal-date')).toBeVisible();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const reference = `TRASH-E2E-${Date.now().toString().slice(-6)}`;
+  await page.getByTestId('journal-date').fill(today);
+  await page.getByTestId('journal-reference').fill(reference);
+  await page.getByTestId('journal-memo').fill('E2E trash and restore');
+
+  const debit = page.getByTestId('debit-panel');
+  const credit = page.getByTestId('credit-panel');
+  await pickFirstAccount(debit, 0);
+  await fillAmount(debit, 0, '100000');
+  await pickFirstAccount(credit, 0);
+  await fillAmount(credit, 0, '100000');
+  await page.getByTestId('journal-no-attachment').check();
+
+  const createReq = page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/v1/spa/journals') &&
+      r.request().method() === 'POST' &&
+      !r.url().endsWith('/post'),
+  );
+  await page.getByTestId('save-draft').click();
+  const created = await createReq;
+  expect(created.status()).toBe(201);
+  const journalId = (await created.json()).data.id as string;
+
+  await page.waitForURL('**/journals/*');
+  await expect(page.getByTestId('delete-journal')).toBeVisible();
+
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByTestId('delete-journal').click();
+  await page.waitForURL('**/journals');
+
+  await page.getByRole('button', { name: 'Trashed' }).click();
+  await expect(page.getByText(reference).first()).toBeVisible();
+  const restoreButton = page.getByTestId(`restore-journal-${journalId}`);
+  await expect(restoreButton).toHaveText('Restore as Draft');
+
+  const restoreReq = page.waitForResponse((r) =>
+    r.url().endsWith(`/api/v1/spa/journals/${journalId}/restore`),
+  );
+  await restoreButton.click();
+  expect((await restoreReq).status()).toBe(200);
+  await expect(page.getByText(reference)).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Draft' }).click();
+  await expect(page.getByText(reference).first()).toBeVisible();
+});

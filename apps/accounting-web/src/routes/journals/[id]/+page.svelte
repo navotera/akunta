@@ -231,7 +231,32 @@
     serverErrors = null;
     serverMessage = null;
     try {
-      await journalApi.cancelReview(detail.id);
+      detail = await journalApi.cancelReview(detail.id);
+    } catch (e) {
+      captureError(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteJournal() {
+    if (!detail) return;
+    const canDelete = detail.status === 'draft' || (detail.status === 'posted' && isSupervisor);
+    if (!canDelete) return;
+    if (
+      !window.confirm(
+        detail.status === 'posted'
+          ? 'Pindahkan jurnal Tersimpan ke Trashed?'
+          : 'Hapus jurnal draft ini?',
+      )
+    )
+      return;
+
+    saving = true;
+    serverErrors = null;
+    serverMessage = null;
+    try {
+      await journalApi.destroy(detail.id);
       goto('/journals');
     } catch (e) {
       captureError(e);
@@ -369,6 +394,7 @@
     breadcrumb={`Transaksi / Jurnal / ${detail.number}`}
     onSaveDraft={saveDraft}
     onPosting={postingJurnal}
+    onDelete={deleteJournal}
     onCancel={cancel}
     auditTrail={detail.audit_trail}
   />

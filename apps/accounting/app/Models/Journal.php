@@ -9,11 +9,13 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Journal extends Model
 {
     use HasAttachments;
     use HasUlids;
+    use SoftDeletes;
 
     public const TYPE_GENERAL = 'general';
 
@@ -65,6 +67,7 @@ class Journal extends Model
         'reviewed_at',
         'auto_mapping_raw_data_id',
         'auto_mapping_rule_id',
+        'deleted_at',
     ];
 
     protected $casts = [
@@ -72,6 +75,7 @@ class Journal extends Model
         'posted_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'auto_reverse_on' => 'date',
+        'deleted_at' => 'datetime',
     ];
 
     protected $attributes = [

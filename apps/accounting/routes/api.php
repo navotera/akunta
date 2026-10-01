@@ -105,6 +105,7 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::post('journals', [App\Http\Controllers\Api\Spa\JournalController::class, 'store']);
         Route::patch('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'update']);
         Route::delete('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'destroy']);
+        Route::post('journals/{id}/restore', [App\Http\Controllers\Api\Spa\JournalController::class, 'restore']);
         Route::post('journals/{id}/post', [App\Http\Controllers\Api\Spa\JournalController::class, 'post']);
         Route::post('journals/{id}/submit', [App\Http\Controllers\Api\Spa\JournalController::class, 'submit']);
         Route::post('journals/{id}/cancel-review', [App\Http\Controllers\Api\Spa\JournalController::class, 'cancelReview']);

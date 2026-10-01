@@ -756,6 +756,10 @@ sebagai Diajukan, `submitted` sebagai Di review, `posted` sebagai Tersimpan, dan
 `rejected` sebagai Perlu Revisi. Jurnal Tersimpan terkunci bagi accountant;
 Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
 
+Jurnal draft yang dihapus operator/accountant tidak langsung dihapus permanen.
+Jurnal dipindahkan ke tab `Trashed`, tetap dapat dipulihkan sebagai `draft`, dan
+dihapus permanen oleh scheduler setelah 30 hari sejak `deleted_at`.
+
 ### 8.8 Fake Data Lengkap dan Aman
 
 Instalasi aplikasi yang menjalankan seeder menyediakan satu entitas bawaan `PT. Fake Data` dengan
