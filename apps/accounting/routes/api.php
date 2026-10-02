@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Spa\OnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
 use App\Http\Controllers\Api\Spa\ReportingController;
 use App\Http\Controllers\Api\Spa\RoleManagementController;
+use App\Http\Controllers\Api\Spa\SchedulerHealthController;
 use App\Http\Controllers\Api\Spa\SourceRefController;
 use App\Http\Controllers\Api\Spa\TaxProvisionController;
 use App\Http\Controllers\Api\Spa\Widgets\EcosystemController;
@@ -152,6 +153,8 @@ Route::middleware(['web', 'auth:sanctum'])
 
         Route::get('ecopa-integration', [EcopaIntegrationController::class, 'show']);
         Route::get('ecopa-integration/webhook-logs', [EcopaWebhookLogController::class, 'index']);
+
+        Route::get('scheduler/status', [SchedulerHealthController::class, 'index']);
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
         Route::post('role-management/assignments', [RoleManagementController::class, 'assign']);

@@ -12,6 +12,7 @@
   import { roleManagementApi } from '$lib/api/role-management.js';
   import { accessDenied } from '$lib/stores/access-denied.svelte.js';
   import AccessDeniedContent from './AccessDeniedContent.svelte';
+  import SchedulerAlert from './SchedulerAlert.svelte';
 
   interface NavItem {
     href?: string;
@@ -829,6 +830,8 @@
         >
       </div>
     {/if}
+
+    <SchedulerAlert />
 
     {#if accessDenied.active}
       <main class="min-w-0 flex-1">

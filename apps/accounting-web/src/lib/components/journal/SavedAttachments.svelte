@@ -3,10 +3,13 @@
 
   interface Props {
     attachments: Attachment[];
+    canDelete?: boolean;
+    onDeleteAttachment?: (attachment: Attachment) => Promise<void> | void;
   }
 
-  let { attachments }: Props = $props();
+  let { attachments, canDelete = false, onDeleteAttachment }: Props = $props();
   let error = $state<string | null>(null);
+  let deletingAttachmentId = $state<string | null>(null);
   let thumbnailUrls = $state<Record<string, string>>({});
   let previewAttachment = $state<Attachment | null>(null);
   let previewUrl = $state<string | null>(null);
@@ -75,6 +78,21 @@
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape' && previewAttachment) closePreview();
   }
+
+  async function deleteAttachment(attachment: Attachment): Promise<void> {
+    if (!onDeleteAttachment || !window.confirm(`Hapus lampiran "${attachment.filename}"?`)) return;
+
+    error = null;
+    deletingAttachmentId = attachment.id;
+    try {
+      await onDeleteAttachment(attachment);
+      if (previewAttachment?.id === attachment.id) closePreview();
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : 'Lampiran gagal dihapus.';
+    } finally {
+      deletingAttachmentId = null;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -112,9 +130,22 @@
             </span>
             <span class="min-w-0 truncate hover:underline">{attachment.filename}</span>
           </button>
-          <span class="shrink-0 text-xs text-text-muted">
-            {Math.max(1, Math.round(attachment.size_bytes / 1024))} KB
-          </span>
+          <div class="flex shrink-0 items-center gap-3">
+            <span class="text-xs text-text-muted">
+              {Math.max(1, Math.round(attachment.size_bytes / 1024))} KB
+            </span>
+            {#if canDelete && onDeleteAttachment}
+              <button
+                type="button"
+                class="text-xs font-medium text-danger hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                onclick={() => void deleteAttachment(attachment)}
+                disabled={deletingAttachmentId !== null}
+                data-testid={`delete-saved-attachment-${attachment.id}`}
+              >
+                {deletingAttachmentId === attachment.id ? 'Menghapus…' : 'Hapus'}
+              </button>
+            {/if}
+          </div>
         </li>
       {/each}
     </ul>

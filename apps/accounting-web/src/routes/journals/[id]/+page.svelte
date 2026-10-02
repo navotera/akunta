@@ -76,6 +76,11 @@
     );
   }
 
+  async function deleteAttachment(attachment: Attachment): Promise<void> {
+    await attachmentApi.destroy(attachment.id);
+    savedAttachments = savedAttachments.filter((item) => item.id !== attachment.id);
+  }
+
   onMount(async () => {
     if (!auth.user) {
       const u = await auth.refresh();
@@ -350,6 +355,8 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    canManageAttachments={true}
+    onDeleteAttachment={deleteAttachment}
     reviewMode={true}
     allowPosting={false}
     title={`Review Jurnal ${detail.number}`}
@@ -370,6 +377,7 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    canManageAttachments={false}
     readOnly={true}
     allowPosting={false}
     title={`Jurnal ${detail.number}`}
@@ -389,6 +397,8 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    canManageAttachments={true}
+    onDeleteAttachment={deleteAttachment}
     allowPosting={detail.status !== 'posted'}
     title={`Jurnal ${detail.number}`}
     breadcrumb={`Transaksi / Jurnal / ${detail.number}`}
