@@ -90,7 +90,9 @@
               <span class="min-w-0 flex-1">
                 <span class="block text-xs font-semibold">{formatDate(item.created_at)}</span>
                 <span class="block text-xs text-text-muted">By {item.actor_name}</span>
-                {#if item.action === 'journal.reject'}
+                {#if item.action === 'journal.created'}
+                  <span class="mt-1 block text-xs font-medium text-paid">Jurnal dibuat</span>
+                {:else if item.action === 'journal.reject'}
                   <span class="mt-1 block text-xs font-semibold text-[#a16207]"
                     >Revision Requested</span
                   >

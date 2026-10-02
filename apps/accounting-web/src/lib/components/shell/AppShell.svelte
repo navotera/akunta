@@ -13,6 +13,7 @@
   import { accessDenied } from '$lib/stores/access-denied.svelte.js';
   import AccessDeniedContent from './AccessDeniedContent.svelte';
   import SchedulerAlert from './SchedulerAlert.svelte';
+  import { APP_VERSION } from '$lib/config/app-version.js';
 
   interface NavItem {
     href?: string;
@@ -593,11 +594,17 @@
       </div>
     </nav>
 
-    <footer class="flex justify-end px-3 py-3">
+    <footer class="flex flex-col items-stretch px-5 py-3">
+      <span
+        class="order-2 mt-2 block w-full pt-2 text-center text-[0.65rem] font-medium tracking-wide text-text-muted"
+        data-testid="app-version"
+      >
+        Akunta v{APP_VERSION}
+      </span>
       {#if auth.user}
         <button
           type="button"
-          class="text-text-muted hover:text-danger"
+          class="order-1 self-end text-text-muted hover:text-danger"
           onclick={logout}
           title="Keluar"
           data-testid="logout-button"
