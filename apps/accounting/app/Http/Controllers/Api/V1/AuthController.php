@@ -153,6 +153,8 @@ class AuthController extends Controller
                 : null,
             'can_manage_fake_data' => session('ecopa.app_role') === 'admin'
                 || $user->hasPermission('settings.fake_data.manage', $e->id),
+            'can_manage_cron' => session('ecopa.app_role') === 'admin'
+                || $user->hasPermission('settings.cron.manage', $e->id),
             'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
             'date_format' => data_get($e->workspace_settings, 'date_format', 'DD MMM YYYY'),
             'issue_report_url' => data_get($e->workspace_settings, 'issue_report_url'),

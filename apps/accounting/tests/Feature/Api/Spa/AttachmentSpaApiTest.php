@@ -70,6 +70,27 @@ it('uploads an attachment to a journal', function () {
         ->assertJsonPath('data.0.filename', 'invoice.pdf');
 });
 
+it('deletes an attachment from an editable draft journal', function () {
+    $upload = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->post('/api/v1/spa/attachments', [
+            'attachable_type' => Journal::class,
+            'attachable_id' => $this->journal->id,
+            'file' => UploadedFile::fake()->create('to-delete.pdf', 50, 'application/pdf'),
+        ])
+        ->assertCreated();
+
+    $attachment = Attachment::findOrFail($upload->json('data.id'));
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson('/api/v1/spa/attachments/'.$attachment->id)
+        ->assertNoContent();
+
+    expect(Attachment::whereKey($attachment->id)->exists())->toBeFalse()
+        ->and(Attachment::withTrashed()->whereKey($attachment->id)->exists())->toBeTrue();
+});
+
 it('compresses and resizes images, creates a thumbnail, and serves signed urls', function () {
     $file = UploadedFile::fake()->image('receipt.jpg', 4000, 2000);
 

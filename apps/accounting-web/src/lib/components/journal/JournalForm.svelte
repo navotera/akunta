@@ -55,6 +55,8 @@
     template?: JournalTemplateDetail | null;
     auditTrail?: JournalAuditTrailItem[];
     savedAttachments?: Attachment[];
+    canManageAttachments?: boolean;
+    onDeleteAttachment?: (attachment: Attachment) => Promise<void> | void;
     onSaveDraft: (payload: FormPayload) => Promise<void> | void;
     onPosting: (payload: FormPayload) => Promise<void> | void;
     onApprove?: (payload: FormPayload) => Promise<void> | void;
@@ -101,6 +103,8 @@
     template = null,
     auditTrail = [],
     savedAttachments = [],
+    canManageAttachments = false,
+    onDeleteAttachment,
     onSaveDraft,
     onPosting,
     onApprove,
@@ -701,7 +705,11 @@
             </h2>
             {#if savedAttachments.length > 0}
               <div class="mb-4">
-                <SavedAttachments attachments={savedAttachments} />
+                <SavedAttachments
+                  attachments={savedAttachments}
+                  canDelete={canManageAttachments}
+                  {onDeleteAttachment}
+                />
               </div>
             {/if}
             <input

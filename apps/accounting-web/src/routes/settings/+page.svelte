@@ -37,6 +37,11 @@
     applyWorkspaceTheme,
     workspaceThemes,
   } from '$lib/stores/theme.svelte.js';
+  import {
+    schedulerApi,
+    type SchedulerHealth,
+    type SchedulerTaskStatus,
+  } from '$lib/api/scheduler.js';
 
   type SettingSection =
     | 'general'
@@ -44,6 +49,7 @@
     | 'number-formats'
     | 'entity-profile'
     | 'notification'
+    | 'cron'
     | 'fake-data'
     | 'users'
     | 'permissions'
@@ -53,6 +59,7 @@
     [
       { id: 'general', label: 'General', description: 'Preferensi dasar aplikasi', icon: '⚙' },
       { id: 'notification', label: 'Notification', description: 'Atur pemberitahuan', icon: '♢' },
+      { id: 'cron', label: 'Cron & Scheduler', description: 'Status job otomatis', icon: '⚡' },
       { id: 'users', label: 'User & Roles', description: 'Pengguna dan hak akses', icon: '♙' },
       {
         id: 'permissions',
@@ -177,6 +184,11 @@
   let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
   let fakeDataMessage = $state<string | null>(null);
+  let schedulerHealth = $state<SchedulerHealth | null>(null);
+  let schedulerLoading = $state(false);
+  let schedulerError = $state<string | null>(null);
+  let schedulerCommandCopied = $state(false);
+  let schedulerPoll: number | null = null;
   let fakeDataset = $state<FakeDatasetInfo | null>(null);
   let resetPreview = $state<FakeDatasetResetPreview | null>(null);
   let resetPreviewLoading = $state(false);
@@ -205,9 +217,19 @@
       auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
     ),
   );
+  let canManageCron = $derived(
+    Boolean(
+      auth.user?.is_sso_admin ||
+      auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
+    ),
+  );
   let showFakeDataSettings = $derived(currentWorkspaceIsFake && canManageFakeData);
   let visibleSections = $derived(
-    sections.filter((section) => section.id !== 'fake-data' || showFakeDataSettings),
+    sections.filter(
+      (section) =>
+        (section.id !== 'fake-data' || showFakeDataSettings) &&
+        (section.id !== 'cron' || canManageCron),
+    ),
   );
 
   function selectLogo(event: Event) {
@@ -239,6 +261,9 @@
 
   onMount(() => {
     void initializeSettings();
+    return () => {
+      if (schedulerPoll !== null) window.clearInterval(schedulerPoll);
+    };
   });
 
   async function initializeSettings() {
@@ -250,6 +275,7 @@
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
     if ($page.url.searchParams.get('section') === 'users') activeSection = 'users';
     if ($page.url.searchParams.get('section') === 'integration') activeSection = 'integration';
+    if ($page.url.searchParams.get('section') === 'cron') activeSection = 'cron';
     await loadEcopaIntegration();
     dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
@@ -262,6 +288,62 @@
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
     if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
+    if (canManageCron) {
+      void loadSchedulerHealth();
+      schedulerPoll ??= window.setInterval(() => void loadSchedulerHealth(), 60_000);
+    }
+  }
+
+  async function loadSchedulerHealth() {
+    if (!canManageCron || schedulerLoading) return;
+    schedulerLoading = true;
+    schedulerError = null;
+    try {
+      schedulerHealth = await schedulerApi.status(tenant.id);
+    } catch (error) {
+      schedulerError = error instanceof Error ? error.message : 'Status scheduler gagal dimuat.';
+    } finally {
+      schedulerLoading = false;
+    }
+  }
+
+  async function copySchedulerCommand() {
+    const command = schedulerHealth?.scheduler.cron_command;
+    if (!command) return;
+
+    try {
+      await navigator.clipboard.writeText(command);
+      schedulerCommandCopied = true;
+      window.setTimeout(() => {
+        schedulerCommandCopied = false;
+      }, 2000);
+    } catch {
+      schedulerError = 'Perintah cron tidak dapat disalin otomatis.';
+    }
+  }
+
+  function schedulerTaskLabel(status: SchedulerTaskStatus): string {
+    return {
+      healthy: 'Sehat',
+      failed: 'Gagal',
+      overdue: 'Terlambat',
+      never: 'Belum pernah berjalan',
+      running: 'Sedang berjalan',
+    }[status];
+  }
+
+  function schedulerTaskClass(status: SchedulerTaskStatus): string {
+    return {
+      healthy: 'bg-paid-light text-paid',
+      failed: 'bg-danger-light text-danger',
+      overdue: 'bg-warning-light text-warning',
+      never: 'bg-warning-light text-warning',
+      running: 'bg-primary-light text-primary',
+    }[status];
+  }
+
+  function schedulerTime(value: string | null): string {
+    return value ? formatDateTime(value) : 'Belum ada catatan';
   }
 
   async function loadFakeData() {
@@ -818,6 +900,16 @@
     <p class="text-xs font-medium text-text-muted">Master / Setting</p>
     <h1 class="text-2xl font-bold">Setting</h1>
     <p class="mt-1 text-sm text-text-muted">Pengaturan aplikasi dan preferensi Akunta.</p>
+    {#if schedulerHealth && schedulerHealth.tasks.some( (task) => ['failed', 'overdue', 'never'].includes(task.status), )}
+      <div
+        class="mt-4 rounded-md border border-warning/30 bg-warning-light p-3 text-sm text-warning"
+        role="alert"
+        data-testid="scheduler-task-alert"
+      >
+        <strong>Ada job otomatis yang perlu diperiksa.</strong>
+        Buka menu Cron &amp; Scheduler untuk melihat job yang gagal atau belum berjalan sesuai jadwal.
+      </div>
+    {/if}
   </header>
 
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-[16rem_1fr]">
@@ -1930,6 +2022,178 @@
         >
           Pengaturan notifikasi akan tersedia pada tahap berikutnya.
         </div>
+      {:else if activeSection === 'cron' && canManageCron}
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold">Cron &amp; Scheduler</h2>
+            <p class="mt-1 text-sm text-text-muted">
+              Pantau apakah scheduler Laravel aktif dan apakah job penghapusan otomatis berhasil.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold hover:border-primary hover:text-primary disabled:opacity-50"
+            onclick={() => void loadSchedulerHealth()}
+            disabled={schedulerLoading}
+            data-testid="refresh-scheduler-status"
+          >
+            {schedulerLoading ? 'Memuat…' : 'Muat ulang'}
+          </button>
+        </div>
+
+        {#if schedulerError}
+          <p
+            class="mt-5 rounded-md border border-danger/30 bg-danger-light p-3 text-sm text-danger"
+            role="alert"
+          >
+            {schedulerError}
+          </p>
+        {:else if schedulerLoading && !schedulerHealth}
+          <p class="mt-5 text-sm text-text-muted">Memuat status scheduler…</p>
+        {:else if schedulerHealth}
+          <div
+            class="mt-5 rounded-lg border {schedulerHealth.scheduler.healthy
+              ? 'border-paid/30 bg-paid-light'
+              : 'border-danger/30 bg-danger-light'} p-4"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-sm font-semibold">Heartbeat scheduler</h3>
+                <p class="mt-1 text-xs text-text-muted">
+                  Terakhir terdeteksi: {schedulerTime(schedulerHealth.scheduler.last)}
+                </p>
+              </div>
+              <span
+                class="rounded-full px-3 py-1 text-xs font-bold {schedulerHealth.scheduler.healthy
+                  ? 'bg-paid text-white'
+                  : 'bg-danger text-white'}"
+              >
+                {schedulerHealth.scheduler.healthy ? 'Aktif' : 'Tidak terdeteksi'}
+              </span>
+            </div>
+            {#if !schedulerHealth.scheduler.healthy}
+              <p class="mt-3 text-sm text-danger">
+                Pasang cron OS berikut setiap menit. Scheduler Laravel yang tidak berjalan tidak
+                akan mengeksekusi job harian.
+              </p>
+            {/if}
+            <div class="mt-4 rounded-md border border-border-default bg-card-bg p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 class="text-xs font-semibold text-text-default">Perintah cron</h4>
+                  <p class="mt-1 text-xs text-text-muted">
+                    Direktori Akunta terdeteksi otomatis dari server.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-3 py-1.5 text-xs font-semibold text-text-default hover:bg-page-bg"
+                  onclick={() => void copySchedulerCommand()}
+                  data-testid="copy-scheduler-command"
+                >
+                  {schedulerCommandCopied ? 'Tersalin' : 'Copy'}
+                </button>
+              </div>
+              <code
+                class="mt-3 block overflow-x-auto whitespace-pre rounded bg-page-bg p-2 text-[11px] text-text-default"
+                data-testid="scheduler-command">{schedulerHealth.scheduler.cron_command}</code
+              >
+              <p class="mt-2 text-xs text-text-muted">
+                Direktori: <code class="break-all"
+                  >{schedulerHealth.scheduler.working_directory}</code
+                >
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-3">
+            {#each schedulerHealth.tasks as task (task.key)}
+              <article
+                class="rounded-lg border border-border-soft bg-page-bg p-4"
+                data-testid={`scheduler-task-${task.key}`}
+              >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold">{task.label}</h3>
+                    <p class="mt-1 text-xs text-text-muted">{task.schedule}</p>
+                  </div>
+                  <span
+                    class="rounded-full px-2.5 py-1 text-xs font-bold {schedulerTaskClass(
+                      task.status,
+                    )}"
+                  >
+                    {schedulerTaskLabel(task.status)}
+                  </span>
+                </div>
+                <div class="mt-3 grid gap-2 text-xs text-text-muted sm:grid-cols-2">
+                  <div>
+                    <span class="font-semibold text-text-default">Eksekusi terakhir:</span>
+                    {schedulerTime(task.last_run?.finished_at ?? task.last_run?.started_at ?? null)}
+                  </div>
+                  <div>
+                    <span class="font-semibold text-text-default">Berhasil terakhir:</span>
+                    {schedulerTime(task.last_success?.finished_at ?? null)}
+                  </div>
+                </div>
+                {#if task.last_failure}
+                  <div
+                    class="mt-3 rounded-md border border-danger/20 bg-danger-light p-3 text-xs text-danger"
+                  >
+                    Gagal pada {schedulerTime(
+                      task.last_failure.finished_at ?? task.last_failure.started_at,
+                    )}.
+                    {#if task.last_failure.exception}
+                      <pre class="mt-2 max-h-24 overflow-auto whitespace-pre-wrap font-mono">{task
+                          .last_failure.exception}</pre>
+                    {/if}
+                  </div>
+                {/if}
+              </article>
+            {/each}
+          </div>
+
+          <div class="mt-6">
+            <h3 class="text-sm font-semibold">Aktivitas scheduler terbaru</h3>
+            {#if schedulerHealth.recent_runs.length === 0}
+              <p class="mt-2 text-sm text-text-muted">
+                Belum ada eksekusi scheduler yang tercatat.
+              </p>
+            {:else}
+              <div class="mt-3 overflow-x-auto rounded-lg border border-border-default">
+                <table class="ak-table min-w-[680px] text-xs">
+                  <thead>
+                    <tr>
+                      <th>Waktu</th>
+                      <th>Command</th>
+                      <th>Status</th>
+                      <th>Pesan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each schedulerHealth.recent_runs.slice(0, 10) as run (run.id)}
+                      <tr>
+                        <td>{schedulerTime(run.finished_at ?? run.started_at)}</td>
+                        <td class="font-mono">{run.command}</td>
+                        <td>
+                          <span
+                            class="rounded-full px-2 py-1 font-semibold {run.failed
+                              ? 'bg-danger-light text-danger'
+                              : 'bg-paid-light text-paid'}"
+                          >
+                            {run.failed ? 'Gagal' : run.finished_at ? 'Berhasil' : 'Berjalan'}
+                          </span>
+                        </td>
+                        <td class="max-w-sm whitespace-pre-wrap text-danger"
+                          >{run.exception ?? run.output ?? '—'}</td
+                        >
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          </div>
+        {/if}
       {:else if activeSection === 'fake-data' && showFakeDataSettings}
         <h2 class="text-lg font-bold">Fake Data</h2>
         <p class="mt-1 text-sm text-text-muted">
