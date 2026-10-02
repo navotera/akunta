@@ -20,6 +20,7 @@
   let accounts = $state<AccountOption[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
   let saving = $state(false);
+  let attachmentResetToken = $state(0);
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
   let accountsRequest = 0;
@@ -123,6 +124,7 @@
       });
       await uploadAttachments(updated, payload.attachments);
       savedAttachments = await attachmentApi.listFor(JOURNAL_ATTACHABLE_TYPE, updated.id);
+      if (payload.attachments.length > 0) attachmentResetToken += 1;
       detail = await journalApi.show(updated.id);
     } catch (e) {
       captureError(e);
@@ -355,6 +357,7 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    {attachmentResetToken}
     canManageAttachments={true}
     onDeleteAttachment={deleteAttachment}
     reviewMode={true}
@@ -377,6 +380,7 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    {attachmentResetToken}
     canManageAttachments={false}
     readOnly={true}
     allowPosting={false}
@@ -397,6 +401,7 @@
     {serverErrors}
     {serverMessage}
     {savedAttachments}
+    {attachmentResetToken}
     canManageAttachments={true}
     onDeleteAttachment={deleteAttachment}
     allowPosting={detail.status !== 'posted'}

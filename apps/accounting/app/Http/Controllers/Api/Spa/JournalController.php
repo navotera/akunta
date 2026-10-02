@@ -215,13 +215,16 @@ class JournalController extends Controller
                 ]);
 
                 $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+                $this->recordJournalCreatedAudit($journal, $entity);
                 $created[] = $journal->fresh('entries');
             }
 
             return $created;
         });
 
-        $payload = ['data' => $this->detail($journals[0])];
+        $payload = ['data' => array_merge($this->detail($journals[0]), [
+            'audit_trail' => $this->auditTrail($journals[0]),
+        ])];
         if (isset($journals[1])) {
             $payload['data']['paired_journal'] = $this->detail($journals[1]);
         }
@@ -500,7 +503,7 @@ class JournalController extends Controller
 
         $period = $this->resolvePeriod($entity, $source->date->toDateString());
 
-        $copy = DB::transaction(function () use ($source, $period) {
+        $copy = DB::transaction(function () use ($source, $period, $entity) {
             /** @var Journal $j */
             $j = Journal::create([
                 'entity_id' => $source->entity_id,
@@ -529,6 +532,8 @@ class JournalController extends Controller
                     'credit' => $e->credit,
                 ]);
             }
+
+            $this->recordJournalCreatedAudit($j, $entity);
 
             return $j->fresh('entries.account');
         });
@@ -778,12 +783,28 @@ class JournalController extends Controller
         ]));
     }
 
+    private function recordJournalCreatedAudit(Journal $journal, Entity $entity): void
+    {
+        $this->auditLogger->record(
+            'journal.created',
+            Journal::class,
+            $journal->id,
+            $entity->id,
+            [
+                'snapshot' => $this->snapshot($journal->fresh('entries.account')),
+                'status_to' => $journal->status,
+            ],
+            Auth::id(),
+        );
+    }
+
     private function auditTrail(Journal $j): array
     {
         return AuditLog::query()->with('actor:id,name')
             ->where('resource_type', Journal::class)
             ->where('resource_id', $j->id)
             ->whereIn('action', [
+                'journal.created',
                 'journal.updated',
                 'journal.attachment_changed',
                 'journal.trash',

@@ -144,6 +144,41 @@ test('deletes a saved attachment while editing a draft journal', async ({ page }
   await expect(deleteButton).toHaveCount(0);
 });
 
+test('does not duplicate a newly uploaded attachment after saving an existing draft', async ({
+  page,
+}) => {
+  await login(page);
+
+  await page.goto('/journals/new');
+  await expect(page.getByTestId('journal-date')).toBeVisible();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const reference = `ATTACH-RESET-E2E-${Date.now().toString().slice(-6)}`;
+  await page.getByTestId('journal-date').fill(today);
+  await page.getByTestId('journal-reference').fill(reference);
+  await page.getByTestId('journal-memo').fill('E2E attachment reset');
+
+  const debit = page.getByTestId('debit-panel');
+  const credit = page.getByTestId('credit-panel');
+  await pickFirstAccount(debit, 0);
+  await fillAmount(debit, 0, '100000');
+  await pickFirstAccount(credit, 0);
+  await fillAmount(credit, 0, '100000');
+  await page.getByTestId('journal-no-attachment').check();
+  await page.getByTestId('save-draft').click();
+  await page.waitForURL('**/journals/*');
+
+  await page.getByTestId('journal-attachments-input').setInputFiles({
+    name: 'bukti-reset-e2e.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4 attachment reset e2e'),
+  });
+  await page.getByTestId('save-draft').click();
+
+  await expect(page.getByTestId('saved-attachments').locator('li')).toHaveCount(1);
+  await expect(page.getByTestId('journal-attachment-preview-0')).toHaveCount(0);
+});
+
 test('blocks posting when unbalanced and surfaces server error', async ({ page }) => {
   await login(page);
 

@@ -121,7 +121,14 @@ onboarding, atau RBAC:
 10. Ikuti gaya file di sekitarnya. Untuk PHP gunakan Laravel Pint; file baru
     mengikuti namespace PSR-4 dan pola Pest yang dipakai aplikasi terkait.
 11. Perubahan perilaku publik harus disertai test dan, bila perlu, update
-    dokumentasi atau kontrak API.
+   dokumentasi atau kontrak API.
+12. Penanda versi Accounting Web bersumber dari
+   `apps/accounting-web/src/lib/config/app-version.ts` dan ditampilkan di
+   footer sidebar. Saat menyiapkan pull request, wajib naikkan versi sesuai
+   Semantic Versioning: patch untuk bug/perubahan kecil, minor untuk fitur
+   kompatibel, dan major untuk breaking change. Lakukan bump setelah seluruh
+   perubahan PR selesai agar satu PR hanya menghasilkan satu kenaikan versi.
+   Versi aplikasi ini terpisah dari versi dataset Fake Data `2026.1.0`.
 
 ## Perintah kerja dan verifikasi
 

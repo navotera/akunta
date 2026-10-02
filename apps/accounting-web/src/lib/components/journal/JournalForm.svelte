@@ -55,6 +55,7 @@
     template?: JournalTemplateDetail | null;
     auditTrail?: JournalAuditTrailItem[];
     savedAttachments?: Attachment[];
+    attachmentResetToken?: number;
     canManageAttachments?: boolean;
     onDeleteAttachment?: (attachment: Attachment) => Promise<void> | void;
     onSaveDraft: (payload: FormPayload) => Promise<void> | void;
@@ -103,6 +104,7 @@
     template = null,
     auditTrail = [],
     savedAttachments = [],
+    attachmentResetToken = 0,
     canManageAttachments = false,
     onDeleteAttachment,
     onSaveDraft,
@@ -163,8 +165,18 @@
   let attachmentToRemove = $state<number | null>(null);
   let attachmentToPreview = $state<File | null>(null);
   let attachmentPreviewUrl = $state<string | null>(null);
+  let handledAttachmentResetToken = $state(0);
   let pendingJournalMode = $state<JournalMode | null>(null);
   let periodError = $state<string | null>(null);
+
+  $effect(() => {
+    if (attachmentResetToken === handledAttachmentResetToken) return;
+
+    attachments = [];
+    if (attachmentInput) attachmentInput.value = '';
+    closeAttachmentPreview();
+    handledAttachmentResetToken = attachmentResetToken;
+  });
 
   onMount(async () => {
     try {
