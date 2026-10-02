@@ -31,9 +31,106 @@
   --m-sidebar-muted: #78829d;
   --m-bg-page: #fafafb;
   --m-bg-card: #ffffff;
+  --m-bg-topbar: #ffffff;
   --m-border: #dbdfe9;
+  --m-border-soft: #e5e7eb;
   --m-text: #252f4a;
   --m-text-muted: #78829d;
+  --m-text-strong: #071437;
+  --m-field-bg: #ffffff;
+  --m-field-bg-disabled: #f3f4f6;
+  --m-field-text: #252f4a;
+  --m-field-placeholder: #78829d;
+}
+
+:root[data-color-mode='dark'] {
+  color-scheme: dark;
+  --m-bg-page: #111827;
+  --m-bg-card: #1f2937;
+  --m-bg-topbar: #1f2937;
+  --m-border: #374151;
+  --m-border-soft: #4b5563;
+  --m-text: #f3f4f6;
+  --m-text-muted: #9ca3af;
+  --m-text-strong: #f9fafb;
+  --m-sidebar-bg: #111827;
+  --m-sidebar-gradient: linear-gradient(180deg, #111827 0%, #1f2937 100%);
+  --m-sidebar-text: #f3f4f6;
+  --m-sidebar-muted: #9ca3af;
+  --m-field-bg: #111827;
+  --m-field-bg-disabled: #273449;
+  --m-field-text: #f9fafb;
+  --m-field-placeholder: #9ca3af;
+}
+
+/* Keep native and custom form controls readable when the app switches color mode.
+ * Explicit transparent editors are excluded because they inherit from their wrapper. */
+:root[data-color-mode='dark']
+  :where(
+    input:not([type='button']):not([type='submit']):not([type='reset']):not([type='hidden']):not(
+        [type='checkbox']
+      ):not([type='radio']):not([type='range']):not([type='color']):not(.bg-transparent):not(
+        .format-text-input
+      ),
+    textarea,
+    select,
+    [contenteditable='true'][role='textbox']
+  ) {
+  background-color: var(--m-field-bg);
+  color: var(--m-field-text);
+  caret-color: var(--m-field-text);
+}
+
+:root[data-color-mode='dark'] .ak-form-control {
+  background-color: var(--m-field-bg);
+}
+
+:root[data-color-mode='dark']
+  :where(
+    input:not([type='button']):not([type='submit']):not([type='reset']):not(
+        [type='hidden']
+      )::placeholder,
+    textarea::placeholder
+  ) {
+  color: var(--m-field-placeholder);
+  opacity: 1;
+}
+
+:root[data-color-mode='dark']
+  :where(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):disabled,
+    input:read-only:not(.bg-transparent):not(.format-text-input),
+    textarea:disabled,
+    textarea:read-only,
+    select:disabled
+  ) {
+  background-color: var(--m-field-bg-disabled);
+  color: var(--m-field-placeholder);
+}
+
+:root[data-color-mode='dark'] .ak-form-control:disabled {
+  background-color: var(--m-field-bg-disabled);
+}
+
+:root[data-color-mode='dark'] select :where(option, optgroup) {
+  background-color: var(--m-field-bg);
+  color: var(--m-field-text);
+}
+
+:root[data-color-mode='dark'] input[type='file']::file-selector-button {
+  border-color: var(--m-border);
+  background-color: var(--m-bg-card);
+  color: var(--m-field-text);
+}
+
+:root[data-color-mode='dark'] input:-webkit-autofill,
+:root[data-color-mode='dark'] input:-webkit-autofill:hover,
+:root[data-color-mode='dark'] input:-webkit-autofill:focus,
+:root[data-color-mode='dark'] textarea:-webkit-autofill,
+:root[data-color-mode='dark'] select:-webkit-autofill {
+  -webkit-text-fill-color: var(--m-field-text);
+  caret-color: var(--m-field-text);
+  box-shadow: 0 0 0 1000px var(--m-field-bg) inset;
 }
 
 html,

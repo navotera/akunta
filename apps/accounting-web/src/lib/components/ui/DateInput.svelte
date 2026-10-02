@@ -59,7 +59,7 @@
 <div class="relative inline-flex w-full {extraClass}">
   <button
     type="button"
-    class="w-full rounded-md border border-border-default bg-white px-2 py-1.5 text-left text-sm focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed
+    class="ak-form-control w-full rounded-md border border-border-default bg-white px-2 py-1.5 text-left text-sm focus:outline-none focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed
            {display ? 'text-text-default' : 'text-text-muted'}"
     onclick={open}
     {disabled}

@@ -158,9 +158,9 @@
   <button
     bind:this={triggerEl}
     type="button"
-    class="h-9 min-h-9 w-full rounded-md border border-[#dbdfe9] bg-white px-2 text-left text-[12px] outline-none focus:border-[#1b84ff] focus:ring-4 focus:ring-[#1b84ff]/10 {selectedAccount
-      ? 'text-[#252f4a]'
-      : 'text-[#78829d]'}"
+    class="ak-form-control h-9 min-h-9 w-full rounded-md border border-border-default bg-white px-2 text-left text-[12px] outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 {selectedAccount
+      ? 'text-text-default'
+      : 'text-text-muted'}"
     onclick={openList}
     data-testid={testId}
   >
@@ -170,14 +170,14 @@
   {#if open}
     <div
       bind:this={listEl}
-      class="fixed z-[100] max-h-72 overflow-y-auto rounded-md border border-[#dbdfe9] bg-white shadow-xl"
+      class="fixed z-[100] max-h-72 overflow-y-auto rounded-md border border-border-default bg-card-bg shadow-xl"
       style={menuStyle}
       role="listbox"
     >
-      <div class="sticky top-0 border-b border-[#e5e7eb] bg-white p-2">
+      <div class="sticky top-0 border-b border-border-soft bg-card-bg p-2">
         <input
           bind:this={inputEl}
-          class="h-8 w-full rounded-md border border-[#dbdfe9] px-2 text-[12px] outline-none focus:border-[#1b84ff]"
+          class="h-8 w-full rounded-md border border-border-default px-2 text-[12px] outline-none focus:border-primary"
           placeholder="Cari kode atau nama akun…"
           bind:value={query}
           oninput={onQueryInput}
@@ -195,8 +195,8 @@
             class="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] {isSelectable(
               account,
             )
-              ? 'hover:bg-[#eff6ff]'
-              : 'cursor-not-allowed opacity-50'} {index === highlight ? 'bg-[#eff6ff]' : ''}"
+              ? 'hover:bg-page-bg'
+              : 'cursor-not-allowed opacity-50'} {index === highlight ? 'bg-page-bg' : ''}"
             onclick={() => pick(account)}
             onmouseenter={() => (highlight = index)}
             disabled={!isSelectable(account)}
@@ -213,8 +213,8 @@
             {:else}
               <span class="h-1.5 w-1.5 shrink-0" aria-hidden="true"></span>
             {/if}
-            <span class="w-20 shrink-0 font-mono text-[11px] text-[#78829d]">{account.code}</span>
-            <span class="truncate text-[#252f4a]">{account.name}</span>
+            <span class="w-20 shrink-0 font-mono text-[11px] text-text-muted">{account.code}</span>
+            <span class="truncate text-text-default">{account.name}</span>
             {#if account.availability !== 'both'}
               <span
                 class="ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold {account.availability ===

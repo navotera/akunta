@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -14,6 +15,12 @@
   import AccessDeniedContent from './AccessDeniedContent.svelte';
   import SchedulerAlert from './SchedulerAlert.svelte';
   import { APP_VERSION } from '$lib/config/app-version.js';
+  import {
+    applyColorMode,
+    getColorMode,
+    setColorMode,
+    type ColorMode,
+  } from '$lib/stores/appearance.svelte.js';
 
   interface NavItem {
     href?: string;
@@ -240,14 +247,40 @@
   }
 
   async function stopImpersonation() {
-    await roleManagementApi.stopImpersonation();
-    await auth.refresh();
-    goto('/settings');
+    try {
+      await roleManagementApi.stopImpersonation();
+      await auth.refresh();
+      userMenuOpen = false;
+      await goto('/settings');
+    } catch {
+      // Keep the menu open so the user can retry when the request fails.
+    }
+  }
+
+  function openProfile() {
+    userMenuOpen = false;
+    void goto('/settings?section=general');
+  }
+
+  function selectColorMode(mode: ColorMode) {
+    colorMode = mode;
+    setColorMode(mode);
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') userMenuOpen = false;
   }
 
   let entityMenuOpen = $state(false);
   let periodMenuOpen = $state(false);
+  let userMenuOpen = $state(false);
+  let colorMode = $state<ColorMode>('light');
   let ecosystemRequested = $state(false);
+
+  onMount(() => {
+    colorMode = getColorMode();
+    applyColorMode(colorMode);
+  });
 
   $effect(() => {
     // Refetch periods when active tenant changes.
@@ -403,6 +436,8 @@
     };
   }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="flex min-h-screen bg-page-bg">
   <!-- Sidebar — matches Filament fi-sidebar slim 240px / Metronic Demo3 light -->
@@ -601,18 +636,6 @@
       >
         Akunta v{APP_VERSION}
       </span>
-      {#if auth.user}
-        <button
-          type="button"
-          class="order-1 self-end text-text-muted hover:text-danger"
-          onclick={logout}
-          title="Keluar"
-          data-testid="logout-button"
-          aria-label="Keluar"
-        >
-          ⏻
-        </button>
-      {/if}
     </footer>
   </aside>
 
@@ -811,16 +834,163 @@
           🔔
         </button>
         {#if auth.user}
-          <span
-            class="hidden lg:flex items-center gap-2 rounded-md border border-border-default px-2 py-1.5"
-          >
-            <span
-              class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-light text-primary text-xs font-bold"
+          <div class="relative" use:handleClickOutside={() => (userMenuOpen = false)}>
+            <button
+              type="button"
+              class="flex items-center gap-2 rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-left hover:border-primary"
+              onclick={() => (userMenuOpen = !userMenuOpen)}
+              aria-haspopup="menu"
+              aria-expanded={userMenuOpen}
+              aria-label="Buka menu akun"
+              data-testid="user-menu-trigger"
             >
-              {auth.user.name.charAt(0).toUpperCase()}
-            </span>
-            <span class="text-sm font-medium text-text-default">{auth.user.name}</span>
-          </span>
+              <span
+                class="flex h-6 w-6 items-center justify-center rounded-full bg-primary-light text-primary text-xs font-bold"
+              >
+                {auth.user.name.charAt(0).toUpperCase()}
+              </span>
+              <span
+                class="hidden max-w-[10rem] truncate text-sm font-medium text-text-default sm:block"
+                >{auth.user.name}</span
+              >
+              <svg
+                viewBox="0 0 20 20"
+                class="h-3.5 w-3.5 text-text-muted transition-transform {userMenuOpen
+                  ? 'rotate-180'
+                  : ''}"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="m5 7.5 5 5 5-5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+
+            {#if userMenuOpen}
+              <div
+                class="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-lg border border-border-default bg-card-bg shadow-lg"
+                role="menu"
+                aria-label="Menu akun"
+                data-testid="user-menu"
+              >
+                <div class="border-b border-border-soft px-3 py-3">
+                  <p class="truncate text-sm font-semibold text-text-default">{auth.user.name}</p>
+                  <p class="truncate text-xs text-text-muted">{auth.user.email}</p>
+                </div>
+
+                <div class="p-1.5">
+                  <button
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-text-default hover:bg-page-bg"
+                    onclick={openProfile}
+                    role="menuitem"
+                    data-testid="user-menu-profile"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      class="h-4 w-4 text-text-muted"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <circle cx="12" cy="8" r="3.2" />
+                      <path d="M5.5 20c.7-3.2 2.9-5 6.5-5s5.8 1.8 6.5 5" />
+                    </svg>
+                    <span>Profile</span>
+                  </button>
+
+                  <div
+                    class="mt-1 rounded-md bg-page-bg px-3 py-2"
+                    role="group"
+                    aria-label="Mode tampilan"
+                  >
+                    <p
+                      class="mb-2 text-[0.6875rem] font-semibold uppercase tracking-wider text-text-muted"
+                    >
+                      Mode tampilan
+                    </p>
+                    <div class="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        class="rounded px-2 py-1.5 text-xs font-medium transition-colors {colorMode ===
+                        'light'
+                          ? 'bg-card-bg text-primary shadow-sm'
+                          : 'text-text-muted hover:text-text-default'}"
+                        onclick={() => selectColorMode('light')}
+                        aria-pressed={colorMode === 'light'}
+                        data-testid="color-mode-light"
+                      >
+                        Light
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded px-2 py-1.5 text-xs font-medium transition-colors {colorMode ===
+                        'dark'
+                          ? 'bg-card-bg text-primary shadow-sm'
+                          : 'text-text-muted hover:text-text-default'}"
+                        onclick={() => selectColorMode('dark')}
+                        aria-pressed={colorMode === 'dark'}
+                        data-testid="color-mode-dark"
+                      >
+                        Dark
+                      </button>
+                    </div>
+                  </div>
+
+                  {#if auth.user.is_impersonating}
+                    <button
+                      type="button"
+                      class="mt-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-warning hover:bg-warning-light"
+                      onclick={() => void stopImpersonation()}
+                      role="menuitem"
+                      data-testid="stop-impersonation-menu"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        class="h-4 w-4 text-warning"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        aria-hidden="true"
+                      >
+                        <path d="M9 7 4 12l5 5" stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M4 12h11" stroke-linecap="round" />
+                        <path d="M14 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3" />
+                      </svg>
+                      <span>Keluar dari mode impersonasi</span>
+                    </button>
+                  {/if}
+
+                  <button
+                    type="button"
+                    class="mt-1 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-danger hover:bg-danger-light"
+                    onclick={() => void logout()}
+                    role="menuitem"
+                    data-testid="user-menu-logout"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      class="h-4 w-4 text-danger"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      aria-hidden="true"
+                    >
+                      <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+                      <path
+                        d="m14 8 4 4-4 4M18 12H9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                    <span>Logout</span>
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </header>

@@ -123,7 +123,7 @@
   {#if !open}
     <button
       type="button"
-      class="w-full rounded-md border border-border-default px-2 py-1.5 text-sm text-left bg-white focus:outline-none focus:border-primary {selected
+      class="ak-form-control w-full rounded-md border border-border-default px-2 py-1.5 text-sm text-left bg-white focus:outline-none focus:border-primary {selected
         ? 'text-text-default'
         : 'text-text-muted'}"
       onclick={openList}
