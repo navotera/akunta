@@ -53,7 +53,9 @@ class JournalNumberGenerator
     ): string {
         $carbon = Carbon::parse($date);
         $likePrefix = $this->formatPrefix($format, $carbon, $mode);
-        $lastValues = Journal::query()
+        $this->lockSequence($entityId, $column, $likePrefix);
+        // Trashed journals still hold their number under the unique index, so they must count.
+        $lastValues = Journal::withTrashed()
             ->where('entity_id', $entityId)
             ->where($column, 'like', $likePrefix.'%')
             ->pluck($column);
@@ -66,6 +68,20 @@ class JournalNumberGenerator
         }
 
         return $this->render($format, $carbon, $next, $mode);
+    }
+
+    /**
+     * Serialise allocation per entity + prefix until the surrounding transaction ends,
+     * so concurrent saves cannot both read the same last number before inserting.
+     */
+    private function lockSequence(string $entityId, string $column, string $prefix): void
+    {
+        $connection = (new Journal)->getConnection();
+        if ($connection->getDriverName() !== 'pgsql' || $connection->transactionLevel() === 0) {
+            return;
+        }
+
+        $connection->select('SELECT pg_advisory_xact_lock(hashtext(?))', ["journals.{$column}:{$entityId}:{$prefix}"]);
     }
 
     private function formatPrefix(string $format, Carbon $date, string $mode): string
