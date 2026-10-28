@@ -526,6 +526,72 @@ it('soft deletes draft journals, lists them in trashed, and restores them as dra
         ->and(Journal::find($journal->id)?->status)->toBe(Journal::STATUS_DRAFT);
 });
 
+it('skips numbers still held by trashed journals when creating a new journal', function () {
+    foreach ([3, 4] as $sequence) {
+        Journal::create([
+            'entity_id' => $this->entity->id,
+            'period_id' => $this->period->id,
+            'type' => Journal::TYPE_GENERAL,
+            'journal_mode' => Journal::MODE_INTERNAL,
+            'number' => "JU-202605-{$sequence}",
+            'transaction_code' => "TRX/26/5/{$sequence}",
+            'date' => '2026-05-04',
+            'memo' => "Journal {$sequence}",
+            'status' => Journal::STATUS_DRAFT,
+        ]);
+    }
+    Journal::where('number', 'JU-202605-4')->firstOrFail()->delete();
+
+    $request = fn (string $method, string $url, array $data = []) => $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->{$method}($url, $data);
+
+    $request('getJson', '/api/v1/spa/journals/next-number?date=2026-05-04&journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.number', 'JU-202605-5');
+
+    $this->entity->update(['workspace_settings' => array_merge($this->entity->workspace_settings, [
+        'transaction_number_format' => 'TRX/{tahun}/{bulan}/{numbering}',
+    ])]);
+
+    $request('postJson', '/api/v1/spa/journals', [
+        'date' => '2026-05-04',
+        'memo' => 'After trashing the latest journal',
+        'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '1000']],
+        'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '1000']],
+    ])
+        ->assertCreated()
+        ->assertJsonPath('data.number', 'JU-202605-5')
+        ->assertJsonPath('data.transaction_code', 'TRX/26/5/5');
+});
+
+it('returns a validation error instead of a server error for a duplicate journal number', function () {
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-7',
+        'date' => '2026-05-04',
+        'memo' => 'Trashed journal',
+        'status' => Journal::STATUS_DRAFT,
+    ])->delete();
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'number' => 'JU-202605-7',
+            'date' => '2026-05-04',
+            'memo' => 'Manual duplicate number',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '1000']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '1000']],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['number']);
+
+    expect(Journal::withTrashed()->where('number', 'JU-202605-7')->count())->toBe(1);
+});
+
 it('allows a supervisor to trash a saved journal and records the audit trail', function () {
     $this->user->assignments()->first()->role->update(['code' => 'supervisor']);
     $journal = Journal::create([
