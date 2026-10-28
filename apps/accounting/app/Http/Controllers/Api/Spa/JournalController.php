@@ -20,6 +20,7 @@ use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
 use App\Services\JournalNumberGenerator;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -182,7 +183,7 @@ class JournalController extends Controller
         $this->ensureModeEnabled($entity, $inputMode);
         $period = $this->resolvePeriod($entity, $data['date']);
 
-        $journals = DB::transaction(function () use ($data, $entity, $period, $inputMode): array {
+        $journals = $this->rejectDuplicateNumbers(fn () => DB::transaction(function () use ($data, $entity, $period, $inputMode): array {
             $modes = $inputMode === 'both'
                 ? [Journal::MODE_INTERNAL, Journal::MODE_FISCAL]
                 : [$inputMode];
@@ -220,7 +221,7 @@ class JournalController extends Controller
             }
 
             return $created;
-        });
+        }));
 
         $payload = ['data' => array_merge($this->detail($journals[0]), [
             'audit_trail' => $this->auditTrail($journals[0]),
@@ -255,9 +256,7 @@ class JournalController extends Controller
         $this->ensureModeEnabled($entity, $inputMode);
         $period = $this->resolvePeriod($entity, $data['date']);
         $before = $this->snapshot($journal->load('entries.account'));
-        $paired = null;
-
-        DB::transaction(function () use (&$paired, $journal, $data, $entity, $period, $inputMode) {
+        $paired = $this->rejectDuplicateNumbers(fn () => DB::transaction(function () use ($journal, $data, $entity, $period, $inputMode): ?Journal {
             if ($inputMode === 'both') {
                 $groupId = $journal->input_group_id ?: (string) Str::ulid();
                 $journal->fill([
@@ -310,9 +309,8 @@ class JournalController extends Controller
                 ])->save();
                 $paired->entries()->delete();
                 $this->writeEntries($paired, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
-                $paired = $paired->fresh('entries.account');
 
-                return;
+                return $paired->fresh('entries.account');
             }
 
             $journal->fill([
@@ -327,7 +325,9 @@ class JournalController extends Controller
 
             $journal->entries()->delete();
             $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
-        });
+
+            return null;
+        }));
 
         $updated = $journal->fresh('entries.account');
         $this->auditLogger->record(
@@ -542,6 +542,36 @@ class JournalController extends Controller
     }
 
     /* ---------------- helpers ---------------- */
+
+    /**
+     * Turn a journal number / transaction code unique violation into a 422 the
+     * form can show, instead of a bare 500 "Server Error".
+     *
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    private function rejectDuplicateNumbers(callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (UniqueConstraintViolationException $e) {
+            $message = $e->getMessage();
+            if (str_contains($message, 'journals_transaction_scope_unique') || str_contains($message, 'journals.transaction_code')) {
+                throw ValidationException::withMessages([
+                    'transaction_code' => 'Kode transaksi sudah dipakai jurnal lain pada periode ini. Gunakan kode transaksi lain.',
+                ]);
+            }
+            if (str_contains($message, 'journals_entity_id_period_id_number_unique') || str_contains($message, 'journals.number')) {
+                throw ValidationException::withMessages([
+                    'number' => 'Nomor jurnal sudah dipakai jurnal lain pada periode ini, termasuk jurnal di Trashed. Gunakan nomor lain.',
+                ]);
+            }
+
+            throw $e;
+        }
+    }
 
     private function resolveEntity(Request $request): Entity
     {
