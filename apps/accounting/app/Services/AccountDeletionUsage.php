@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Account;
 use App\Models\Journal;
+use App\Models\Period;
 use Illuminate\Support\Facades\DB;
 
 class AccountDeletionUsage
@@ -35,9 +36,20 @@ class AccountDeletionUsage
             }
         }
 
+        $journalCount = (clone $journals)->count();
+        $activeCount = (clone $journals)->whereHas('period', fn ($period) => $period
+            ->where('entity_id', $account->entity_id)->where('status', Period::STATUS_OPEN))->count();
+        $inactiveCount = (clone $journals)->whereHas('period', fn ($period) => $period
+            ->where('entity_id', $account->entity_id)->whereIn('status', [Period::STATUS_INACTIVE, Period::STATUS_CLOSING, Period::STATUS_CLOSED]))->count();
+
         return [
             'account' => ['id' => $account->id, 'code' => $account->code, 'name' => $account->name],
-            'journal_count' => (clone $journals)->count(),
+            'journal_count' => $journalCount,
+            'active_period_count' => $activeCount,
+            'inactive_period_count' => $inactiveCount,
+            'unresolved_period_count' => $journalCount - $activeCount - $inactiveCount,
+            'can_soft_delete' => ! $fiscalOnly && ! $account->isSystemAccount()
+                && $journalCount > 0 && $journalCount === $inactiveCount && ! $account->children()->exists(),
             'trashed_count' => (clone $journals)->whereNotNull('deleted_at')->count(),
             'fiscal_only' => $fiscalOnly,
             'other_blockers' => $otherBlockers,

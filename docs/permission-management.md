@@ -79,10 +79,26 @@ termasuk bagi admin; aktivasi tercatat sebagai `period.reopen` dalam audit.
 Periode nonaktif/ditutup mengunci single edit, batch, lampiran, dan mutasi workflow
 meskipun pelaku admin. Mengganti tanggal jurnal tidak melewati kunci periode asal.
 
-`account.delete` kini melakukan soft delete, termasuk untuk akun yang masih
-direferensikan jurnal terkunci. Role bawaan pemilik izin tetap sama. Akun sistem
+`account.delete` melakukan soft delete. Jika masih dipakai jurnal, percobaan
+pertama mengembalikan alert/jumlah dan daftar terkait. Referensi periode aktif
+wajib diganti terlebih dahulu melalui izin `journal.update` dan aturan status
+normal; izin hapus (termasuk admin) tidak melewati batas ini. Soft delete dengan
+konfirmasi hanya mengizinkan referensi tersisa pada periode nonaktif atau
+ditutup. `journal.read` tetap mengatur daftar, tab periode, dan jumlah yang dapat
+dilihat; Inspector hanya menerima jumlah Fiskal. Role bawaan pemilik izin tetap
+sama dan tidak ada permission baru. Akun sistem
 dan induk dengan sub-akun belum terhapus tetap dilindungi. Relasi historis dan
 nilai laporan tetap tersedia; akun terhapus tidak dapat dipilih pada jurnal baru.
+Batch penggantian akun tetap memakai `journal.read`, `journal.update`, dan
+`account.read` beserta aturan status/periode normal. Referensi akun historis yang
+tidak diganti dipertahankan setelah pemeriksaan entity; hal ini tidak memberi
+izin memakai akun terhapus sebagai target baru atau melewati hak edit jurnal.
+**Pilih semua yang bisa diedit** lintas pagination memakai izin yang sama;
+request pilihan ringkas pada endpoint daftar juga wajib memiliki ketiga izin
+tersebut. Pemilihan disaring oleh backend berdasarkan status yang boleh diedit,
+buku/workspace, dan periode terbuka. Inspector tidak dapat memakai aksi ini.
+Preview dan simpan tetap memeriksa ulang semua jurnal pilihan; tidak ada kode
+permission baru, perubahan default role, atau grant otomatis pada custom role.
 
 Memilih aksi pada UI ikut mengaktifkan akses baca yang diperlukan.
 Mencabut dependency ikut mencabut aksi yang memerlukannya. Backend menolak

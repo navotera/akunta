@@ -719,6 +719,11 @@ Penghapusan akun non-sistem memakai soft delete (`accounts.deleted_at`). Akun
 terhapus tidak muncul pada pilihan debit/kredit maupun target penggantian akun,
 dan backend menolak penggunaannya pada jurnal baru atau perubahan entry.
 Nama akun, entry, relasi historis, dan nilai laporan kedua buku tetap tersedia.
+Jika akun masih dipakai jurnal, penghapusan pertama menampilkan jumlah jurnal
+dan tautan daftar terkait. Referensi pada periode aktif wajib diganti sebelum
+penghapusan; konfirmasi soft delete tidak dapat melewati pemeriksaan ini.
+Jika seluruh referensi berada pada periode nonaktif/closing/ditutup, pengguna
+dapat mengonfirmasi soft delete dengan mempertahankan referensi historis.
 Soft delete tidak mengubah jurnal, termasuk yang periodenya terkunci, Dibalik,
 atau Trashed. Kode akun terhapus tetap dicadangkan untuk menjaga identitas histori.
 
@@ -950,25 +955,46 @@ Pencocokan nama harus konservatif: tipe akun, saldo normal, sifat postable, dan
 ketersediaan buku wajib kompatibel. Akun manual yang dipakai sebagai ekuivalen
 tidak boleh diberi marker fake atau ditimpa atributnya.
 
-### 8.8.1 Soft delete akun dan penggantian referensi opsional
+### 8.8.1 Penghapusan akun dan penggantian referensi jurnal
 
-Editor Bagan Akun menyediakan tautan ke daftar jurnal terkait sebagai pilihan
-untuk meninjau atau mengganti akun. Penggantian bukan syarat soft delete.
-Daftar tersebut mengunci filter akun,
-dimulai dari semua buku dan semua status, serta memiliki pagination. Alert netral
+Editor Bagan Akun menampilkan alert saat akun yang akan dihapus masih dipakai
+jurnal, beserta jumlah jurnal dan tombol ke daftar terkait. Penggantian wajib
+untuk referensi periode aktif; soft delete dengan konfirmasi tersedia setelah
+seluruh referensi yang tersisa berada pada periode nonaktif atau ditutup.
+Daftar tersebut mengunci filter akun, menyediakan tab **Periode aktif** dan
+**Periode tidak aktif** (termasuk closing/ditutup), dimulai dari tab aktif,
+semua buku dan semua status, serta memiliki pagination. Filter kategori periode
+diterapkan backend sebelum pagination dan perhitungan jumlah status. Alert netral
 menampilkan nama akun, jumlah jurnal unik yang masih memakai akun, dan panduan
 penggantian akun. Jurnal Trashed tetap dihitung karena entry-nya masih tersimpan;
 pulihkan sebagai draft sebelum melakukan penggantian. Status reversed tetap dapat
 ditinjau, tetapi semua perubahan mengikuti aturan status, periode, dan izin yang
 berlaku. Tidak ada perubahan jurnal otomatis.
 
-Pengguna dengan izin edit dapat memilih maksimal 100 jurnal, termasuk lintas
-halaman, pada daftar terkait untuk **Ganti Akun Sekaligus**. Popup menggunakan
+Pengguna dengan izin edit dapat memilih jurnal termasuk lintas halaman, atau
+memakai **Pilih semua yang bisa diedit** pada daftar terkait untuk **Ganti Akun
+Sekaligus**. Pagination tetap 50 jurnal per halaman; checkbox header hanya
+memilih halaman saat ini. Tombol pilih semua mengambil referensi ringkas dari
+endpoint daftar yang sama (`for_account_replacement=1`), sesuai akun sumber,
+tab periode, buku, status, dan filter yang sedang diterapkan. Server mengecualikan
+jurnal Trashed/Dibalik, periode terkunci, tanggal tidak sesuai periode, dan
+status yang tidak boleh diedit pengguna. Jumlah terpilih serta jumlah dilewati
+ditampilkan, dengan aksi **Batalkan pilihan**. Pergantian tab/buku/filter
+membatalkan pilihan sebelumnya dan mengabaikan respons pilihan yang terlambat.
+Batas 100 jurnal per batch dihapus. Popup menggunakan
 pemilih akun yang tersedia dan meminta tinjauan ringkasan sebelum penyimpanan.
+Daftar di popup dibatasi pada 20 contoh referensi dengan jumlah total terpilih;
+semua ID pilihan yang ditinjau diproses dalam satu transaksi. Jurnal baru yang
+kemudian cocok dengan filter tidak otomatis ditambahkan ke batch tersebut.
 Semua baris debit/kredit yang memakai akun sumber pada jurnal terpilih diganti
 ke akun aktif/postable yang tersedia pada masing-masing buku. Nominal, metadata
 entry, status, periode, lampiran, dan jurnal pasangan yang tidak dipilih tetap
-dipertahankan. Aturan edit, review, Supervisor, periode terbuka, serta akses
+dipertahankan. Validasi aktif/postable/ketersediaan buku berlaku pada akun
+pengganti. Akun historis pada baris lain yang tidak diubah boleh sudah dihapus,
+nonaktif, atau tidak lagi tersedia untuk input; referensinya wajib tetap ada
+dan milik entity yang sama. Pengecualian ini hanya untuk baris yang dipertahankan
+pada batch terarah, bukan untuk memilih akun historis sebagai target/input baru.
+Aturan edit, review, Supervisor, periode terbuka, serta akses
 entity/Intern/Fiskal tetap diberlakukan backend. Preview terikat isi akun,
 jurnal, entry, periode, dan pelaku; perubahan setelah preview menuntut tinjauan
 ulang. Seluruh perubahan dan audit disimpan atomik; kegagalan salah satu jurnal
@@ -987,13 +1013,16 @@ Dalam konteks ini, mode buku dikunci ke jurnal yang dipilih; penyimpanan tidak
 mengubah pasangan jurnal, melakukan posting, atau mengubah status review.
 Jurnal demo Tersimpan dapat diedit oleh Supervisor/admin sesuai izin normal.
 Pada jurnal yang terkunci karena role/status/periode, UI menjelaskan batasnya
-dan menawarkan kembali ke Bagan Akun untuk melakukan soft delete akun non-sistem
-tanpa mengubah jurnal terkunci.
+dan menawarkan kembali ke Bagan Akun. Keterbatasan role atau status jurnal pada
+periode aktif bukan alasan untuk melewati syarat penggantian akun.
 Ringkasan jurnal terkunci menggunakan warna tema agar terbaca pada mode gelap.
 
 Setelah penyimpanan perubahan jurnal, pengguna kembali ke daftar terkait dan
-jumlah dihitung ulang. Pengguna dapat kembali ke editor akun untuk soft delete
-meskipun masih ada jurnal terkait. Akun wajib sistem serta akun induk yang masih
+jumlah dihitung ulang. Konteks tab periode dipertahankan saat kembali dari detail.
+Pengguna dapat kembali ke editor akun untuk soft delete jika tidak ada referensi
+periode aktif. Referensi periode yang tidak dapat diverifikasi juga menghalangi
+penghapusan. Backend memeriksa ulang kelayakan saat konfirmasi, termasuk bila
+periode dibuka kembali setelah alert ditampilkan. Akun wajib sistem serta akun induk yang masih
 memiliki sub-akun belum terhapus tetap tidak dapat dihapus. Referensi template,
 koreksi Fiskal, dan provisi pajak dipertahankan dan tidak menghalangi soft delete.
 Inspector hanya menerima daftar dan jumlah Fiskal, tanpa informasi penggunaan

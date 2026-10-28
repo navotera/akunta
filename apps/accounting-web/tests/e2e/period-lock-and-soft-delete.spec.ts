@@ -65,6 +65,18 @@ async function mockPeriodWorkflow(page: Page, options: { status?: string; viewer
   await page.route('**/api/v1/**', async (route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
+    const usage = {
+      account: accounts[0],
+      journal_count: 1,
+      active_period_count: status === 'open' ? 1 : 0,
+      inactive_period_count: status === 'open' ? 0 : 1,
+      unresolved_period_count: 0,
+      can_soft_delete: status !== 'open',
+      trashed_count: 0,
+      fiscal_only: false,
+      other_blockers: [],
+      is_system: false,
+    };
     if (url.pathname === '/api/v1/me') {
       await route.fulfill({
         json: {
@@ -126,6 +138,18 @@ async function mockPeriodWorkflow(page: Page, options: { status?: string; viewer
         },
       });
     } else if (url.pathname === `/api/v1/spa/accounts/${ACCOUNT}` && method === 'DELETE') {
+      if (status === 'open' || !route.request().postDataJSON().confirm_inactive_usage) {
+        await route.fulfill({
+          status: 422,
+          json: {
+            message:
+              'Terdapat 1 jurnal yang menggunakan akun ini pada periode nonaktif atau ditutup.',
+            code: 'account_in_use',
+            usage,
+          },
+        });
+        return;
+      }
       archived = true;
       await route.fulfill({ status: 204 });
     } else if (url.pathname === '/api/v1/spa/accounts') {
@@ -144,14 +168,7 @@ async function mockPeriodWorkflow(page: Page, options: { status?: string; viewer
             total: 1,
             status_counts: { draft: 1 },
             trashed_count: 0,
-            account_deletion: {
-              account: accounts[0],
-              journal_count: 1,
-              trashed_count: 0,
-              fiscal_only: false,
-              other_blockers: [],
-              is_system: false,
-            },
+            account_deletion: usage,
           },
         },
       });
@@ -220,6 +237,20 @@ for (const viewport of [
       await expect(page.getByRole('dialog')).toContainText('soft delete');
       page.once('dialog', (dialog) => void dialog.accept());
       await page.getByRole('button', { name: 'Hapus', exact: true }).click();
+      await expect(page.getByTestId('account-delete-blocked')).toContainText('Terdapat 1 jurnal');
+      await expect(page.getByTestId('account-delete-blocked')).toBeInViewport();
+      await expect(page.getByTestId('account-soft-delete-inactive')).toBeInViewport();
+      expect(state.isArchived()).toBe(false);
+      await expect(page.getByTestId('account-related-journals')).toHaveAttribute(
+        'href',
+        `/journals?delete_account_id=${ACCOUNT}`,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath('inactive-reference-confirmation.png'),
+        fullPage: false,
+      });
+      page.once('dialog', (dialog) => void dialog.accept());
+      await page.getByTestId('account-soft-delete-inactive').click();
       await expect(page.getByRole('row').filter({ hasText: 'Kas Lama' })).toHaveCount(0);
       expect(state.isArchived()).toBe(true);
       await page.goto(`/journals/${JOURNAL}`);

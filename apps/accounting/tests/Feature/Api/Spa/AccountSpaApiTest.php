@@ -205,7 +205,7 @@ it('keeps parent accounts non-postable', function () {
     expect($parent->refresh()->is_postable)->toBeFalse();
 });
 
-it('soft deletes an account while preserving its journal entries', function () {
+it('requires inactive periods and confirmation before soft deleting an account with journal entries', function () {
     $period = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'P',
         'start_date' => '2026-01-01', 'end_date' => '2026-12-31',
@@ -227,7 +227,11 @@ it('soft deletes an account while preserving its journal entries', function () {
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->deleteJson("/api/v1/spa/accounts/{$account->id}")
-        ->assertNoContent();
+        ->assertUnprocessable()->assertJsonPath('usage.active_period_count', 1);
+    $period->update(['status' => 'inactive']);
+    $this->deleteJson("/api/v1/spa/accounts/{$account->id}")
+        ->assertUnprocessable()->assertJsonPath('usage.can_soft_delete', true);
+    $this->deleteJson("/api/v1/spa/accounts/{$account->id}", ['confirm_inactive_usage' => true])->assertNoContent();
     $this->assertSoftDeleted('accounts', ['id' => $account->id]);
     expect($journal->fresh()->entries()->count())->toBe(1);
 });

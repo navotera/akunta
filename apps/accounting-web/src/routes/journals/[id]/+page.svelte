@@ -20,7 +20,7 @@
   const deletionAccountId = $derived($page.url.searchParams.get('delete_account_id'));
   const journalListUrl = $derived(
     deletionAccountId
-      ? `/journals?delete_account_id=${encodeURIComponent(deletionAccountId)}`
+      ? `/journals?delete_account_id=${encodeURIComponent(deletionAccountId)}${$page.url.searchParams.get('period_status') === 'inactive' ? '&period_status=inactive' : ''}`
       : '/journals',
   );
   const formDetail = $derived(
@@ -414,8 +414,8 @@
           {#if deletionAccount && !deletionAccount.is_system}
             <p class="mt-2">
               {can('account.delete')
-                ? 'Anda dapat menghapus akun secara soft delete melalui Bagan Akun. Riwayat dan laporan tetap tersimpan tanpa mengubah jurnal terkunci.'
-                : 'Minta pengguna dengan izin menghapus akun untuk melakukan soft delete melalui Bagan Akun. Riwayat dan laporan tetap tersimpan.'}
+                ? 'Soft delete akun melalui Bagan Akun tersedia jika seluruh referensi jurnal berada pada periode nonaktif atau ditutup. Referensi periode aktif harus diselesaikan terlebih dahulu.'
+                : 'Minta bantuan pengguna yang berwenang untuk mengganti akun pada periode aktif. Soft delete akun tersedia jika seluruh referensi berada pada periode nonaktif atau ditutup.'}
             </p>
           {/if}
           {#if can('account.read')}
