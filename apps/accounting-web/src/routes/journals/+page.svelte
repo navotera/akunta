@@ -8,6 +8,7 @@
   import {
     journalApi,
     type JournalSummary,
+    type JournalSelection,
     type AccountDeletionContext,
     type AccountReplacementPreview,
   } from '$lib/api/journal.js';
@@ -32,6 +33,7 @@
   let lastPage = $state(1);
   let accountDeletion = $state<AccountDeletionContext | null>(null);
   const deletionAccountId = $derived($page.url.searchParams.get('delete_account_id'));
+  let periodStatus = $state<'active' | 'inactive'>('active');
   let trashedCount = $state(0);
   let restoringId = $state<string | null>(null);
   let error = $state<string | null>(null);
@@ -39,7 +41,12 @@
   let accounts = $state<AccountOption[]>([]);
   let filtersOpen = $state(false);
   let isInspector = $derived(isFiscalInspector());
-  let selectedJournals = $state<JournalSummary[]>([]);
+  let selectedJournals = $state<JournalSelection[]>([]);
+  let selectingAll = $state(false);
+  let allMatchingSelected = $state(false);
+  let selectionSkipped = $state(0);
+  let selectionError = $state<string | null>(null);
+  let selectionRequest = 0;
   let batchDialog = $state<HTMLDialogElement>();
   let replacementAccountId = $state('');
   let batchPreview = $state<AccountReplacementPreview | null>(null);
@@ -67,16 +74,19 @@
   const allPageSelected = $derived(
     selectablePage.length > 0 && selectablePage.every((journal) => selectedIds.has(journal.id)),
   );
+  const selectedModes = $derived([
+    ...new Set(selectedJournals.map((journal) => journal.journal_mode)),
+  ]);
   const replacementAccounts = $derived(
     accounts.filter(
       (account) =>
         account.id !== deletionAccountId &&
         account.is_active &&
         account.is_postable &&
-        selectedJournals.every(
-          (journal) =>
+        selectedModes.every(
+          (mode) =>
             account.availability === 'both' ||
-            account.availability === (journal.journal_mode === 'fiscal' ? 'fiskal' : 'intern'),
+            account.availability === (mode === 'fiscal' ? 'fiskal' : 'intern'),
         ),
     ),
   );
@@ -123,24 +133,39 @@
   const filteredJournalCount = $derived(
     Object.values(statusCounts).reduce((sum, count) => sum + count, 0) + trashedCount,
   );
+  function listParams() {
+    return {
+      journal_mode: journalMode === 'all' ? undefined : journalMode,
+      status: statusTab === 'all' ? undefined : statusTab,
+      deletion_account_id: deletionAccountId || undefined,
+      period_status: deletionAccountId ? periodStatus : undefined,
+      period_id: appliedFilters.period_id || undefined,
+      account_id: appliedFilters.account_id || undefined,
+      type: appliedFilters.type || undefined,
+      date_from: appliedFilters.date_from || undefined,
+      date_to: appliedFilters.date_to || undefined,
+      search: appliedFilters.search || undefined,
+    };
+  }
+
+  function clearSelection() {
+    selectionRequest += 1;
+    selectingAll = false;
+    selectedJournals = [];
+    allMatchingSelected = false;
+    selectionSkipped = 0;
+    selectionError = null;
+  }
+
   async function load(pageNumber = 1, keepSelection = false) {
-    if (!keepSelection) selectedJournals = [];
+    if (!keepSelection) clearSelection();
     loading = true;
     error = null;
     try {
-      const status = statusTab === 'all' ? undefined : statusTab;
       const res = await journalApi.list({
+        ...listParams(),
         per_page: 50,
         page: pageNumber,
-        journal_mode: journalMode === 'all' ? undefined : journalMode,
-        status,
-        deletion_account_id: deletionAccountId || undefined,
-        period_id: appliedFilters.period_id || undefined,
-        account_id: appliedFilters.account_id || undefined,
-        type: appliedFilters.type || undefined,
-        date_from: appliedFilters.date_from || undefined,
-        date_to: appliedFilters.date_to || undefined,
-        search: appliedFilters.search || undefined,
       });
       items = res.data;
       total = res.meta.total;
@@ -195,6 +220,8 @@
     if (isInspector) journalMode = 'fiscal';
     if (deletionAccountId) {
       journalMode = isInspector ? 'fiscal' : 'all';
+      periodStatus =
+        $page.url.searchParams.get('period_status') === 'inactive' ? 'inactive' : 'active';
       statusTab = 'all';
       appliedFilters.account_id = deletionAccountId;
       draftFilters.account_id = deletionAccountId;
@@ -232,7 +259,7 @@
   }
 
   function journalUrl(id: string): string {
-    return `/journals/${id}${deletionAccountId ? `?delete_account_id=${encodeURIComponent(deletionAccountId)}` : ''}`;
+    return `/journals/${id}${deletionAccountId ? `?delete_account_id=${encodeURIComponent(deletionAccountId)}${periodStatus === 'inactive' ? '&period_status=inactive' : ''}` : ''}`;
   }
 
   function batchSelectionReason(journal: JournalSummary): string {
@@ -253,26 +280,43 @@
   }
 
   function selectJournal(journal: JournalSummary, checked: boolean) {
+    if (selectingAll) return;
     batchMessage = null;
+    allMatchingSelected = false;
+    selectionSkipped = 0;
+    selectionError = null;
     if (!checked) {
       selectedJournals = selectedJournals.filter((item) => item.id !== journal.id);
     } else if (!selectedIds.has(journal.id) && !batchSelectionReason(journal)) {
-      if (selectedJournals.length >= 100) {
-        batchMessage =
-          'Maksimal 100 jurnal per batch. Simpan pilihan ini sebelum melanjutkan jurnal berikutnya.';
-        return;
-      }
       selectedJournals = [...selectedJournals, journal];
     }
   }
 
   function batchDisabledReason(journal: JournalSummary): string {
-    return (
-      batchSelectionReason(journal) ||
-      (!selectedIds.has(journal.id) && selectedJournals.length >= 100
-        ? 'Batas 100 jurnal per batch telah tercapai. Kurangi pilihan atau selesaikan batch ini terlebih dahulu.'
-        : '')
-    );
+    return batchSelectionReason(journal);
+  }
+
+  async function selectAllMatching() {
+    if (!canBatchReplace || selectingAll || loading) return;
+    const requestId = ++selectionRequest;
+    const params = listParams();
+    selectingAll = true;
+    selectionError = null;
+    batchMessage = null;
+    try {
+      // Reuse the scoped list API; submit the exact IDs reviewed by the user.
+      // Never expand the selection to newly matching journals during save.
+      const selection = await journalApi.selectForAccountReplacement(params);
+      if (requestId !== selectionRequest) return;
+      selectedJournals = selection.data;
+      selectionSkipped = selection.meta.skipped_count;
+      allMatchingSelected = true;
+    } catch (error) {
+      if (requestId === selectionRequest)
+        selectionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (requestId === selectionRequest) selectingAll = false;
+    }
   }
 
   function selectPage(checked: boolean) {
@@ -280,7 +324,7 @@
   }
 
   function openBatchDialog() {
-    if (!canBatchReplace || selectedJournals.length === 0) return;
+    if (!canBatchReplace || selectingAll || selectedJournals.length === 0) return;
     replacementAccountId = '';
     batchPreview = null;
     batchError = null;
@@ -436,10 +480,16 @@
       </p>
       {#if accountDeletion.journal_count > 0}
         <p class="mt-1">
-          Terdapat {accountDeletion.journal_count} jurnal yang menggunakan akun ini. Anda dapat mengganti
-          akun pada jurnal yang masih boleh diedit, atau menghapus akun secara soft delete melalui Bagan
-          Akun tanpa mengubah jurnal lama.
+          Terdapat {accountDeletion.journal_count} jurnal yang menggunakan akun ini. Ganti akun pada jurnal
+          di periode aktif, satu per satu atau sekaligus. Soft delete hanya tersedia setelah seluruh referensi
+          yang tersisa berada pada periode nonaktif atau ditutup.
         </p>
+        {#if accountDeletion.unresolved_period_count > 0}
+          <p class="mt-2 text-xs text-danger">
+            Periode untuk {accountDeletion.unresolved_period_count} jurnal belum dapat diverifikasi. Periksa
+            datanya sebelum menghapus akun.
+          </p>
+        {/if}
         <p class="mt-2 text-xs text-text-muted">
           {accountDeletion.fiscal_only
             ? 'Jumlah hanya mencakup buku Fiskal sesuai hak akses Anda.'
@@ -478,6 +528,42 @@
     </div>
   {/if}
 
+  {#if deletionAccountId && accountDeletion}
+    <nav
+      aria-label="Kategori periode jurnal"
+      class="mb-4 flex gap-1 overflow-x-auto rounded-lg border border-border-default bg-card-bg p-1"
+    >
+      {#each [{ value: 'active' as const, label: 'Periode aktif', count: accountDeletion.active_period_count }, { value: 'inactive' as const, label: 'Periode tidak aktif', count: accountDeletion.inactive_period_count + accountDeletion.unresolved_period_count }] as tab}
+        <button
+          type="button"
+          class="whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold {periodStatus ===
+          tab.value
+            ? 'bg-primary-light text-primary'
+            : 'text-text-muted hover:text-primary'}"
+          aria-current={periodStatus === tab.value ? 'page' : undefined}
+          onclick={async () => {
+            periodStatus = tab.value;
+            appliedFilters.period_id = '';
+            draftFilters.period_id = '';
+            statusTab = 'all';
+            await goto(
+              `/journals?delete_account_id=${encodeURIComponent(deletionAccountId!)}&period_status=${periodStatus}`,
+              { replaceState: true, noScroll: true, keepFocus: true },
+            );
+            await load();
+          }}>{tab.label} <span class="ml-1 text-xs">({tab.count})</span></button
+        >
+      {/each}
+    </nav>
+    {#if periodStatus === 'inactive'}
+      <p class="mb-4 text-sm text-text-muted">
+        Termasuk periode yang ditutup. Jurnal hanya dapat diubah setelah periodenya diaktifkan
+        kembali. Referensi ini dapat dipertahankan melalui soft delete akun jika tidak ada referensi
+        periode aktif.
+      </p>
+    {/if}
+  {/if}
+
   <nav
     class="mb-4 flex gap-1 overflow-x-auto rounded-lg border border-border-default bg-card-bg p-1"
   >
@@ -510,15 +596,49 @@
 
   {#if canBatchReplace && accountDeletion && accountDeletion.journal_count > 0}
     <div
-      class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-default bg-card-bg p-3 text-sm"
+      class="mb-4 flex flex-col items-stretch gap-3 rounded-md border border-border-default bg-card-bg p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
       data-testid="batch-account-toolbar"
     >
-      <div class="text-text-muted">
-        <p>
-          {selectedJournals.length} jurnal dipilih. Pilihan dapat dilanjutkan di halaman berikutnya, maksimal
-          100 jurnal per batch.
+      <div class="min-w-0 flex-1" aria-live="polite">
+        <p class="font-semibold text-text-default" data-testid="batch-selection-summary">
+          {#if selectingAll}Memeriksa jurnal lintas halaman…
+          {:else if allMatchingSelected && selectedJournals.length > 0}
+            Semua {selectedJournals.length} jurnal yang bisa diedit telah dipilih.
+          {:else if allMatchingSelected}Tidak ada jurnal yang bisa diedit pada daftar ini.
+          {:else}{selectedJournals.length} jurnal dipilih.{/if}
         </p>
-        {#if unavailableOnPage > 0}<p class="mt-1 text-xs" data-testid="batch-unavailable-summary">
+        <p class="mt-1 text-xs text-text-muted">
+          Pilihan mengikuti tab dan filter saat ini. Tampilan daftar tetap per halaman.
+        </p>
+        {#if allMatchingSelected && selectionSkipped > 0}
+          <p class="mt-1 text-xs text-text-muted" data-testid="batch-selection-skipped">
+            {selectionSkipped} jurnal dilewati karena status, periode, atau hak akses tidak mengizinkan
+            edit.
+          </p>
+        {/if}
+        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          {#if !allMatchingSelected}
+            <button
+              type="button"
+              class="text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={loading || selectingAll || total === 0}
+              onclick={selectAllMatching}
+              data-testid="batch-select-all-matching">Pilih semua yang bisa diedit</button
+            >
+          {/if}
+          {#if selectedJournals.length > 0 || selectingAll || allMatchingSelected}
+            <button
+              type="button"
+              class="text-sm text-text-muted underline-offset-4 hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onclick={clearSelection}
+              data-testid="batch-clear-selection">Batalkan pilihan</button
+            >
+          {/if}
+        </div>
+        {#if !allMatchingSelected && unavailableOnPage > 0}<p
+            class="mt-2 text-xs text-text-muted"
+            data-testid="batch-unavailable-summary"
+          >
             {unavailableOnPage} jurnal di halaman ini tidak dapat dipilih. Alasan tercantum di bawah kode
             setiap jurnal.
           </p>{/if}
@@ -526,11 +646,20 @@
       <button
         type="button"
         class="rounded-md bg-primary px-3 py-2 font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-        disabled={selectedJournals.length === 0 || loading}
+        disabled={selectedJournals.length === 0 || loading || selectingAll}
         onclick={openBatchDialog}
         data-testid="batch-account-open">Ganti Akun Sekaligus</button
       >
     </div>
+  {/if}
+  {#if selectionError}
+    <p
+      class="mb-4 rounded-md border border-danger/30 bg-danger-light p-3 text-sm text-danger"
+      role="alert"
+      data-testid="batch-selection-error"
+    >
+      {selectionError} Coba pilih semua kembali.
+    </p>
   {/if}
   {#if batchMessage}
     <p
@@ -670,8 +799,9 @@
               <th class="w-12 px-3 py-3 text-left"
                 ><input
                   type="checkbox"
+                  class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   checked={allPageSelected}
-                  disabled={selectablePage.length === 0}
+                  disabled={selectablePage.length === 0 || selectingAll}
                   onchange={(event) => selectPage(event.currentTarget.checked)}
                   aria-label="Pilih semua jurnal yang dapat diedit di halaman ini"
                   data-testid="batch-select-page"
@@ -701,8 +831,9 @@
                 <td class="px-3 py-3">
                   <input
                     type="checkbox"
+                    class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     checked={selectedIds.has(j.id)}
-                    disabled={Boolean(selectionReason)}
+                    disabled={Boolean(selectionReason) || selectingAll}
                     title={selectionReason || 'Pilih jurnal untuk penggantian akun'}
                     aria-label={`Pilih jurnal ${j.number}`}
                     aria-describedby={selectionReason ? `batch-reason-${j.id}` : undefined}
@@ -869,7 +1000,7 @@
               : `${selectedJournals.length} jurnal dipilih`}
           </p>
           <ul class="mt-2 max-h-48 overflow-y-auto divide-y divide-border-soft">
-            {#each selectedJournals as journal (journal.id)}<li
+            {#each selectedJournals.slice(0, 20) as journal (journal.id)}<li
                 class="flex justify-between gap-3 py-2"
               >
                 <span>{journal.number}</span><span class="shrink-0 text-text-muted"
@@ -877,6 +1008,12 @@
                 >
               </li>{/each}
           </ul>
+          {#if selectedJournals.length > 20}
+            <p class="mt-2 text-xs text-text-muted">
+              Menampilkan 20 dari {selectedJournals.length} jurnal terpilih. Seluruh pilihan akan diproses
+              saat disimpan.
+            </p>
+          {/if}
         </div>
         {#if batchPreview}<p
             class="rounded-md bg-page-bg p-3 text-sm"

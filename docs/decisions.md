@@ -1152,9 +1152,16 @@ Supervisor only; Operator/Inspector and existing custom allowlists do not gain i
 Transitions are authorized and audited transactionally with before/after hooks.
 Attachments and workflow mutations also respect the original-period lock.
 
-Deleting a non-system account now means soft deletion, even when locked,
-reversed, or trashed journals still reference it. Replacing old references is
-optional. Existing journal entries and report values in each independent book
+Deleting a non-system account means soft deletion. Correction on 2026-10-28:
+the first delete attempt for a used account must return its unique journal count
+and the existing related-list navigation. Active-period references must be
+replaced first, singly or through the existing selected-journal batch action.
+The related list has active/inactive period tabs; inactive includes closing and
+closed periods. Reversed or trashed journals in an active period still block
+deletion. Only references verified to belong to inactive/closing/closed periods
+may remain after explicit `confirm_inactive_usage` confirmation. Eligibility is
+rechecked transactionally, so reopening a period invalidates that exception.
+Unknown or cross-entity period references never qualify. Existing journal entries and report values in each independent book
 are preserved. Historical relations and report queries explicitly include deleted
 accounts; input and replacement selectors, API writes, template execution, and
 posting reject deleted accounts. Account codes remain reserved. System accounts
@@ -1163,6 +1170,26 @@ this existing delete action; no parallel permission or journal editor is added.
 The delete audit and soft deletion commit atomically. Native demo restore may
 physically remove only verified marked accounts without unmarked dependencies;
 manual or unverifiable accounts, including soft-deleted ones, remain preserved.
+
+Targeted batch replacement validates the replacement account for active/postable
+status and book availability. Untouched lines preserve their historical account
+references, even if those accounts have since been archived or made unavailable
+for input; all references must still exist in the same entity. Revalidating every
+unchanged historical line as new input incorrectly blocked the batch preview.
+This exception does not permit archived accounts as replacement targets or new
+input, and does not bypass journal permissions, original-period locks, balance,
+atomicity, audit, or the independence of the unselected ledger/journals.
+
+Cross-page batch selection keeps the normal journal list paginated at 50 rows.
+The existing list endpoint accepts `for_account_replacement=1` only with
+`journal.read`, `journal.update`, and `account.read`, and returns compact eligible
+references plus selected/skipped counts under the same source/filter scope.
+The UI offers select all and clear selection, resets selection on scope changes,
+and ignores late responses. Closed/inactive periods and uneditable statuses are
+excluded on the server. The former 100-journal batch limit is removed; all exact
+selected IDs still pass the existing atomic preview/apply validation and audit.
+There is no live filter expansion during save. The review dialog renders only
+20 reference examples to keep the interface light for large selections.
 
 ## Locked 2026-08-18 — Technology & IT COA and safe demo data
 

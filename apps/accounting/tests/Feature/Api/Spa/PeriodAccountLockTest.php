@@ -114,7 +114,8 @@ it('preserves journal details and all financial report totals after soft deletio
         ];
     };
     $before = json_encode($reports());
-    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id)->assertNoContent();
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id)->assertUnprocessable()->assertJsonPath('usage.can_soft_delete', true);
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id, ['confirm_inactive_usage' => true])->assertNoContent();
     $this->assertSoftDeleted('accounts', ['id' => $this->old->id]);
     expect(Account::find($this->old->id))->toBeNull()
         ->and($journal->fresh()->status)->toBe('posted')
@@ -146,6 +147,7 @@ it('rejects deletion without permission and outside the current workspace', func
 })->with(['operator', 'inspector']);
 
 it('applies custom role grants revocations and restore defaults per workspace', function () {
+    lockedPeriodJournal($this);
     $snapshot = $this->getJson('/api/v1/spa/permission-management')->assertOk()->json('data');
     $created = $this->postJson('/api/v1/spa/permission-management/roles', ['name' => 'Period custodian', 'base_role' => null, 'revision' => $snapshot['revision']])->assertCreated()->json('data');
     $code = $created['created_role'];
@@ -162,7 +164,10 @@ it('applies custom role grants revocations and restore defaults per workspace', 
     ])->assertOk()->json('data');
     $this->actingAs($member)->postJson('/api/v1/spa/periods/'.$this->period->id.'/deactivate')->assertOk();
     $this->postJson('/api/v1/spa/periods/'.$this->period->id.'/reopen', ['reason' => 'Koreksi dengan grant', 'confirmed' => true])->assertOk();
-    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id)->assertNoContent();
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id, ['confirm_inactive_usage' => true])->assertUnprocessable()->assertJsonPath('usage.can_soft_delete', false);
+    $this->postJson('/api/v1/spa/periods/'.$this->period->id.'/deactivate')->assertOk();
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id)->assertUnprocessable()->assertJsonPath('usage.can_soft_delete', true);
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id, ['confirm_inactive_usage' => true])->assertNoContent();
     $outsidePeriod = Period::create(['entity_id' => $other->id, 'name' => 'Outside', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
     $this->withHeader('X-Tenant-Slug', $other->id)->postJson('/api/v1/spa/periods/'.$outsidePeriod->id.'/deactivate')->assertForbidden();
     $this->actingAs($this->admin)->withHeader('X-Tenant-Slug', $this->entity->id)
@@ -192,7 +197,9 @@ it('soft deletes accounts without rewriting reversed or trashed journals', funct
     $reversed = lockedPeriodJournal($this, 'internal', 'reversed');
     $trashed = lockedPeriodJournal($this, 'fiscal');
     $trashed->delete();
-    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id)->assertNoContent();
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id, ['confirm_inactive_usage' => true])->assertUnprocessable();
+    $this->period->update(['status' => 'inactive']);
+    $this->deleteJson('/api/v1/spa/accounts/'.$this->old->id, ['confirm_inactive_usage' => true])->assertNoContent();
     expect($reversed->fresh()->status)->toBe('reversed')
         ->and(Journal::withTrashed()->find($trashed->id)->trashed())->toBeTrue()
         ->and($reversed->entries()->first()->account->name)->toBe('Kas lama')

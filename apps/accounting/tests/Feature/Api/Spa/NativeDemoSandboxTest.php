@@ -63,7 +63,8 @@ it('restores a verified soft deleted demo account while preserving a soft delete
     $code = $owned->code;
     $manualCount = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->json('data.preserved_manual_records.accounts');
     $manual = Account::create(['entity_id' => $this->entity->id, 'code' => 'MANUAL-ARCHIVED', 'name' => 'Manual tetap disimpan', 'type' => 'asset', 'normal_balance' => 'debit']);
-    $this->deleteJson('/api/v1/spa/accounts/'.$owned->id)->assertNoContent();
+    Period::where('entity_id', $this->entity->id)->update(['status' => 'inactive']);
+    $this->deleteJson('/api/v1/spa/accounts/'.$owned->id, ['confirm_inactive_usage' => true])->assertNoContent();
     $this->deleteJson('/api/v1/spa/accounts/'.$manual->id)->assertNoContent();
     $this->assertSoftDeleted('accounts', ['id' => $owned->id]);
     $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->assertJsonPath('data.preserved_manual_records.accounts', $manualCount + 1);

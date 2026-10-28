@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { can } from '$lib/stores/permissions.svelte.js';
   import { accountApi, type Account, type AccountInput } from '$lib/api/account.js';
   import { ApiError } from '$lib/api/client.js';
+  import type { AccountDeletionContext } from '$lib/api/journal.js';
   import CoaTreeNode from '$lib/components/coa/CoaTreeNode.svelte';
   import AccountDescriptionTooltip from '$lib/components/coa/AccountDescriptionTooltip.svelte';
   import Combobox, { type ComboOption } from '$lib/components/ui/Combobox.svelte';
@@ -31,6 +32,8 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let deletionError = $state<string | null>(null);
+  let deletionUsage = $state<AccountDeletionContext | null>(null);
+  let deletionAlert = $state<HTMLDivElement>();
 
   const TYPE_LABEL: Record<string, string> = {
     asset: 'Aktiva',
@@ -289,6 +292,7 @@
 
   function closeForm() {
     deletionError = null;
+    deletionUsage = null;
     editing = null;
     creating = false;
     formErrors = null;
@@ -325,20 +329,29 @@
     }
   }
 
-  async function destroy(a: Account) {
+  async function destroy(a: Account, confirmInactiveUsage = false) {
     if (
       !confirm(
-        `Hapus akun ${a.code} — ${a.name} secara soft delete? Riwayat jurnal dan laporan tetap tersimpan. Akun tidak lagi tampil di pilihan debit/kredit.`,
+        confirmInactiveUsage
+          ? `Hapus akun ${a.code} — ${a.name}? Referensi jurnal pada periode nonaktif atau ditutup tetap tersimpan. Akun tidak lagi tampil di pilihan debit/kredit.`
+          : `Hapus akun ${a.code} — ${a.name}? Penggunaan akun pada jurnal akan diperiksa terlebih dahulu.`,
       )
     )
       return;
     deletionError = null;
+    deletionUsage = null;
     try {
-      await accountApi.destroy(a.id);
+      await accountApi.destroy(a.id, undefined, confirmInactiveUsage);
       closeForm();
       await load();
     } catch (e) {
       deletionError = e instanceof Error ? e.message : String(e);
+      if (e instanceof ApiError && e.body && typeof e.body === 'object' && 'usage' in e.body) {
+        deletionUsage = (e.body as { usage: AccountDeletionContext }).usage;
+      }
+      await tick();
+      deletionAlert?.focus({ preventScroll: true });
+      deletionAlert?.scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -793,16 +806,16 @@
           tersedia; deskripsi dan dasar hukum tetap dapat diperbarui.
         </div>
       {/if}
-      {#if editing && !editingIsSystem}
+      {#if editing && !editingIsSystem && !deletionError}
         <div class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm">
           <p>
-            Hapus akun memakai soft delete. Riwayat jurnal dan laporan tetap tersimpan, termasuk
-            jurnal pada periode terkunci. Akun tidak lagi muncul di pilihan debit/kredit.
+            Akun yang dipakai jurnal pada periode aktif harus diganti terlebih dahulu. Referensi
+            pada periode nonaktif atau ditutup dapat dipertahankan melalui soft delete akun.
           </p>
           {#if can('journal.read')}
             <a
               class="mt-2 inline-flex font-semibold text-primary hover:underline"
-              data-testid="account-related-journals"
+              data-testid="account-review-journals"
               href={`/journals?delete_account_id=${encodeURIComponent(editing.id)}`}
               >Lihat Jurnal yang Menggunakan Akun</a
             >
@@ -812,10 +825,30 @@
       {#if deletionError}
         <div
           class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm text-text-default"
-          role="status"
+          role="alert"
+          tabindex="-1"
+          bind:this={deletionAlert}
           data-testid="account-delete-blocked"
         >
           <p>{deletionError}</p>
+          {#if deletionUsage && editing}
+            {#if can('journal.read') && deletionUsage.journal_count > 0}
+              <a
+                class="mt-3 inline-flex font-semibold text-primary hover:underline"
+                data-testid="account-related-journals"
+                href={`/journals?delete_account_id=${encodeURIComponent(editing.id)}`}
+                >Lihat {deletionUsage.journal_count} Jurnal yang Menggunakan Akun</a
+              >
+            {/if}
+            {#if deletionUsage.can_soft_delete && can('account.delete')}
+              <button
+                type="button"
+                class="mt-3 block rounded-md border border-danger/40 px-3 py-2 font-semibold text-danger hover:bg-danger-light"
+                data-testid="account-soft-delete-inactive"
+                onclick={() => destroy(editing!, true)}>Hapus Akun, Pertahankan Histori</button
+              >
+            {/if}
+          {/if}
         </div>
       {/if}
       <div class="grid grid-cols-2 gap-3 text-sm">

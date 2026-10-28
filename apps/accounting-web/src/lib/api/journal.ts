@@ -81,6 +81,10 @@ export interface JournalAuditTrailItem {
 export interface AccountDeletionContext {
   account: { id: string; code: string; name: string };
   journal_count: number;
+  active_period_count: number;
+  inactive_period_count: number;
+  unresolved_period_count: number;
+  can_soft_delete: boolean;
   trashed_count: number;
   fiscal_only: boolean;
   other_blockers: Array<{ label: string; count: number }>;
@@ -91,6 +95,19 @@ export interface AccountReplacementInput {
   source_account_id: string;
   replacement_account_id: string;
   journal_ids: string[];
+}
+
+export type JournalSelection = Pick<
+  JournalSummary,
+  'id' | 'number' | 'journal_mode' | 'status' | 'period_id' | 'date' | 'deleted_at'
+>;
+
+function journalListUrl(params: Record<string, string | number | undefined>): string {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(
+    ([key, value]) => value !== undefined && qs.set(key, String(value)),
+  );
+  return `/api/v1/spa/journals${qs.size ? `?${qs}` : ''}`;
 }
 
 export interface AccountReplacementPreview {
@@ -138,6 +155,11 @@ export interface JournalCreateResult extends JournalDetail {
 }
 
 export const journalApi = {
+  selectForAccountReplacement: (params: Record<string, string | number | undefined>) =>
+    api<{
+      data: JournalSelection[];
+      meta: { total: number; selected_count: number; skipped_count: number };
+    }>(journalListUrl({ ...params, for_account_replacement: 1 }), { cache: 'no-store' }),
   previewAccountReplacement: (input: AccountReplacementInput) =>
     api<{ data: AccountReplacementPreview }>('/api/v1/spa/journals/replace-account/preview', {
       json: input,
@@ -150,10 +172,7 @@ export const journalApi = {
     ).then((response) => response.data),
 
   list: (params: Record<string, string | number | undefined> = {}, tenantSlug?: string | null) => {
-    const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => v !== undefined && qs.set(k, String(v)));
-    const suffix = qs.toString() ? `?${qs}` : '';
-    return api<JournalListResponse>(`/api/v1/spa/journals${suffix}`, {
+    return api<JournalListResponse>(journalListUrl(params), {
       tenantSlug,
       cache: 'no-store',
     });

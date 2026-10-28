@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Journal;
+use App\Models\Period;
 use App\Services\AccountDeletionUsage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -120,38 +121,53 @@ class AccountController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $account = Account::where('entity_id', $entity->id)->findOrFail($id);
+        $request->validate(['confirm_inactive_usage' => ['sometimes', 'boolean']]);
 
-        $usage = app(AccountDeletionUsage::class)->describe($account, $this->isInspector($request));
-        $reason = match (true) {
-            $account->isSystemAccount() => 'system_account',
-            $account->children()->exists() => 'account_has_dependencies',
-            default => null,
-        };
-        if ($reason !== null) {
-            $message = match ($reason) {
-                'system_account' => 'Akun wajib sistem tidak dapat dihapus.',
-                default => 'Akun masih memiliki sub-akun. Pindahkan atau hapus sub-akun terlebih dahulu.',
+        return DB::transaction(function () use ($request, $entity, $id): JsonResponse {
+            $account = Account::where('entity_id', $entity->id)->lockForUpdate()->findOrFail($id);
+            // Keep the eligibility decision stable while periods are being reopened.
+            Period::where('entity_id', $entity->id)->orderBy('id')->lockForUpdate()->get();
+
+            $usage = app(AccountDeletionUsage::class)->describe($account, $this->isInspector($request));
+            $reason = match (true) {
+                $account->isSystemAccount() => 'system_account',
+                $account->children()->exists() => 'account_has_dependencies',
+                $usage['active_period_count'] > 0 || $usage['unresolved_period_count'] > 0 => 'account_in_use',
+                $usage['journal_count'] > 0 && ! $request->boolean('confirm_inactive_usage') => 'account_in_use',
+                default => null,
             };
-            $this->auditLogger->record('account.delete_blocked', Account::class, $account->id, $entity->id, [
-                'reason' => $reason, 'usage' => $usage,
-            ]);
+            if ($reason !== null) {
+                $usageMessage = "Terdapat {$usage['journal_count']} jurnal yang menggunakan akun ini: {$usage['active_period_count']} pada periode aktif dan {$usage['inactive_period_count']} pada periode nonaktif atau ditutup. ";
+                $usageMessage .= match (true) {
+                    $usage['unresolved_period_count'] > 0 => "Periode untuk {$usage['unresolved_period_count']} jurnal belum dapat diverifikasi. Periksa data periode sebelum menghapus akun.",
+                    $usage['active_period_count'] > 0 => 'Tinjau daftar jurnal dan ganti akun pada periode aktif terlebih dahulu. Soft delete hanya tersedia jika seluruh referensi jurnal berada pada periode nonaktif atau ditutup.',
+                    default => 'Tinjau daftar jurnal, lalu konfirmasikan soft delete untuk mempertahankan referensi historis.',
+                };
+                $message = match ($reason) {
+                    'system_account' => 'Akun wajib sistem tidak dapat dihapus.',
+                    'account_in_use' => $usageMessage,
+                    default => 'Akun masih memiliki sub-akun. Pindahkan atau hapus sub-akun terlebih dahulu.',
+                };
+                $this->auditLogger->record('account.delete_blocked', Account::class, $account->id, $entity->id, [
+                    'reason' => $reason, 'usage' => $usage,
+                ]);
 
-            return response()->json([
-                'message' => $message,
-                'errors' => ['account' => [$message]],
-                'code' => $reason,
-            ], 422);
-        }
+                return response()->json([
+                    'message' => $message,
+                    'errors' => ['account' => [$message]],
+                    'code' => $reason,
+                    'usage' => $usage,
+                ], 422);
+            }
 
-        DB::transaction(function () use ($account, $entity): void {
             $this->auditLogger->record('account.deleted', Account::class, $account->id, $entity->id, [
-                'account' => $this->serialize($account), 'deletion_type' => 'soft', 'usage' => app(AccountDeletionUsage::class)->describe($account),
+                'account' => $this->serialize($account), 'deletion_type' => 'soft', 'usage' => $usage,
+                'confirmed_inactive_usage' => $request->boolean('confirm_inactive_usage'),
             ]);
             $account->delete();
-        });
 
-        return response()->json(null, 204);
+            return response()->json(null, 204);
+        });
     }
 
     private function validatePayload(Request $request, string $entityId, ?string $accountId = null): array

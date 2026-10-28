@@ -66,6 +66,10 @@ export const accountApi = {
       tenantSlug,
     }).then((r) => r.data),
 
-  destroy: (id: string, tenantSlug?: string | null) =>
-    api<void>(`/api/v1/spa/accounts/${id}`, { method: 'DELETE', tenantSlug }),
+  destroy: (id: string, tenantSlug?: string | null, confirmInactiveUsage = false) =>
+    api<void>(`/api/v1/spa/accounts/${id}`, {
+      method: 'DELETE',
+      tenantSlug,
+      json: { confirm_inactive_usage: confirmInactiveUsage },
+    }),
 };

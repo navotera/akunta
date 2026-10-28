@@ -20,6 +20,10 @@ async function mockDeletionWorkflow(
     readDenied?: boolean;
     saveError?: boolean;
     batchConflict?: boolean;
+    journalCount?: number;
+    lockedLast?: boolean;
+    selectionError?: boolean;
+    holdSelection?: boolean;
   } = {},
 ) {
   let deleted = false;
@@ -28,6 +32,8 @@ async function mockDeletionWorkflow(
   const batchRequests: string[][] = [];
   let batchAttempts = 0;
   let batchPreviewCount = 0;
+  const selectionRequests: string[] = [];
+  let releaseSelection = () => {};
   const accounts = [
     { id: OLD_ID, code: '1101', name: 'Kas Lama', type: 'asset', normal_balance: 'debit' },
     { id: NEW_ID, code: '1102', name: 'Kas Pengganti', type: 'asset', normal_balance: 'debit' },
@@ -43,7 +49,11 @@ async function mockDeletionWorkflow(
     is_system: false,
     is_fake: false,
   }));
-  const journals = JOURNAL_IDS.map((id, i) => ({
+  const fixtureIds = Array.from(
+    { length: options.journalCount ?? 2 },
+    (_, index) => JOURNAL_IDS[index] ?? `01J${String(806 + index).padStart(23, '0')}`,
+  );
+  const journals = fixtureIds.map((id, i) => ({
     id,
     number: options.nativeDemo
       ? `DEMO-LIFECYCLE-${i === 0 ? 'ADJUSTMENT' : 'FISCAL'}`
@@ -55,7 +65,8 @@ async function mockDeletionWorkflow(
     combined_input: options.combined ?? false,
     date: '2026-10-20',
     type: 'general',
-    status: options.status ?? 'draft',
+    status:
+      options.lockedLast && i === fixtureIds.length - 1 ? 'reversed' : (options.status ?? 'draft'),
     memo: 'Fixture penggantian akun',
     total: '100',
     deleted_at: null,
@@ -97,6 +108,18 @@ async function mockDeletionWorkflow(
     const remaining = journals.filter((journal) =>
       journal.entries_debit.some((entry) => entry.account_id === OLD_ID),
     );
+    const usage = {
+      account: accounts[0],
+      journal_count: remaining.length,
+      active_period_count: options.closed ? 0 : remaining.length,
+      inactive_period_count: options.closed ? remaining.length : 0,
+      unresolved_period_count: 0,
+      can_soft_delete: Boolean(options.closed && remaining.length),
+      trashed_count: 0,
+      fiscal_only: false,
+      other_blockers: [],
+      is_system: false,
+    };
     if (url.pathname === '/api/v1/me') {
       await route.fulfill({
         json: {
@@ -138,6 +161,17 @@ async function mockDeletionWorkflow(
       });
     } else if (url.pathname === `/api/v1/spa/accounts/${OLD_ID}` && request.method() === 'DELETE') {
       deleteRequests.push(request.headers()['x-tenant-slug']);
+      if (remaining.length && (!options.closed || !request.postDataJSON().confirm_inactive_usage)) {
+        await route.fulfill({
+          status: 422,
+          json: {
+            message: `Terdapat ${remaining.length} jurnal yang menggunakan akun ini. Ganti akun pada periode aktif terlebih dahulu.`,
+            code: 'account_in_use',
+            usage,
+          },
+        });
+        return;
+      }
       deleted = true;
       await route.fulfill({ status: 204 });
     } else if (url.pathname === '/api/v1/spa/periods') {
@@ -203,28 +237,55 @@ async function mockDeletionWorkflow(
       expect(url.searchParams.get('deletion_account_id')).toBe(OLD_ID);
       expect(url.searchParams.get('account_id')).toBe(OLD_ID);
       const current = Number(url.searchParams.get('page') ?? 1);
+      const periodStatus = url.searchParams.get('period_status');
+      let visible = periodStatus === (options.closed ? 'active' : 'inactive') ? [] : remaining;
+      if (url.searchParams.get('journal_mode'))
+        visible = visible.filter(
+          (journal) => journal.journal_mode === url.searchParams.get('journal_mode'),
+        );
+      if (url.searchParams.get('status'))
+        visible = visible.filter((journal) => journal.status === url.searchParams.get('status'));
+      if (url.searchParams.get('for_account_replacement') === '1') {
+        selectionRequests.push(url.search);
+        if (options.holdSelection)
+          await new Promise<void>((resolve) => {
+            releaseSelection = resolve;
+          });
+        if (options.selectionError && selectionRequests.length === 1) {
+          await route.fulfill({ status: 500, json: { message: 'Pilihan belum dapat dimuat.' } });
+          return;
+        }
+        const selected = visible.filter(
+          (journal) => !options.closed && journal.status !== 'reversed',
+        );
+        await route.fulfill({
+          json: {
+            data: selected,
+            meta: {
+              total: visible.length,
+              selected_count: selected.length,
+              skipped_count: visible.length - selected.length,
+            },
+          },
+        });
+        return;
+      }
+      const pageSize = options.journalCount ? 50 : 1;
       await route.fulfill({
         json: {
-          data: remaining.slice(current - 1, current),
+          data: visible.slice((current - 1) * pageSize, current * pageSize),
           meta: {
             current_page: current,
-            last_page: Math.max(1, remaining.length),
-            per_page: 1,
-            total: remaining.length,
-            status_counts: { draft: remaining.length },
+            last_page: Math.max(1, Math.ceil(visible.length / pageSize)),
+            per_page: pageSize,
+            total: visible.length,
+            status_counts: { draft: visible.length },
             trashed_count: 0,
-            account_deletion: {
-              account: accounts[0],
-              journal_count: remaining.length,
-              trashed_count: 0,
-              fiscal_only: false,
-              other_blockers: [],
-              is_system: false,
-            },
+            account_deletion: usage,
           },
         },
       });
-    } else if (JOURNAL_IDS.some((id) => url.pathname === `/api/v1/spa/journals/${id}`)) {
+    } else if (fixtureIds.some((id) => url.pathname === `/api/v1/spa/journals/${id}`)) {
       const journal = journals.find((item) => url.pathname.endsWith(item.id))!;
       if (options.readDenied) {
         await route.fulfill({
@@ -256,7 +317,14 @@ async function mockDeletionWorkflow(
     }
   });
 
-  return { deleteRequests, replacementRequests, journals, batchRequests };
+  return {
+    deleteRequests,
+    replacementRequests,
+    journals,
+    batchRequests,
+    selectionRequests,
+    releaseSelection: () => releaseSelection(),
+  };
 }
 
 for (const viewport of [
@@ -266,16 +334,32 @@ for (const viewport of [
   test.describe(viewport.name, () => {
     test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
-    test('reuses the journal list for optional account replacement before soft deletion', async ({
+    test('blocks deletion and reuses the journal list for required active-period account replacement', async ({
       page,
     }, testInfo) => {
       const state = await mockDeletionWorkflow(page);
       await page.goto('/akun');
       await page.getByRole('row').filter({ hasText: 'Kas Lama' }).click();
+      page.once('dialog', (dialog) => void dialog.accept());
+      await page.getByRole('button', { name: 'Hapus', exact: true }).click();
+      await expect(page.getByTestId('account-delete-blocked')).toContainText('Terdapat 2 jurnal');
+      await expect(page.getByTestId('account-delete-blocked')).toBeInViewport();
+      await expect(page.getByTestId('account-soft-delete-inactive')).toHaveCount(0);
+      expect(state.deleteRequests).toEqual([ENTITY_ID]);
       await page.getByTestId('account-related-journals').click();
       await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
       const guidance = page.getByTestId('account-deletion-guidance');
       await expect(guidance).toContainText('Terdapat 2 jurnal');
+      const periodTabs = page.getByRole('navigation', { name: 'Kategori periode jurnal' });
+      await expect(
+        periodTabs.getByRole('button', { name: 'Periode aktif (2)', exact: true }),
+      ).toHaveAttribute('aria-current', 'page');
+      await periodTabs
+        .getByRole('button', { name: 'Periode tidak aktif (0)', exact: true })
+        .click();
+      await expect(page.getByRole('table')).not.toContainText('JU-FIXTURE');
+      await periodTabs.getByRole('button', { name: 'Periode aktif (2)', exact: true }).click();
+      await expect(page.getByRole('table')).toContainText('JU-FIXTURE-1');
       await expect(page.getByRole('button', { name: 'Semua status' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Semua buku' })).toBeVisible();
       await page.getByTestId('journal-filter-button').click();
@@ -318,7 +402,7 @@ for (const viewport of [
       await page.getByRole('button', { name: 'Hapus', exact: true }).click();
       await expect(page.getByRole('row').filter({ hasText: 'Kas Lama' })).toHaveCount(0);
       expect(state.replacementRequests).toEqual(JOURNAL_IDS);
-      expect(state.deleteRequests).toEqual([ENTITY_ID]);
+      expect(state.deleteRequests).toEqual([ENTITY_ID, ENTITY_ID]);
     });
 
     test('selects journals across pages and confirms one batch account replacement in a popup', async ({
@@ -363,6 +447,10 @@ for (const viewport of [
     }, testInfo) => {
       await mockDeletionWorkflow(page, { closed: true });
       await page.goto(`/journals?delete_account_id=${OLD_ID}`);
+      await page
+        .getByRole('navigation', { name: 'Kategori periode jurnal' })
+        .getByRole('button', { name: /Periode tidak aktif/ })
+        .click();
       const checkbox = page.getByTestId(`batch-select-${JOURNAL_IDS[0]}`);
       const reason = page.getByTestId(`batch-reason-${JOURNAL_IDS[0]}`);
       await expect(checkbox).toBeDisabled();
@@ -376,6 +464,65 @@ for (const viewport of [
         path: testInfo.outputPath('closed-period-batch-reason.png'),
         fullPage: false,
       });
+      await page.getByRole('link', { name: 'Buka jurnal', exact: true }).click();
+      await expect(page).toHaveURL(
+        `/journals/${JOURNAL_IDS[0]}?delete_account_id=${OLD_ID}&period_status=inactive`,
+      );
+      await expect(page.getByTestId('entry-account-debit-0')).toBeDisabled();
+      await page.getByTestId('cancel').click();
+      await expect(
+        page
+          .getByRole('navigation', { name: 'Kategori periode jurnal' })
+          .getByRole('button', { name: /Periode tidak aktif/ }),
+      ).toHaveAttribute('aria-current', 'page');
+    });
+
+    test('selects all editable journals across pages while the table stays paginated', async ({
+      page,
+    }, testInfo) => {
+      const state = await mockDeletionWorkflow(page, { journalCount: 124, lockedLast: true });
+      await page.goto(`/journals?delete_account_id=${OLD_ID}`);
+      await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(50);
+      await page.getByTestId('batch-select-all-matching').click();
+      await expect(page.getByTestId('batch-selection-summary')).toContainText('Semua 123 jurnal');
+      await expect(page.getByTestId('batch-selection-skipped')).toContainText('1 jurnal dilewati');
+      await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(50);
+      await expect(page.getByRole('button', { name: 'Berikutnya', exact: true })).toBeEnabled();
+      expect(state.selectionRequests).toHaveLength(1);
+      await page.getByRole('button', { name: 'Berikutnya', exact: true }).click();
+      await expect(page.getByTestId(`batch-select-${state.journals[50].id}`)).toBeChecked();
+      await page.getByTestId('batch-clear-selection').click();
+      await expect(page.getByTestId('batch-account-open')).toBeDisabled();
+      await page.getByTestId('batch-select-all-matching').click();
+      await expect(page.getByTestId('batch-selection-summary')).toContainText('Semua 123 jurnal');
+      await page.getByTestId('batch-account-toolbar').scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath('select-all-paginated.png'),
+        fullPage: false,
+      });
+      await page.getByTestId('batch-account-open').click();
+      await expect(page.getByTestId('batch-account-dialog')).toContainText(
+        'Menampilkan 20 dari 123',
+      );
+      await page.getByTestId('batch-replacement-account').click();
+      await page.getByRole('option', { name: /Kas Pengganti/ }).click();
+      await page.getByTestId('batch-account-review').click();
+      await expect(page.getByTestId('batch-account-preview')).toContainText(
+        '123 jurnal (123 baris)',
+      );
+      expect(state.batchRequests).toEqual([]);
+      await page.screenshot({
+        path: testInfo.outputPath('select-all-preview.png'),
+        fullPage: false,
+      });
+      await page.getByTestId('batch-account-save').click();
+      await expect(page.getByTestId('batch-account-result')).toContainText(
+        '123 baris pada 123 jurnal',
+      );
+      expect(state.batchRequests[0]).toEqual(
+        state.journals.slice(0, 123).map((journal) => journal.id),
+      );
+      expect(state.journals[123].entries_debit[0].account_id).toBe(OLD_ID);
     });
 
     test('keeps the ordinary operator restriction readable in dark mode inside the demo', async ({
@@ -396,7 +543,7 @@ for (const viewport of [
         'Supervisor atau admin',
       );
       await expect(page.getByTestId('journal-account-replacement-guide')).toContainText(
-        'Minta pengguna dengan izin menghapus akun',
+        'Minta bantuan pengguna yang berwenang',
       );
       await expect(page.getByTestId('replace-account-in-form')).toHaveCount(0);
       await expect(page.getByTestId('save-draft')).toHaveCount(0);
@@ -562,6 +709,50 @@ test('requires another batch preview after a conflict and retains selections wit
   );
   expect(state.batchRequests).toEqual([[JOURNAL_IDS[0]]]);
   expect(state.journals[1].entries_debit[0].account_id).toBe(OLD_ID);
+});
+
+test('resets cross-page selection when the book or period category changes', async ({ page }) => {
+  const state = await mockDeletionWorkflow(page, { journalCount: 124 });
+  await page.goto(`/journals?delete_account_id=${OLD_ID}`);
+  await page.getByRole('button', { name: 'Intern', exact: true }).click();
+  await page.getByTestId('batch-select-all-matching').click();
+  await expect(page.getByTestId('batch-selection-summary')).toContainText('Semua 1 jurnal');
+  expect(state.selectionRequests[0]).toContain('journal_mode=internal');
+  await page
+    .getByRole('navigation', { name: 'Kategori periode jurnal' })
+    .getByRole('button', { name: /Periode tidak aktif/ })
+    .click();
+  await expect(page.getByTestId('batch-selection-summary')).toContainText('0 jurnal dipilih');
+  await expect(page.getByTestId('batch-account-open')).toBeDisabled();
+});
+
+test('discards a late selection response after its filters have changed', async ({ page }) => {
+  const state = await mockDeletionWorkflow(page, { holdSelection: true });
+  await page.goto(`/journals?delete_account_id=${OLD_ID}`);
+  await page.getByTestId('batch-select-all-matching').click();
+  await expect(page.getByTestId('batch-selection-summary')).toContainText('Memeriksa jurnal');
+  await page
+    .getByRole('navigation', { name: 'Kategori periode jurnal' })
+    .getByRole('button', { name: /Periode tidak aktif/ })
+    .click();
+  state.releaseSelection();
+  await expect(page.getByTestId('batch-selection-summary')).toContainText('0 jurnal dipilih');
+  await expect(page.getByTestId('batch-account-open')).toBeDisabled();
+});
+
+test('allows retrying selection after a loading failure without applying changes', async ({
+  page,
+}) => {
+  const state = await mockDeletionWorkflow(page, { selectionError: true });
+  await page.goto(`/journals?delete_account_id=${OLD_ID}`);
+  await page.getByTestId('batch-select-all-matching').click();
+  await expect(page.getByTestId('batch-selection-error')).toContainText(
+    'Pilihan belum dapat dimuat',
+  );
+  await expect(page.getByTestId('batch-account-open')).toBeDisabled();
+  await page.getByTestId('batch-select-all-matching').click();
+  await expect(page.getByTestId('batch-selection-summary')).toContainText('Semua 2 jurnal');
+  expect(state.batchRequests).toEqual([]);
 });
 
 test('saves a reviewed journal account replacement without posting or changing its review status', async ({

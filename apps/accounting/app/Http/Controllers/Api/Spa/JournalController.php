@@ -67,6 +67,7 @@ class JournalController extends Controller
 
         $filters = $request->validate([
             'period_id' => ['nullable', 'string', 'size:26', Rule::exists('periods', 'id')->where('entity_id', $entity->id)],
+            'period_status' => ['nullable', Rule::in(['active', 'inactive'])],
             'account_id' => ['nullable', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
             'deletion_account_id' => ['nullable', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
             'type' => ['nullable', Rule::in([
@@ -98,6 +99,15 @@ class JournalController extends Controller
 
             if ($periodId = $filters['period_id'] ?? null) {
                 $query->where('period_id', $periodId);
+            }
+
+            if ($periodStatus = $filters['period_status'] ?? null) {
+                $activePeriod = fn ($period) => $period->where('entity_id', $entity->id)->where('status', Period::STATUS_OPEN);
+                if ($periodStatus === 'active') {
+                    $query->whereHas('period', $activePeriod);
+                } else {
+                    $query->whereDoesntHave('period', $activePeriod);
+                }
             }
 
             if ($accountId = $filters['account_id'] ?? null) {
@@ -155,6 +165,35 @@ class JournalController extends Controller
 
         if ($status !== null && ! $isTrashed) {
             $query->where('status', $status);
+        }
+
+        if ($request->boolean('for_account_replacement')) {
+            $this->requirePermission('journal.update', $entity);
+            $this->requirePermission('account.read', $entity);
+            abort_if($this->isInspector($request), 403, 'Inspector hanya dapat membaca jurnal Fiskal.');
+            if ($deletionUsage === null) {
+                throw ValidationException::withMessages(['deletion_account_id' => 'Pilih akun sumber sebelum memilih semua jurnal.']);
+            }
+            $total = (clone $query)->count();
+            $selection = (clone $query)->whereNull('journals.deleted_at')
+                ->whereIn('status', $this->editableJournalStatuses($request, $entity))
+                ->when(data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') !== 'independent_books',
+                    fn ($selection) => $selection->where('journal_mode', Journal::MODE_INTERNAL))
+                ->whereHas('period', fn ($period) => $period->where('entity_id', $entity->id)
+                    ->where('status', Period::STATUS_OPEN)
+                    ->whereColumn('journals.date', '>=', 'periods.start_date')
+                    ->whereColumn('journals.date', '<=', 'periods.end_date'))
+                ->orderBy('id')->get(['id', 'number', 'journal_mode', 'status', 'period_id', 'date', 'deleted_at']);
+
+            return response()->json([
+                'data' => $selection->map(fn (Journal $journal): array => [
+                    'id' => $journal->id, 'number' => $journal->number,
+                    'journal_mode' => $journal->journal_mode, 'status' => $journal->status,
+                    'period_id' => $journal->period_id, 'date' => $journal->date->toDateString(),
+                    'deleted_at' => null,
+                ])->all(),
+                'meta' => ['total' => $total, 'selected_count' => $selection->count(), 'skipped_count' => $total - $selection->count()],
+            ]);
         }
 
         $page = $query
@@ -420,8 +459,8 @@ class JournalController extends Controller
         $data = $request->validate([
             'source_account_id' => ['required', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
             'replacement_account_id' => ['required', 'string', 'size:26', 'different:source_account_id', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)->whereNull('deleted_at')],
-            'journal_ids' => ['required', 'array', 'min:1', 'max:100'],
-            'journal_ids.*' => ['required', 'string', 'size:26', 'distinct', Rule::exists('journals', 'id')->where('entity_id', $entity->id)],
+            'journal_ids' => ['required', 'array', 'min:1'],
+            'journal_ids.*' => ['required', 'string', 'size:26', 'distinct'],
             'preview_token' => [$apply ? 'required' : 'nullable', 'string', 'size:64'],
         ]);
 
@@ -434,7 +473,9 @@ class JournalController extends Controller
             abort_unless($source && $replacement, 409, 'Akun berubah atau sudah dihapus. Muat ulang daftar jurnal.');
             $journals = Journal::withTrashed()->where('entity_id', $entity->id)
                 ->whereIn('id', $data['journal_ids'])->orderBy('id')->lockForUpdate()->get();
-            abort_unless($journals->count() === count($data['journal_ids']), 409, 'Daftar jurnal berubah. Muat ulang daftar.');
+            if ($journals->count() !== count($data['journal_ids'])) {
+                throw ValidationException::withMessages(['journal_ids' => 'Jurnal tidak ditemukan pada entity ini. Muat ulang daftar jurnal.']);
+            }
             $periods = Period::where('entity_id', $entity->id)->whereIn('id', $journals->pluck('period_id'))
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $rows = [];
@@ -458,9 +499,12 @@ class JournalController extends Controller
                     throw ValidationException::withMessages(['journal_ids' => "Jurnal {$journal->number} sudah tidak menggunakan akun sumber. Muat ulang daftar jurnal."]);
                 }
                 $this->assertBalanced((float) $entries->sum('debit'), (float) $entries->sum('credit'));
-                $this->assertJournalAccountsAvailable($journal, $entity, $entries->map(
-                    fn (JournalEntry $entry): string => $entry->account_id === $source->id ? $replacement->id : $entry->account_id,
-                )->unique()->all());
+                // A targeted replacement preserves the other lines, including archived
+                // historical accounts. They must still belong to this entity.
+                if ($entries->contains(fn (JournalEntry $entry): bool => ! $entry->account || $entry->account->entity_id !== $entity->id)) {
+                    throw ValidationException::withMessages(['journal_ids' => "Referensi akun pada jurnal {$journal->number} tidak valid untuk entity ini. Periksa jurnal sebelum mengganti akun."]);
+                }
+                $this->assertJournalAccountsAvailable($journal, $entity, [$replacement->id]);
                 $snapshots[$journal->id] = $this->snapshot($journal);
                 $fingerprint[] = [$journal->getAttributes(), $entries->map->getAttributes()->all(), $period->getAttributes()];
                 $rows[] = ['id' => $journal->id, 'number' => $journal->number, 'journal_mode' => $journal->journal_mode, 'status' => $journal->status, 'entries_count' => $matching->count()];
@@ -504,13 +548,23 @@ class JournalController extends Controller
     {
         $this->requirePermission('journal.update', $entity);
         $this->authorizeBookRead($request, $journal->journal_mode);
-        $reviewEditable = $journal->status === Journal::STATUS_SUBMITTED
-            && Auth::user()?->hasPermission('journal.review', $entity->id);
-        $storedEditable = $journal->status === Journal::STATUS_POSTED && $this->isSupervisorLevel($request, $entity);
-        if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true) && ! $reviewEditable && ! $storedEditable) {
+        if (! in_array($journal->status, $this->editableJournalStatuses($request, $entity), true)) {
             abort(403, "Jurnal {$journal->number} terkunci. Jurnal Tersimpan memerlukan Supervisor/admin; jurnal Di review memerlukan izin review dan edit. Jurnal Dibalik tidak dapat diubah.");
         }
         $journal->assertPeriodOpen(true);
+    }
+
+    private function editableJournalStatuses(Request $request, Entity $entity): array
+    {
+        $statuses = [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED];
+        if (Auth::user()?->hasPermission('journal.review', $entity->id)) {
+            $statuses[] = Journal::STATUS_SUBMITTED;
+        }
+        if ($this->isSupervisorLevel($request, $entity)) {
+            $statuses[] = Journal::STATUS_POSTED;
+        }
+
+        return $statuses;
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -903,6 +957,7 @@ class JournalController extends Controller
                 $query->where('availability', Account::AVAILABILITY_BOTH)
                     ->orWhere('availability', $availability);
             })
+            ->orderBy('id')->lockForUpdate()
             ->get()
             ->keyBy('id');
 
