@@ -19,6 +19,8 @@ use App\Models\JournalTemplateLine;
 use App\Models\Period;
 use App\Models\RecurringJournal;
 use App\Models\SourceRefRegistry;
+use App\Models\TaxCode;
+use App\Models\TaxProvision;
 use App\Models\User;
 use App\Services\Onboarding\CoaTemplateRegistry;
 use Illuminate\Support\Carbon;
@@ -118,7 +120,7 @@ class FakeDataService
             $deleted = 0;
             foreach ($records as $marker) {
                 $modelType = $marker->model_type;
-                $model = $modelType::query()->find($marker->model_id);
+                $model = ($modelType === Account::class ? Account::withTrashed() : $modelType::query())->find($marker->model_id);
                 if (! $model) {
                     $marker->delete();
 
@@ -146,6 +148,12 @@ class FakeDataService
                     JournalEntry::where('account_id', $model->id)->exists()
                     || JournalTemplateLine::where('account_id', $model->id)->exists()
                     || FiscalAdjustment::where('account_id', $model->id)->exists()
+                    || Account::withTrashed()->where('parent_account_id', $model->id)
+                        ->whereNotIn('id', FakeDataRecord::where('entity_id', $entity->id)
+                            ->where('group_key', 'accounts')->where('model_type', Account::class)->select('model_id'))->exists()
+                    || TaxCode::where('tax_account_id', $model->id)->exists()
+                    || TaxProvision::where(fn ($query) => $query->where('expense_account_id', $model->id)
+                        ->orWhere('payable_account_id', $model->id)->orWhere('prepaid_tax_account_id', $model->id))->exists()
                 )) {
                     continue;
                 }
@@ -163,7 +171,11 @@ class FakeDataService
                     continue;
                 }
 
-                $model->delete();
+                if ($model instanceof Account) {
+                    $model->forceDelete();
+                } else {
+                    $model->delete();
+                }
                 $marker->delete();
                 $deleted++;
             }
@@ -305,7 +317,7 @@ class FakeDataService
         $rows = app(CoaTemplateRegistry::class)->load('teknologi');
         $independentBooks = data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books') === 'independent_books';
         $created = 0;
-        $existingAccounts = Account::where('entity_id', $entity->id)->get();
+        $existingAccounts = Account::withTrashed()->where('entity_id', $entity->id)->get();
         $markedFakeAccountIds = FakeDataRecord::query()
             ->where('entity_id', $entity->id)
             ->where('group_key', 'accounts')
@@ -331,6 +343,7 @@ class FakeDataService
             // This repairs stale native demo COA classifications without
             // mutating a manual account that happens to use the same code.
             $account = $existingAccounts->first(fn (Account $candidate): bool => strcasecmp($candidate->code, $code) === 0
+                && ! $candidate->trashed()
                 && $markedFakeAccountIds->has((string) $candidate->id));
             if ($account) {
                 $account->forceFill([
@@ -896,7 +909,7 @@ class FakeDataService
     {
         [$code, $name, $type, $normalBalance, , $isPostable] = $row;
 
-        $compatible = $accounts->filter(fn (Account $account): bool => $account->is_active
+        $compatible = $accounts->filter(fn (Account $account): bool => ! $account->trashed() && $account->is_active
             && $account->type === $type
             && $account->normal_balance === $normalBalance
             && (bool) $account->is_postable === $isPostable

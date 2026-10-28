@@ -31,11 +31,11 @@ class JournalEntry extends Model
     ];
 
     protected $casts = [
-        'debit'    => 'decimal:2',
-        'credit'   => 'decimal:2',
+        'debit' => 'decimal:2',
+        'credit' => 'decimal:2',
         'tax_base' => 'decimal:2',
         'metadata' => 'array',
-        'line_no'  => 'integer',
+        'line_no' => 'integer',
     ];
 
     public function journal(): BelongsTo
@@ -45,7 +45,7 @@ class JournalEntry extends Model
 
     public function account(): BelongsTo
     {
-        return $this->belongsTo(Account::class);
+        return $this->belongsTo(Account::class)->withTrashed();
     }
 
     public function costCenter(): BelongsTo

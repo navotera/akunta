@@ -98,6 +98,65 @@ test('creates a balanced draft journal and posts it', async ({ page }) => {
   await expect(page.locator(`text=${reference}`).first()).toBeVisible();
 });
 
+test('opens a combined Intern and Fiskal journal with the combined mode selected', async ({
+  page,
+}) => {
+  await login(page);
+
+  await page.goto('/journals/new');
+  await expect(page.getByTestId('journal-date')).toBeVisible();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const reference = `DUAL-E2E-${Date.now().toString().slice(-6)}`;
+  await page.getByTestId('journal-date').fill(today);
+  await page.getByTestId('journal-reference').fill(reference);
+  await page.getByTestId('journal-memo').fill('E2E combined journal mode');
+  await page.getByRole('button', { name: 'Intern & Fiskal' }).click();
+
+  const debit = page.getByTestId('debit-panel');
+  const credit = page.getByTestId('credit-panel');
+  await pickFirstAccount(debit, 0);
+  await fillAmount(debit, 0, '100000');
+  await pickFirstAccount(credit, 0);
+  await fillAmount(credit, 0, '100000');
+  await page.getByTestId('journal-no-attachment').check();
+
+  const createReq = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/v1/spa/journals') &&
+      response.request().method() === 'POST' &&
+      !response.url().endsWith('/post'),
+  );
+  await page.getByTestId('save-draft').click();
+  const created = await createReq;
+  expect(created.status()).toBe(201);
+  const body = await created.json();
+
+  await page.goto(`/journals/${body.data.id}`);
+  await expect(page.getByTestId('journal-mode-toggle')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Intern & Fiskal' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+
+test('shows a red indicator for active journal filters and clears it when filters are removed', async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto('/journals');
+
+  await page.getByTestId('journal-filter-button').click();
+  await expect(page.getByTestId('journal-filter-panel')).toBeVisible();
+  await page.getByTestId('journal-filter-search').fill(`FILTER-E2E-${Date.now()}`);
+  await page.getByTestId('journal-filter-apply').click();
+
+  await expect(page.getByTestId('journal-filter-active-dot')).toBeVisible();
+  await page.getByTestId('journal-filter-button').click();
+  await page.getByTestId('journal-filter-clear').click();
+  await expect(page.getByTestId('journal-filter-active-dot')).toHaveCount(0);
+});
+
 test('deletes a saved attachment while editing a draft journal', async ({ page }) => {
   await login(page);
 

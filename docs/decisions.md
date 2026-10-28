@@ -1103,7 +1103,7 @@ Pending (deferred):
 
 ## Locked 2026-08-18 — independent Intern/Fiskal books and fiscal corrections
 
-Akunta supports an entity-level `bookkeeping_mode` with `independent_books` as the dual-book option. In this mode, Intern and Fiskal are complete, independent ledgers. Normal input targets exactly one book; the explicit `Intern & Fiskal` input option atomically creates two draft journals with the same transaction code and an `input_group_id` link, while retaining separate numbers, entries, posting state, and balances. Account availability (`intern`, `fiskal`, `both`) controls selectable accounts only and never synchronizes balances.
+Akunta supports an entity-level `bookkeeping_mode` with `independent_books` as the dual-book option. In this mode, Intern and Fiskal are complete, independent ledgers. Normal input targets exactly one book; the explicit `Intern & Fiskal` input option atomically creates two draft journals with the same transaction code and an `input_group_id` link, while retaining separate numbers, entries, posting state, and balances. Account availability (`intern`, `fiskal`, `both`) controls selectable accounts only and never synchronizes balances. A selected attachment has a distinct attachment record on each journal, and both records may reference the same stored file. Existing attachments are mapped to the newly created partner when a single-book journal is first converted to combined input; later attachment changes remain independent.
 
 Accounts available to the Fiscal book (`fiskal` or `both`) require persisted legal-basis metadata. The SPA and tenant-scoped account API both enforce this requirement; Intern-only accounts do not require it.
 
@@ -1120,6 +1120,49 @@ Every entity receives four idempotently provisioned system accounts identified b
 Deferred tax is not inferred from positive/negative fiscal corrections. Its recognition requires carrying amounts, tax bases, reversal expectations, and applicable rates for the underlying assets and liabilities. Until those inputs have a dedicated model and review workflow, deferred tax is recorded through a separately reviewed journal and the tax-provision API reports it as not calculated.
 
 Inspector access is enforced server-side: inspector cannot access the management dashboard, is redirected to the Fiscal journal list, journal lists are forced to Fiscal, Intern journal detail and Intern report requests return 403, and correction/evidence access requires the fiscal read permission. UI menu filtering is supplementary and not the security boundary. The dashboard Intern/Fiscal toggle is for authorized management/tax users; its tax amount is explicitly a simulation and must not be presented as a filed SPT liability.
+
+## Locked 2026-10-27 — explicit batch account replacement
+
+The account-deletion remediation list supports an explicitly requested batch
+action. Users select up to 100 journal IDs and one replacement account, review
+the journal/entry counts in a popup, and confirm a fingerprint-bound snapshot.
+Both the existing journal editor and the batch action use the same journal edit,
+balance, and account availability checks. The batch additionally requires every
+original period to remain open and locks the selected records for execution.
+Only account IDs on matching entries change; amounts, metadata, workflow status,
+attachments, and unselected book counterparts remain intact. All selected edits
+and per-journal/batch audits commit in one transaction or are rolled back
+together. This explicit action does not authorize background replacement or
+unrequested synchronization of the independent books.
+
+### Amendment 2026-10-28 — period locks and soft-deleted accounts
+
+The period list separates open (Periode Aktif), inactive (Periode Non Aktif),
+and closed (Ditutup). Existing `closing` records remain locked and appear with
+inactive periods. Deactivation is reversible with unfinished journals; closing
+requires completion of draft, submitted, and rejected journals. A later new
+period starts inactive. Activation of one period leaves other open periods intact.
+
+Both single and batch edits require the journal's original period to be open.
+Changing the date to another open period cannot bypass this lock. Admins use the
+existing period detail UI to explicitly reactivate with a mandatory reason and
+confirmation; the `period.reopen` permission remains admin-only by default and
+can be granted through Role Management. New `period.deactivate` defaults to
+Supervisor only; Operator/Inspector and existing custom allowlists do not gain it.
+Transitions are authorized and audited transactionally with before/after hooks.
+Attachments and workflow mutations also respect the original-period lock.
+
+Deleting a non-system account now means soft deletion, even when locked,
+reversed, or trashed journals still reference it. Replacing old references is
+optional. Existing journal entries and report values in each independent book
+are preserved. Historical relations and report queries explicitly include deleted
+accounts; input and replacement selectors, API writes, template execution, and
+posting reject deleted accounts. Account codes remain reserved. System accounts
+and parents with undeleted children remain protected. `account.delete` authorizes
+this existing delete action; no parallel permission or journal editor is added.
+The delete audit and soft deletion commit atomically. Native demo restore may
+physically remove only verified marked accounts without unmarked dependencies;
+manual or unverifiable accounts, including soft-deleted ones, remain preserved.
 
 ## Locked 2026-08-18 — Technology & IT COA and safe demo data
 
@@ -1221,6 +1264,23 @@ these constraints with lock notices and hidden mutation actions. Draft workflow
 examples remain interactive for permission-appropriate simulations, while the
 baseline is recovered only through the audited dataset reset.
 
+### Amendment 2026-10-27 — native demo is an editable practice sandbox
+
+The product owner explicitly replaces the native period/journal immutability
+policy above. PT. Fake Data exists for training and bug reproduction. Its
+periods, journals, and journal attachments now follow ordinary permissions,
+workflow statuses, open-period checks, and balancing rules. There is no extra
+write denial based on is_fake_data. Supervisor/admin may edit posted examples
+with journal.update; Operator and Inspector restrictions remain unchanged.
+Reversed journals remain read-only under the ordinary journal workflow.
+
+The existing Settings restore workflow remains the recovery mechanism. It
+rebuilds verified marked fixtures, including edited/deleted/Trashed examples,
+while preserving manual data and unverifiable/cross-entity records. No tenant-wide
+deletion or implicit promotion of manual records into reset ownership is allowed.
+The original baseline remains Demo 2026; additional manual periods are preserved.
+Background recurring execution continues to skip demo entities.
+
 ## Locked 2026-08-28 — Ecopa registration and local Accounting roles
 
 Akunta stores installation-wide integration state in
@@ -1287,3 +1347,40 @@ aktif untuk dashboard dan input jurnal tetap dipilih per sesi/browser melalui
 `ActivePeriod`; status `open` adalah syarat periode dapat dipilih, bukan tanda
 bahwa entitas hanya memiliki satu periode aktif. Accountant dan role lain tetap
 tidak boleh melakukan reaktivasi kecuali diberi otorisasi produk tersendiri.
+
+
+## Locked 2026-10-27 — workspace role and permission management
+
+Accounting permission configuration is scoped to the active entity. Admins edit
+complete role allowlists in workspace settings instead of changing
+global preset role pivots. Missing overrides use the documented defaults; an empty
+allowlist grants nothing from that role. Multiple assignments combine grants.
+
+The catalogue separates account renaming, structural editing, activation, and
+deletion, and enumerates journal/template, attachment, period, recurring,
+auto-mapping, reporting, fiscal, and delegable settings actions. Backend route
+checks and Gate use effective entity permissions; account updates authorize
+actual changed fields. UI controls use the per-entity auth bootstrap.
+
+Configuration saves use row locking, a revision check, and a transactional audit.
+Permission management and protected admin operations cannot be granted through
+this catalogue. Impersonation cannot configure permissions. Existing posting,
+period, system-account, native-demo, and independent-book invariants remain
+mandatory after a grant. Inspector dashboard requests are rejected even when
+other roles provide a dashboard grant; the regression expectation now follows
+the already-locked Inspector boundary. See docs/permission-management.md.
+
+### Amendment — named roles and user groups
+
+A role itself is a named access group containing many users, as explicitly
+selected by the product owner. Role Management provides searchable roles and
+permission/member details. Supervisor, Operator, and Inspector Fiskal are the
+three built-in profiles; admins may create workspace-specific roles from an
+empty permission set or a one-time copy of a managed role's saved permissions.
+Role definitions and initial permissions are entity-scoped workspace settings
+referencing a tenant-custom RBAC Role. They do not alter global preset pivots.
+Copied Inspector profiles retain immutable fiscal-only, read-only restrictions.
+Bulk assignment replaces selected entity-local assignments atomically while
+preserving the existing protected-admin and session/token revocation rules.
+Custom roles with unrevoked assignments cannot be removed; their shared Role
+rows remain for historical assignment references after removal from the registry.

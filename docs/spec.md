@@ -378,6 +378,24 @@ Permission system harus **dinamis dan dapat di-extend via UI** (bukan hardcoded)
 - **Permission inheritance structure** — Role bisa extend dari role lain (misal: "Senior Accountant" = Accountant + `journal.reverse`).
 - **Preview mode** — Admin bisa "preview as user X" untuk test apa yang terlihat/bisa dilakukan user tsb.
 
+Implementasi Accounting menyediakan Role Management dengan pencarian role,
+detail izin, dan anggota per workspace. Role menjadi grup akses untuk banyak
+user. Supervisor, Operator, dan Inspector Fiskal tersedia sebagai tiga bawaan.
+Admin dapat membuat role bernama sendiri, misalnya Accounting Assistant, dari
+role kosong atau salinan izin role yang sudah ada. Salinan memiliki izin awal
+sendiri; perubahan sumber tidak otomatis mengubah salinannya. Nilai bawaan dapat
+diubah/dipulihkan oleh admin per workspace dan setiap perubahan diaudit.
+Penetapan role ke beberapa assignment user dilakukan atomik di workspace aktif.
+Inspector Fiskal dan salinannya tetap hanya membaca Fiskal, tanpa akses Intern,
+dashboard, atau mutasi data. Nama role bawaan dilindungi; role custom yang masih
+dipakai harus dipindahkan anggotanya sebelum dihapus.
+Rename akun, edit struktur, perubahan status aktif, dan hapus akun adalah
+permission terpisah. Grant juga meliputi template, workflow jurnal, lampiran,
+periode, jadwal, Auto Mapping, dashboard/laporan, Fiskal, dan pengaturan yang
+boleh didelegasikan. Detail default, dependency, API, dan batas domain ada di
+[permission-management.md](permission-management.md). Preset global tidak
+dimutasi ketika admin mengubah hak pada satu workspace.
+
 ### 5.9 Fitur Keamanan Tambahan (v1)
 
 - **Audit log assignment** — Siapa assign role ke siapa, kapan, dari IP mana (immutable).
@@ -679,11 +697,31 @@ reversal, dan saldo tetap independen. Sesudah create tidak ada sinkronisasi
 otomatis antarpasangan. Mode gabungan hanya menerima akun
 `availability=both`.
 
+Lampiran yang dipilih pada input gabungan ditampilkan pada kedua jurnal melalui
+record attachment masing-masing, dengan file tersimpan yang sama. Saat jurnal
+tunggal yang sudah memiliki lampiran pertama kali diubah menjadi input gabungan,
+record attachment dipetakan ke pasangan yang baru dibuat; perubahan lampiran
+setelah pasangan terbentuk tetap independen.
+
 Template jurnal juga dapat memiliki scope `Intern`, `Fiskal`, atau `Intern &
 Fiskal`. Template scope `Intern & Fiskal` hanya menerima akun
 `availability=both` dan dapat dipakai pada input Intern, Fiskal, maupun input
 gabungan. Saat dipakai pada input gabungan, persistensi tetap mengikuti aturan
 di atas: dua jurnal draft independen dibuat secara atomik.
+Status aktif akun berlaku per akun; menonaktifkan induk tidak menonaktifkan
+anak yang masih aktif. Bagan Akun menampilkan akun aktif dan tidak aktif serta
+menyediakan filter status pada List, Tree, dan T-view. Autosuggestion Debit/Kredit
+tetap menampilkan akun tidak aktif dengan label `Tidak aktif` dan warna abu-abu,
+tetapi akun tersebut tidak dapat dipilih sebelum diaktifkan kembali. Backend
+tetap menolak akun tidak aktif untuk input jurnal.
+
+Penghapusan akun non-sistem memakai soft delete (`accounts.deleted_at`). Akun
+terhapus tidak muncul pada pilihan debit/kredit maupun target penggantian akun,
+dan backend menolak penggunaannya pada jurnal baru atau perubahan entry.
+Nama akun, entry, relasi historis, dan nilai laporan kedua buku tetap tersedia.
+Soft delete tidak mengubah jurnal, termasuk yang periodenya terkunci, Dibalik,
+atau Trashed. Kode akun terhapus tetap dicadangkan untuk menjaga identitas histori.
+
 Nama template harus unik dalam entity/workspace dan scope jurnal yang sama;
 nama yang sama tetap boleh digunakan pada scope yang berbeda.
 
@@ -790,6 +828,32 @@ tersimpan per sesi/browser, sehingga mengaktifkan periode lain tidak menutup
 periode yang masih terbuka. Role lain tidak memperoleh izin aktivasi hanya
 karena dapat membaca daftar periode.
 
+Riwayat tab halaman SPA tersimpan per pengguna dan entity di browser. Saat
+berpindah dari entity A ke B, aplikasi memulihkan daftar tab serta URL halaman
+terakhir milik B; kembali ke A memulihkan riwayat A. Entity yang belum mempunyai
+riwayat membuka halaman awal yang sesuai permission. Refresh mempertahankan
+riwayat entity aktif. Menutup satu/semua tab hanya mengubah riwayat entity itu.
+Halaman detail beserta query navigasinya tetap terkait entity asal, dan tab
+tersimpan yang izinnya telah dicabut tidak dipulihkan. Inspector tetap tidak
+dapat memulihkan Dashboard. Riwayat global lama tanpa identitas entity tidak
+diimpor ke riwayat baru. Draft jurnal browser juga dipisahkan per pengguna dan
+entity; perpindahan tidak membawa isian draft entity lain. Tab pada layar sempit
+dapat digulir tanpa otomatis menutup tab yang tidak muat.
+
+Amendment 2026-10-28: halaman periode mempunyai tab **Periode Aktif** (`open`),
+**Periode Non Aktif** (`inactive`, serta `closing` lama), dan **Ditutup** (`closed`).
+Periode baru berikutnya berstatus nonaktif, bukan otomatis ditutup. Menonaktifkan
+periode mengunci perubahan tanpa mewajibkan penyelesaian draft; penutupan
+memerlukan penyelesaian jurnal Diajukan, Di review, dan Perlu Revisi.
+Single edit dan batch selalu memeriksa periode asal jurnal, termasuk ketika
+tanggal baru menunjuk periode lain yang aktif. Periode nonaktif/ditutup juga
+mengunci mutasi lampiran, trash/pemulihan, dan perubahan review. Tidak ada bypass
+untuk admin. Pengguna dengan `period.reopen` harus mengisi alasan dan memberi
+konfirmasi melalui **Aktifkan Kembali** sebelum edit. Backend mewajibkan
+`reason` dan `confirmed=true`, mencatat `period.reopen` dalam transaksi yang sama,
+dan tetap memeriksa permission/status jurnal setelah periode aktif kembali.
+Aktivasi satu periode tidak menutup periode lain atau menyinkronkan kedua buku.
+
 `PT. Fake Data` dapat diaktifkan atau dinonaktifkan secara independen dari
 Settings. Entitas nonaktif tetap tampil di daftar Settings tetapi tidak muncul
 di pemilih entitas pada toolbar. Entitas demo aktif diberi badge dataset dan
@@ -835,11 +899,25 @@ membangun ulang versi dataset secara atomik, membersihkan attachment obsolete
 setelah commit, dan menulis audit log. Record manual atau provenance yang tidak
 dapat diverifikasi wajib dipertahankan.
 
-Periode native PT. Fake Data bersifat immutable: create, update, close, reopen,
-dan delete ditolak backend serta tidak ditawarkan UI. Jurnal demo berstatus
-`posted` atau `reversed`, termasuk attachment-nya, juga read-only. Draft dan
-contoh workflow lain tetap dapat dipakai untuk simulasi sesuai permission;
-perubahan resmi terhadap baseline dilakukan melalui Reset Dataset.
+Di Settings, menu **Fake Data & Pemulihan** muncul khusus pada PT. Fake Data
+untuk pengguna yang berhak. Tombol **Pulihkan Data Demo** membuka ringkasan dan
+konfirmasi sebelum eksekusi. Ringkasan mencakup jurnal demo di Trashed dan data
+manual yang tetap disimpan; waktu dan pelaku pemulihan terakhir ditampilkan dari
+audit trail. Jurnal demo terverifikasi, termasuk yang sudah di-Trashed, diganti
+secara permanen dalam transaksi reset agar entry dan nomor lamanya tidak
+berbenturan dengan fixture baru. Jurnal manual di Trashed tetap dipertahankan.
+Fingerprint juga memeriksa isi record serta entry jurnal; perubahan atau
+penghapusan setelah preview mewajibkan ringkasan dan konfirmasi yang baru.
+
+PT. Fake Data adalah sandbox latihan yang dapat diubah. Periode, jurnal, dan
+lampiran jurnal mengikuti izin dan workflow yang sama dengan entitas biasa,
+tanpa kunci tulis tambahan karena status demo. Supervisor/admin dengan izin
+yang sesuai dapat mengedit jurnal Tersimpan, termasuk mengganti akun untuk
+latihan penghapusan akun. Operator tetap tidak boleh mengedit jurnal Tersimpan,
+Inspector tetap hanya membaca Fiskal, dan jurnal Dibalik mengikuti aturan
+read-only normal. Pemulihan Data Demo mengembalikan fixture bertanda provenance;
+data tambahan/manual dan dependensinya tetap dipertahankan. Periode awal bawaan
+tetap Demo 2026 dan jadwal otomatis tetap tidak dijalankan pada entitas demo.
 
 Pada entitas non-demo, Settings hanya menyediakan import COA Teknologi & IT dan
 penyiapan user-role fake untuk demo. Aksi impersonation ditampilkan di User &
@@ -871,6 +949,60 @@ karena variasi kapitalisasi, spasi, tanda baca, atau nama yang sangat mirip.
 Pencocokan nama harus konservatif: tipe akun, saldo normal, sifat postable, dan
 ketersediaan buku wajib kompatibel. Akun manual yang dipakai sebagai ekuivalen
 tidak boleh diberi marker fake atau ditimpa atributnya.
+
+### 8.8.1 Soft delete akun dan penggantian referensi opsional
+
+Editor Bagan Akun menyediakan tautan ke daftar jurnal terkait sebagai pilihan
+untuk meninjau atau mengganti akun. Penggantian bukan syarat soft delete.
+Daftar tersebut mengunci filter akun,
+dimulai dari semua buku dan semua status, serta memiliki pagination. Alert netral
+menampilkan nama akun, jumlah jurnal unik yang masih memakai akun, dan panduan
+penggantian akun. Jurnal Trashed tetap dihitung karena entry-nya masih tersimpan;
+pulihkan sebagai draft sebelum melakukan penggantian. Status reversed tetap dapat
+ditinjau, tetapi semua perubahan mengikuti aturan status, periode, dan izin yang
+berlaku. Tidak ada perubahan jurnal otomatis.
+
+Pengguna dengan izin edit dapat memilih maksimal 100 jurnal, termasuk lintas
+halaman, pada daftar terkait untuk **Ganti Akun Sekaligus**. Popup menggunakan
+pemilih akun yang tersedia dan meminta tinjauan ringkasan sebelum penyimpanan.
+Semua baris debit/kredit yang memakai akun sumber pada jurnal terpilih diganti
+ke akun aktif/postable yang tersedia pada masing-masing buku. Nominal, metadata
+entry, status, periode, lampiran, dan jurnal pasangan yang tidak dipilih tetap
+dipertahankan. Aturan edit, review, Supervisor, periode terbuka, serta akses
+entity/Intern/Fiskal tetap diberlakukan backend. Preview terikat isi akun,
+jurnal, entry, periode, dan pelaku; perubahan setelah preview menuntut tinjauan
+ulang. Seluruh perubahan dan audit disimpan atomik; kegagalan salah satu jurnal
+atau audit membatalkan seluruh batch. Setiap jurnal mendapat audit
+`journal.updated` dengan snapshot sebelum/sesudah dan ID batch, disertai audit
+ringkasan `journal.accounts_replaced`. Daftar dan jumlah terkait dimuat ulang
+setelah berhasil. Jurnal Trashed/Dibalik tidak dapat dipilih untuk batch.
+
+Detail jurnal yang dibuka dari alur ini memakai satu komponen form jurnal utama,
+dengan pesan konteks "Ganti akun jurnal untuk penghapusan akun [kode dan nama]"
+di atas form. User dengan izin edit dan status/periode yang sesuai dapat langsung
+mengganti input debit/kredit; user yang hanya berhak membaca melihat form yang
+sama secara read-only. Jika izin membaca ditolak backend, form tidak ditampilkan.
+Baris akun yang akan dihapus ditandai, disertai petunjuk tombol simpan.
+Dalam konteks ini, mode buku dikunci ke jurnal yang dipilih; penyimpanan tidak
+mengubah pasangan jurnal, melakukan posting, atau mengubah status review.
+Jurnal demo Tersimpan dapat diedit oleh Supervisor/admin sesuai izin normal.
+Pada jurnal yang terkunci karena role/status/periode, UI menjelaskan batasnya
+dan menawarkan kembali ke Bagan Akun untuk melakukan soft delete akun non-sistem
+tanpa mengubah jurnal terkunci.
+Ringkasan jurnal terkunci menggunakan warna tema agar terbaca pada mode gelap.
+
+Setelah penyimpanan perubahan jurnal, pengguna kembali ke daftar terkait dan
+jumlah dihitung ulang. Pengguna dapat kembali ke editor akun untuk soft delete
+meskipun masih ada jurnal terkait. Akun wajib sistem serta akun induk yang masih
+memiliki sub-akun belum terhapus tetap tidak dapat dihapus. Referensi template,
+koreksi Fiskal, dan provisi pajak dipertahankan dan tidak menghalangi soft delete.
+Inspector hanya menerima daftar dan jumlah Fiskal, tanpa informasi penggunaan
+Intern. Backend tetap memeriksa permission, entity, akun sistem, dan sub-akun.
+
+Audit mencatat `account.delete_blocked` beserta alasan dan penggunaan akun,
+`journal.updated` dengan snapshot sebelum/sesudah penggantian akun, serta
+`account.deleted` dengan identitas akun. Penghapusan akun dan audit keberhasilannya
+berada dalam satu transaksi sehingga kegagalan audit membatalkan penghapusan.
 
 ### 8.9 Deskripsi Bagan Akun
 

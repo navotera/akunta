@@ -10,6 +10,7 @@ use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\Account;
+use App\Models\Attachment;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
@@ -63,7 +64,7 @@ beforeEach(function () {
     ]);
 
     $app = RbacApp::create([
-        'code' => 'accounting-spa-'.uniqid(),
+        'code' => 'accounting',
         'name' => 'Accounting',
         'version' => '0.1',
         'enabled' => true,
@@ -120,6 +121,43 @@ it('lists journals scoped to the tenant', function () {
         ->assertJsonPath('meta.total', 1)
         ->assertJsonPath('meta.status_counts.draft', 1)
         ->assertJsonPath('meta.status_counts.submitted', 0);
+});
+
+it('filters journals by period, account, type, and date range', function () {
+    $createJournal = function (string $number, string $date, string $type, Account $account): Journal {
+        $journal = Journal::create([
+            'entity_id' => $this->entity->id,
+            'period_id' => $this->period->id,
+            'type' => $type,
+            'journal_mode' => Journal::MODE_INTERNAL,
+            'number' => $number,
+            'date' => $date,
+            'memo' => 'Filter test',
+            'status' => Journal::STATUS_DRAFT,
+        ]);
+        JournalEntry::create([
+            'journal_id' => $journal->id,
+            'line_no' => 1,
+            'account_id' => $account->id,
+            'debit' => 100,
+            'credit' => 0,
+        ]);
+
+        return $journal;
+    };
+
+    $match = $createJournal('JU-FILTER-MATCH', '2026-05-12', Journal::TYPE_GENERAL, $this->cash);
+    $createJournal('JU-FILTER-ACCOUNT', '2026-05-12', Journal::TYPE_GENERAL, $this->revenue);
+    $createJournal('JU-FILTER-DATE', '2026-05-29', Journal::TYPE_GENERAL, $this->cash);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals?journal_mode=internal&period_id='.$this->period->id
+            .'&account_id='.$this->cash->id.'&type='.Journal::TYPE_GENERAL
+            .'&date_from=2026-05-10&date_to=2026-05-20')
+        ->assertOk()
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('data.0.id', $match->id);
 });
 
 it('previews the next journal number for the selected date and mode', function () {
@@ -286,6 +324,69 @@ it('creates paired intern and fiscal drafts for the combined input mode', functi
         ->and(Journal::where('input_group_id', $groupId)->count())->toBe(2)
         ->and(Journal::where('input_group_id', $groupId)->pluck('journal_mode')->sort()->values()->all())
         ->toBe([Journal::MODE_FISCAL, Journal::MODE_INTERNAL]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals/'.$res->json('data.id'))
+        ->assertOk()
+        ->assertJsonPath('data.journal_mode', Journal::MODE_INTERNAL)
+        ->assertJsonPath('data.combined_input', true);
+});
+
+it('maps existing attachment records to a newly created fiscal pair using the same stored object', function () {
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-202605-060',
+        'date' => '2026-05-16',
+        'memo' => 'Jurnal dengan bukti',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 1,
+        'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0,
+    ]);
+    JournalEntry::create([
+        'journal_id' => $journal->id, 'line_no' => 2,
+        'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100,
+    ]);
+    $attachment = Attachment::create([
+        'attachable_type' => Journal::class,
+        'attachable_id' => $journal->id,
+        'entity_id' => $this->entity->id,
+        'filename' => 'bukti.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 123,
+        'disk' => 'local',
+        'path' => 'attachments/shared/bukti.pdf',
+        'checksum_sha256' => str_repeat('a', 64),
+        'uploaded_by' => $this->user->id,
+    ]);
+
+    $updated = $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/journals/{$journal->id}", [
+            'journal_mode' => 'both',
+            'type' => Journal::TYPE_GENERAL,
+            'date' => '2026-05-16',
+            'memo' => 'Jurnal dengan bukti',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.paired_journal.journal_mode', Journal::MODE_FISCAL);
+
+    $pairedAttachment = Attachment::query()
+        ->where('attachable_type', Journal::class)
+        ->where('attachable_id', $updated->json('data.paired_journal.id'))
+        ->sole();
+
+    expect($pairedAttachment->id)->not->toBe($attachment->id)
+        ->and($pairedAttachment->filename)->toBe($attachment->filename)
+        ->and($pairedAttachment->path)->toBe($attachment->path)
+        ->and(Attachment::where('attachable_id', $journal->id)->count())->toBe(1);
 });
 
 it('allows an admin to edit a submitted journal mode and send it for revision', function () {
@@ -498,6 +599,35 @@ it('rejects unbalanced journal create with 422', function () {
         ->postJson('/api/v1/spa/journals', $payload)
         ->assertStatus(422);
 });
+
+it('rejects an inactive journal account even when it is visible in suggestions', function (string $mode) {
+    $this->cash->update(['is_active' => false]);
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'journal_mode' => $mode, 'date' => '2026-05-04', 'memo' => 'Inactive account attempt',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ])->assertUnprocessable();
+
+    expect(Journal::where('memo', 'Inactive account attempt')->exists())->toBeFalse();
+})->with(['internal', 'fiscal']);
+
+it('allows an active child account when its parent is inactive', function (string $mode) {
+    $parent = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1000', 'name' => 'Bank',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => false,
+        'is_active' => false, 'availability' => 'both',
+    ]);
+    $this->cash->update(['parent_account_id' => $parent->id]);
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals', [
+            'journal_mode' => $mode, 'date' => '2026-05-04', 'memo' => 'Active child account',
+            'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+            'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+        ])->assertCreated()->assertJsonPath('data.journal_mode', $mode);
+})->with(['internal', 'fiscal']);
 
 it('rejects an account unavailable for the selected journal mode', function () {
     $this->cash->update(['availability' => 'intern']);

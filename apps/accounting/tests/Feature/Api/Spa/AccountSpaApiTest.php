@@ -24,6 +24,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'acc-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'acc-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['account.read', 'account.create', 'account.rename', 'account.update', 'account.activate', 'account.delete']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
@@ -56,6 +57,72 @@ it('creates an account via SPA', function () {
         ->and($created->description)->toContain('Contoh: pengisian kas kecil.');
     $res->assertJsonPath('data.availability', 'both');
 });
+
+it('can list inactive accounts without hiding active children or exposing another entity', function () {
+    $parent = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1100', 'name' => 'Bank',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => false, 'is_active' => true,
+    ]);
+    $child = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1101', 'name' => 'Bank BCA',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'is_active' => true, 'parent_account_id' => $parent->id,
+    ]);
+    $inactive = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1102', 'name' => 'Bank BNI',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'is_active' => false, 'parent_account_id' => $parent->id,
+    ]);
+    $otherEntity = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'Other entity']);
+    $other = Account::create([
+        'entity_id' => $otherEntity->id, 'code' => '1103', 'name' => 'Other bank',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true, 'is_active' => false,
+    ]);
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->patchJson("/api/v1/spa/accounts/{$parent->id}", [
+            'code' => $parent->code, 'name' => $parent->name, 'type' => 'asset',
+            'normal_balance' => 'debit', 'is_active' => false,
+        ])->assertOk()->assertJsonPath('data.is_active', false);
+    expect($child->refresh()->is_active)->toBeTrue();
+
+    $this->getJson('/api/v1/spa/accounts')->assertOk()
+        ->assertJsonFragment(['id' => $child->id])
+        ->assertJsonMissing(['id' => $inactive->id]);
+
+    $this->getJson('/api/v1/spa/accounts?active_only=0')->assertOk()
+        ->assertJsonFragment(['id' => $child->id])
+        ->assertJsonFragment(['id' => $inactive->id, 'is_active' => false])
+        ->assertJsonMissing(['id' => $parent->id])
+        ->assertJsonMissing(['id' => $other->id]);
+
+    $this->getJson('/api/v1/spa/accounts?active_only=0&postable_only=0')->assertOk()
+        ->assertJsonFragment(['id' => $parent->id, 'is_active' => false])
+        ->assertJsonFragment(['id' => $child->id, 'is_active' => true])
+        ->assertJsonFragment(['id' => $inactive->id, 'is_active' => false])
+        ->assertJsonMissing(['id' => $other->id]);
+});
+
+it('preserves book availability when listing inactive accounts', function (string $mode, string $availability, string $unavailable) {
+    $account = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1110', 'name' => 'Inactive bank',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'is_active' => false, 'availability' => $availability,
+    ]);
+    $otherBook = Account::create([
+        'entity_id' => $this->entity->id, 'code' => '1120', 'name' => 'Other book',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_postable' => true,
+        'is_active' => false, 'availability' => $unavailable,
+    ]);
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson("/api/v1/spa/accounts?active_only=0&journal_mode={$mode}")
+        ->assertOk()->assertJsonFragment(['id' => $account->id, 'is_active' => false])
+        ->assertJsonMissing(['id' => $otherBook->id]);
+})->with([
+    ['internal', 'intern', 'fiskal'],
+    ['fiscal', 'fiskal', 'intern'],
+]);
 
 it('exposes fake account provenance in the account list', function () {
     $fake = Account::create([
@@ -138,7 +205,7 @@ it('keeps parent accounts non-postable', function () {
     expect($parent->refresh()->is_postable)->toBeFalse();
 });
 
-it('blocks delete when account has journal entries', function () {
+it('soft deletes an account while preserving its journal entries', function () {
     $period = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'P',
         'start_date' => '2026-01-01', 'end_date' => '2026-12-31',
@@ -160,7 +227,9 @@ it('blocks delete when account has journal entries', function () {
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->deleteJson("/api/v1/spa/accounts/{$account->id}")
-        ->assertStatus(422);
+        ->assertNoContent();
+    $this->assertSoftDeleted('accounts', ['id' => $account->id]);
+    expect($journal->fresh()->entries()->count())->toBe(1);
 });
 
 it('exposes and protects required system accounts', function () {

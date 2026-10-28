@@ -33,12 +33,14 @@ export const attachmentApi = {
     file: File,
     description: string | null = null,
     tenantSlug: string | null = null,
+    mirrorToPaired = false,
   ): Promise<Attachment> => {
     const fd = new FormData();
     fd.set('attachable_type', attachableType);
     fd.set('attachable_id', attachableId);
     fd.set('file', file);
     if (description) fd.set('description', description);
+    if (mirrorToPaired) fd.set('mirror_to_paired', '1');
 
     return api<{ data: Attachment }>('/api/v1/spa/attachments', {
       method: 'POST',

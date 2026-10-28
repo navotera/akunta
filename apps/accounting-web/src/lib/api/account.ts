@@ -15,6 +15,7 @@ export interface Account {
   system_key: string | null;
   is_system: boolean;
   is_fake: boolean;
+  deleted_at?: string | null;
 }
 
 export type AccountOption = Account;
@@ -39,10 +40,12 @@ export const accountApi = {
     tenantSlug?: string | null,
     postableOnly = true,
     journalMode?: AccountJournalMode,
+    activeOnly = true,
   ) => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (!postableOnly) params.set('postable_only', '0');
+    if (!activeOnly) params.set('active_only', '0');
     if (journalMode) params.set('journal_mode', journalMode);
     return api<{ data: Account[] }>(
       `/api/v1/spa/accounts${params.size ? `?${params.toString()}` : ''}`,

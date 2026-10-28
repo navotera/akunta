@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessAutoMappingRawData;
@@ -13,6 +14,7 @@ use App\Services\AutoMappingEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class AutoMappingController extends Controller
 {
@@ -23,7 +25,7 @@ class AutoMappingController extends Controller
     public function index(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->authorizeMapping($entity->id);
+        $this->authorizeMapping($entity->id, 'automapping.read');
         $rows = AutoMappingRawData::query()->where('entity_id', $entity->id)->with('journal')->latest()->paginate(min(100, max(10, (int) $request->query('per_page', 50))));
 
         return response()->json(['data' => $rows->items(), 'meta' => ['current_page' => $rows->currentPage(), 'last_page' => $rows->lastPage(), 'total' => $rows->total()]]);
@@ -32,7 +34,7 @@ class AutoMappingController extends Controller
     public function show(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->authorizeMapping($entity->id);
+        $this->authorizeMapping($entity->id, 'automapping.read');
         $raw = AutoMappingRawData::where('entity_id', $entity->id)->with('rule')->findOrFail($id);
         $raw->setAttribute('variants', AutoMappingRule::query()->where('entity_id', $entity->id)->where('source_type', $raw->source_type)->where('structure_hash', $raw->structure_hash)->where('is_active', true)->latest()->get());
         $patternQuery = AutoMappingRawData::query()
@@ -105,17 +107,8 @@ class AutoMappingController extends Controller
         return response()->json(['data' => ['queued' => $rawIds->count()]]);
     }
 
-    private function authorizeMapping(string $entityId): void
+    private function authorizeMapping(string $entityId, string $permission = 'automapping.manage'): void
     {
-        $user = Auth::user();
-        abort_unless(
-            $user !== null && (
-                (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
-                || session('ecopa.app_role') === 'admin'
-                || $user->hasPermission('automapping.manage', $entityId)
-            ),
-            403,
-            'Anda tidak memiliki izin mengelola Auto Mapping.',
-        );
+        Gate::authorize('accounting.permission', [$permission, Entity::findOrFail($entityId)]);
     }
 }

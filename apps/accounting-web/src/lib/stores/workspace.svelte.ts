@@ -139,12 +139,81 @@ const routes: RouteDefinition[] = [
 
 const WORKSPACE_STORAGE_KEY = 'akunta:accounting-workspace-tabs';
 const WORKSPACE_ACTIVE_STORAGE_KEY = 'akunta:accounting-workspace-active';
+const WORKSPACE_SWITCH_KEY = 'akunta:accounting-workspace-destination';
+
+export interface WorkspaceScope {
+  userId: string;
+  entityId: string | null;
+}
+
+interface WorkspaceHistory {
+  tabs: Array<{ href: string }>;
+  activeHref: string | null;
+  emptyAt: string | null;
+}
 
 export const workspace = $state({
   tabs: [] as WorkspaceTab[],
   initialized: false,
   emptyAt: null as string | null,
+  activeHref: null as string | null,
+  scope: null as WorkspaceScope | null,
+  switching: false,
 });
+
+function historyKey(scope: WorkspaceScope): string {
+  return `${WORKSPACE_STORAGE_KEY}:${encodeURIComponent(scope.userId)}:${encodeURIComponent(scope.entityId ?? 'no-entity')}`;
+}
+
+export function prepareWorkspaceSwitch(scope: WorkspaceScope): void {
+  sessionStorage.setItem(WORKSPACE_SWITCH_KEY, JSON.stringify(scope));
+  workspace.switching = true;
+}
+
+export function consumeWorkspaceSwitch(scope: WorkspaceScope): boolean {
+  const raw = sessionStorage.getItem(WORKSPACE_SWITCH_KEY);
+  sessionStorage.removeItem(WORKSPACE_SWITCH_KEY);
+  try {
+    const destination: unknown = JSON.parse(raw ?? 'null');
+    return Boolean(
+      destination &&
+      typeof destination === 'object' &&
+      'userId' in destination &&
+      destination.userId === scope.userId &&
+      'entityId' in destination &&
+      destination.entityId === scope.entityId,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readHistory(scope: WorkspaceScope): WorkspaceHistory {
+  const empty = { tabs: [], activeHref: null, emptyAt: null };
+  if (typeof localStorage === 'undefined') return empty;
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(historyKey(scope)) ?? 'null');
+    if (!raw || typeof raw !== 'object' || !('tabs' in raw) || !Array.isArray(raw.tabs))
+      return empty;
+    const history = raw as Partial<WorkspaceHistory>;
+    const tabs = history.tabs!.filter(
+      (tab) => typeof tab?.href === 'string' && isWorkspaceHref(tab.href),
+    );
+    return {
+      tabs: [...new Map(tabs.map((tab) => [tab.href, { href: tab.href }])).values()],
+      activeHref:
+        typeof history.activeHref === 'string' && isWorkspaceHref(history.activeHref)
+          ? history.activeHref
+          : null,
+      emptyAt:
+        typeof history.emptyAt === 'string' && isWorkspaceHref(history.emptyAt)
+          ? history.emptyAt
+          : null,
+    };
+  } catch {
+    return empty;
+  }
+}
 
 function workspaceRoute(href: string): RouteDefinition | undefined {
   const pathname = href.split('?')[0];
@@ -200,54 +269,69 @@ export function getWorkspaceTab(href: string): WorkspaceTab | null {
   return workspace.tabs.find((tab) => tab.href === href) ?? null;
 }
 
-export function initializeWorkspace(href: string): void {
-  if (workspace.initialized) return;
-
-  let restored: WorkspaceTab[] = [];
+export function initializeWorkspace(
+  href: string,
+  scope: WorkspaceScope,
+  canRestore: (href: string) => boolean = () => true,
+): void {
+  if (
+    workspace.initialized &&
+    workspace.scope?.userId === scope.userId &&
+    workspace.scope?.entityId === scope.entityId
+  )
+    return;
+  if (workspace.initialized) persistWorkspace();
+  const history = readHistory(scope);
+  // Old global tabs cannot establish which entity owns a record URL.
   if (typeof localStorage !== 'undefined') {
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem(WORKSPACE_STORAGE_KEY) ??
-          sessionStorage.getItem(WORKSPACE_STORAGE_KEY) ??
-          '[]',
-      ) as Array<Pick<WorkspaceTab, 'href'>>;
-      restored = stored
-        .filter((tab) => tab?.href && isWorkspaceHref(tab.href))
-        .map((tab) => resolveWorkspaceTab(tab.href));
-    } catch {
-      localStorage.removeItem(WORKSPACE_STORAGE_KEY);
-      sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
-    }
+    localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+    localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+    sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
+    sessionStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
   }
-
-  workspace.tabs = restored;
+  workspace.scope = { ...scope };
+  workspace.tabs = history.tabs
+    .filter((tab) => canRestore(tab.href))
+    .map((tab) => resolveWorkspaceTab(tab.href));
+  workspace.emptyAt = history.emptyAt && canRestore(history.emptyAt) ? history.emptyAt : null;
+  workspace.activeHref = href;
   ensureWorkspaceTab(href);
   workspace.initialized = true;
-  persistWorkspace();
+  persistWorkspace(href);
 }
 
-export function getPersistedWorkspaceHref(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  const href = localStorage.getItem(WORKSPACE_ACTIVE_STORAGE_KEY);
-  if (!href || !isWorkspaceHref(href)) {
-    if (href !== null) localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
-    return null;
-  }
-
-  return href;
+export function getPersistedWorkspaceHref(
+  scope: WorkspaceScope | null = workspace.scope,
+): string | null {
+  if (!scope) return null;
+  const history = readHistory(scope);
+  return history.activeHref &&
+    (history.tabs.some((tab) => tab.href === history.activeHref) ||
+      history.emptyAt === history.activeHref)
+    ? history.activeHref
+    : null;
 }
 
 export function persistWorkspace(activeHref?: string): void {
-  if (typeof localStorage === 'undefined') return;
+  if (typeof localStorage === 'undefined' || !workspace.initialized || !workspace.scope) return;
   removeInvalidWorkspaceTabs();
-  localStorage.setItem(
-    WORKSPACE_STORAGE_KEY,
-    JSON.stringify(workspace.tabs.map(({ href, label, icon }) => ({ href, label, icon }))),
-  );
-  if (activeHref) {
-    if (isWorkspaceHref(activeHref)) localStorage.setItem(WORKSPACE_ACTIVE_STORAGE_KEY, activeHref);
-    else localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
-  } else if (!isWorkspaceHref(localStorage.getItem(WORKSPACE_ACTIVE_STORAGE_KEY) ?? '')) {
-    localStorage.removeItem(WORKSPACE_ACTIVE_STORAGE_KEY);
+  if (activeHref && isWorkspaceHref(activeHref)) workspace.activeHref = activeHref;
+  if (
+    !workspace.tabs.some((tab) => tab.href === workspace.activeHref) &&
+    workspace.emptyAt !== workspace.activeHref
+  ) {
+    workspace.activeHref = workspace.tabs[0]?.href ?? workspace.emptyAt;
+  }
+  try {
+    localStorage.setItem(
+      historyKey(workspace.scope),
+      JSON.stringify({
+        tabs: workspace.tabs.map(({ href }) => ({ href })),
+        activeHref: workspace.activeHref,
+        emptyAt: workspace.emptyAt,
+      } satisfies WorkspaceHistory),
+    );
+  } catch {
+    // Navigation remains available when browser storage is full or disabled.
   }
 }

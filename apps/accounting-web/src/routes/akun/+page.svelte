@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import { accountApi, type Account, type AccountInput } from '$lib/api/account.js';
   import { ApiError } from '$lib/api/client.js';
   import CoaTreeNode from '$lib/components/coa/CoaTreeNode.svelte';
@@ -28,6 +30,7 @@
   let filterFake = $state('');
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let deletionError = $state<string | null>(null);
 
   const TYPE_LABEL: Record<string, string> = {
     asset: 'Aktiva',
@@ -49,13 +52,14 @@
   };
 
   const filtered = $derived.by(() => {
-    if (!treeSearch.trim()) return items;
     const q = treeSearch.trim().toLowerCase();
     return items.filter(
       (a) =>
-        a.code.toLowerCase().includes(q) ||
-        a.name.toLowerCase().includes(q) ||
-        (a.description?.toLowerCase().includes(q) ?? false),
+        (!filterStatus || (filterStatus === 'active' ? a.is_active : !a.is_active)) &&
+        (!q ||
+          a.code.toLowerCase().includes(q) ||
+          a.name.toLowerCase().includes(q) ||
+          (a.description?.toLowerCase().includes(q) ?? false)),
     );
   });
 
@@ -94,9 +98,11 @@
   );
 
   function buildTree(rows: Account[]): TreeNode[] {
+    const ids = new Set(rows.map((a) => a.id));
     const byParent = new Map<string, Account[]>();
     for (const a of rows) {
-      const k = a.parent_account_id ?? '__root__';
+      const k =
+        a.parent_account_id && ids.has(a.parent_account_id) ? a.parent_account_id : '__root__';
       if (!byParent.has(k)) byParent.set(k, []);
       byParent.get(k)!.push(a);
     }
@@ -130,6 +136,9 @@
 
   let editing = $state<Account | null>(null);
   let creating = $state(false);
+  const canEditStructure = $derived(creating ? can('account.create') : can('account.update'));
+  const canRename = $derived(creating ? can('account.create') : can('account.rename'));
+  const canActivate = $derived(creating ? can('account.create') : can('account.activate'));
   let form = $state<AccountInput>({
     code: '',
     name: '',
@@ -215,7 +224,7 @@
     loading = true;
     error = null;
     try {
-      items = await accountApi.list('', null, false);
+      items = await accountApi.list('', null, false, undefined, false);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -232,6 +241,9 @@
       }
     }
     await load();
+    const accountId = $page.url.searchParams.get('review_account_id');
+    const account = items.find((item) => item.id === accountId);
+    if (account) openEdit(account);
   });
 
   function openCreate() {
@@ -276,6 +288,7 @@
   }
 
   function closeForm() {
+    deletionError = null;
     editing = null;
     creating = false;
     formErrors = null;
@@ -313,17 +326,19 @@
   }
 
   async function destroy(a: Account) {
-    if (!confirm(`Hapus akun ${a.code} — ${a.name}?`)) return;
+    if (
+      !confirm(
+        `Hapus akun ${a.code} — ${a.name} secara soft delete? Riwayat jurnal dan laporan tetap tersimpan. Akun tidak lagi tampil di pilihan debit/kredit.`,
+      )
+    )
+      return;
+    deletionError = null;
     try {
       await accountApi.destroy(a.id);
       closeForm();
       await load();
     } catch (e) {
-      const msg =
-        e instanceof ApiError
-          ? JSON.stringify((e.body as { errors?: unknown })?.errors ?? e.body)
-          : (e as Error).message;
-      alert(msg);
+      deletionError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -353,6 +368,7 @@
       class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       onclick={openCreate}
       data-testid="account-create"
+      disabled={!can('account.create')}
     >
       + Akun Baru
     </button>
@@ -374,8 +390,10 @@
         </button>
       {/each}
     </div>
-    {#if viewMode === 'list'}
-      <div class="flex min-w-0 flex-1 items-center justify-end gap-2 sm:ml-4">
+    <div
+      class="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-4 sm:w-auto sm:flex-1 sm:justify-end"
+    >
+      {#if viewMode === 'list'}
         <label class="relative min-w-0 flex-1 sm:max-w-md">
           <span class="sr-only">Cari akun</span>
           <svg
@@ -423,15 +441,15 @@
             </span>
           {/if}
         </button>
-      </div>
-    {:else}
-      <input
-        type="search"
-        placeholder="Cari kode, nama, atau deskripsi akun…"
-        class="w-72 rounded-md border border-border-default bg-card-bg px-3 py-1.5 text-sm focus:outline-none focus:border-primary"
-        bind:value={treeSearch}
-      />
-    {/if}
+      {:else}
+        <input
+          type="search"
+          placeholder="Cari kode, nama, atau deskripsi akun…"
+          class="w-full rounded-md border border-border-default bg-card-bg px-3 py-1.5 text-sm focus:border-primary focus:outline-none sm:w-72"
+          bind:value={treeSearch}
+        />
+      {/if}
+    </div>
   </div>
 
   {#if loading}
@@ -452,7 +470,7 @@
             <th>Tipe</th>
             <th>Normal</th>
             <th class="text-center">Postable</th>
-            <th class="text-center">Aktif</th>
+            <th class="text-center">Status</th>
             <th class="text-center">Ketersediaan</th>
           </tr>
         </thead>
@@ -465,7 +483,7 @@
               aria-label={`${a.code} ${a.name}. ${a.description ?? 'Deskripsi akun belum diisi.'}`}
               aria-describedby={`account-description-${a.id}`}
             >
-              <td class="font-mono">
+              <td class="font-mono {a.is_active ? '' : 'text-text-muted'}">
                 <span class="inline-flex items-center gap-2">
                   {#if a.is_fake}
                     <span
@@ -488,8 +506,12 @@
               </td>
               <td>
                 <span class="relative inline-block max-w-full align-bottom">
-                  <span class="block truncate {isParent ? 'font-semibold text-text-strong' : ''}"
-                    >{a.name}</span
+                  <span
+                    class="block truncate {a.is_active
+                      ? isParent
+                        ? 'font-semibold text-text-strong'
+                        : ''
+                      : 'text-text-muted'}">{a.name}</span
                   >
                   <AccountDescriptionTooltip
                     id={`account-description-${a.id}`}
@@ -508,7 +530,9 @@
                 </span>
               </td>
               <td class="text-center">{a.is_postable ? '✓' : '—'}</td>
-              <td class="text-center">{a.is_active ? '✓' : '—'}</td>
+              <td class="text-center whitespace-nowrap {a.is_active ? '' : 'text-text-muted'}"
+                >{a.is_active ? 'Aktif' : 'Tidak aktif'}</td
+              >
               <td class="text-center">
                 <span
                   class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold {a.availability ===
@@ -739,7 +763,7 @@
     role="presentation"
   >
     <div
-      class="w-full max-w-4xl rounded-lg bg-card-bg p-6 shadow-lg"
+      class="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-card-bg p-6 shadow-lg"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
       role="dialog"
@@ -769,13 +793,38 @@
           tersedia; deskripsi dan dasar hukum tetap dapat diperbarui.
         </div>
       {/if}
+      {#if editing && !editingIsSystem}
+        <div class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm">
+          <p>
+            Hapus akun memakai soft delete. Riwayat jurnal dan laporan tetap tersimpan, termasuk
+            jurnal pada periode terkunci. Akun tidak lagi muncul di pilihan debit/kredit.
+          </p>
+          {#if can('journal.read')}
+            <a
+              class="mt-2 inline-flex font-semibold text-primary hover:underline"
+              data-testid="account-related-journals"
+              href={`/journals?delete_account_id=${encodeURIComponent(editing.id)}`}
+              >Lihat Jurnal yang Menggunakan Akun</a
+            >
+          {/if}
+        </div>
+      {/if}
+      {#if deletionError}
+        <div
+          class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm text-text-default"
+          role="status"
+          data-testid="account-delete-blocked"
+        >
+          <p>{deletionError}</p>
+        </div>
+      {/if}
       <div class="grid grid-cols-2 gap-3 text-sm">
         <label class="col-span-1">
           <span class="block font-medium mb-1">Tipe</span>
           <select
             class="w-full rounded-md border border-border-default px-2 py-1.5 disabled:cursor-not-allowed disabled:bg-page-bg disabled:text-text-muted"
             bind:value={form.type}
-            disabled={editingIsSystem || !!form.parent_account_id}
+            disabled={editingIsSystem || !!form.parent_account_id || !canEditStructure}
           >
             <option value="asset">Asset</option>
             <option value="liability">Liability</option>
@@ -794,7 +843,7 @@
         </label>
         <label class="col-span-1">
           <span class="block font-medium mb-1">Akun Parent</span>
-          {#if editingIsSystem}
+          {#if editingIsSystem || !canEditStructure}
             <div
               class="rounded-md border border-border-default bg-page-bg px-2 py-1.5 text-text-muted"
             >
@@ -828,7 +877,7 @@
               style="padding-left: 8px !important; padding-right: 0 !important; text-indent: 0;"
               bind:value={form.code}
               oninput={() => (codeAutoGenerated = false)}
-              disabled={editingIsSystem}
+              disabled={editingIsSystem || !canEditStructure}
             />
             <span class="mt-1 block text-xs text-text-muted">Otomatis</span>
             {#if fieldErr('code')}<span class="text-xs text-danger">{fieldErr('code')}</span>{/if}
@@ -838,7 +887,7 @@
             <input
               class="w-full rounded-md border border-border-default px-2 py-1.5"
               bind:value={form.name}
-              disabled={editingIsSystem}
+              disabled={editingIsSystem || !canRename}
             />
             {#if fieldErr('name')}<span class="text-xs text-danger">{fieldErr('name')}</span>{/if}
           </label>
@@ -853,7 +902,7 @@
                 type="button"
                 role="radio"
                 aria-checked={form.normal_balance === 'debit'}
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canEditStructure}
                 class="ak-pill inline-flex items-center justify-center border-0 px-3 py-1.5 font-semibold uppercase transition {form.normal_balance ===
                 'debit'
                   ? 'bg-info-light text-info'
@@ -866,7 +915,7 @@
                 type="button"
                 role="radio"
                 aria-checked={form.normal_balance === 'credit'}
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canEditStructure}
                 class="ak-pill inline-flex items-center justify-center border-0 px-3 py-1.5 font-semibold uppercase transition {form.normal_balance ===
                 'credit'
                   ? 'bg-warning-light text-warning'
@@ -883,6 +932,7 @@
           <textarea
             class="min-h-40 w-full resize-y rounded-md border border-border-default px-3 py-2 leading-6"
             bind:value={form.description}
+            disabled={!canEditStructure}
             maxlength="2000"
             placeholder="Definisi akun, kapan digunakan, dan contoh peristiwa ekonominya."
           ></textarea>
@@ -907,7 +957,7 @@
                 type="button"
                 role="radio"
                 aria-checked={form.availability === 'intern'}
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canEditStructure}
                 class="rounded-full border px-3 py-1.5 text-xs font-semibold transition {form.availability ===
                 'intern'
                   ? 'border-paid bg-paid-light text-paid ring-2 ring-paid/20'
@@ -920,7 +970,7 @@
                 type="button"
                 role="radio"
                 aria-checked={form.availability === 'both'}
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canEditStructure}
                 class="rounded-full border px-3 py-1.5 text-xs font-semibold transition {form.availability ===
                 'both'
                   ? 'border-[#8fbd35] bg-gradient-to-r from-[#22c55e] to-[#facc15] text-white ring-2 ring-[#8fbd35]/25'
@@ -933,7 +983,7 @@
                 type="button"
                 role="radio"
                 aria-checked={form.availability === 'fiskal'}
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canEditStructure}
                 class="rounded-full border px-3 py-1.5 text-xs font-semibold transition {form.availability ===
                 'fiskal'
                   ? 'border-[#e7b818] bg-[#fff0b8] text-[#8a5a00] ring-2 ring-[#e7b818]/25'
@@ -967,7 +1017,7 @@
                 role="switch"
                 aria-checked={form.is_active}
                 aria-label="Aktif"
-                disabled={editingIsSystem}
+                disabled={editingIsSystem || !canActivate}
                 onclick={() => (form.is_active = !form.is_active)}
               ></button>
               <span>
@@ -987,7 +1037,7 @@
                 role="switch"
                 aria-checked={form.is_postable}
                 aria-label="Postable"
-                disabled={editingIsSystem || editingHasChildren}
+                disabled={editingIsSystem || editingHasChildren || !canEditStructure}
                 onclick={() => (form.is_postable = !form.is_postable)}
               ></button>
               <span>
@@ -1011,6 +1061,7 @@
           <textarea
             class="min-h-24 w-full resize-y rounded-md border border-border-default px-3 py-2 leading-6"
             bind:value={form.legal_basis}
+            disabled={!canEditStructure}
             maxlength="2000"
             required
             aria-invalid={!!fieldErr('legal_basis')}
@@ -1027,7 +1078,7 @@
 
       <div class="mt-5 flex items-center justify-between gap-2">
         <div>
-          {#if editing && !editingIsSystem}
+          {#if editing && !editingIsSystem && can('account.delete')}
             <button
               type="button"
               class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-danger-light disabled:hover:text-danger"
@@ -1058,7 +1109,7 @@
             type="button"
             class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
             onclick={save}
-            disabled={saving}
+            disabled={saving || !(canEditStructure || canRename || canActivate)}
           >
             {saving ? 'Menyimpan…' : 'Simpan'}
           </button>

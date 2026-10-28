@@ -65,9 +65,18 @@
       >
     {/if}
     <span class="relative inline-block max-w-full">
-      <span class="block truncate {isParent ? 'font-semibold text-text-strong' : ''}">
+      <span
+        class="block truncate {node.account.is_active
+          ? isParent
+            ? 'font-semibold text-text-strong'
+            : ''
+          : 'text-text-muted'}"
+      >
         {node.account.name}
       </span>
+      {#if !node.account.is_active}
+        <span class="block text-xs text-text-muted">Tidak aktif</span>
+      {/if}
       <AccountDescriptionTooltip
         id={`account-description-${node.account.id}`}
         description={node.account.description}

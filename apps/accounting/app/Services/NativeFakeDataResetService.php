@@ -25,6 +25,7 @@ use App\Models\Project;
 use App\Models\RecurringJournal;
 use App\Models\SourceRefRegistry;
 use App\Models\TaxCode;
+use App\Models\TaxProvision;
 use App\Models\User;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookSubscription;
@@ -62,6 +63,8 @@ final class NativeFakeDataResetService
                 'total' => $markers->count(),
                 'groups' => $markers->countBy('group_key')->sortKeys()->all(),
                 'stale_markers' => $markers->filter(fn (FakeDataRecord $marker): bool => ! $this->modelFor($marker))->count(),
+                'trashed_journals' => $markers->where('model_type', Journal::class)
+                    ->filter(fn (FakeDataRecord $marker): bool => $this->modelFor($marker)?->deleted_at !== null)->count(),
             ],
             'preserved_manual_records' => $this->manualRecordCounts($entity),
             'confirmation_phrase' => self::CONFIRMATION_PHRASE,
@@ -115,21 +118,29 @@ final class NativeFakeDataResetService
 
             $markedJournalIds = $markers
                 ->where('model_type', Journal::class)
+                ->filter(function (FakeDataRecord $marker) use ($lockedEntity, $markedAssignmentUserIds): bool {
+                    $journal = $this->modelFor($marker);
+
+                    return $journal !== null
+                        && $this->belongsToEntity($journal, $marker, $lockedEntity, $markedAssignmentUserIds)
+                        && ! $this->hasUnmarkedDependencies($journal, $lockedEntity);
+                })
                 ->pluck('model_id')
                 ->values();
             if ($markedJournalIds->isNotEmpty()) {
-                Journal::query()->whereIn('id', $markedJournalIds)->update([
+                Journal::withTrashed()->where('entity_id', $lockedEntity->id)->whereIn('id', $markedJournalIds)->update([
                     'reversed_by_journal_id' => null,
                     'source_id' => null,
                 ]);
             }
             $markedAccountIds = $markers->where('model_type', Account::class)->pluck('model_id');
             if ($markedAccountIds->isNotEmpty()) {
-                Account::query()->whereIn('id', $markedAccountIds)->update(['parent_account_id' => null]);
+                Account::withTrashed()->where('entity_id', $lockedEntity->id)->whereIn('id', $markedAccountIds)
+                    ->whereNull('system_key')->update(['parent_account_id' => null]);
             }
             $markedCostCenterIds = $markers->where('model_type', CostCenter::class)->pluck('model_id');
             if ($markedCostCenterIds->isNotEmpty()) {
-                CostCenter::query()->whereIn('id', $markedCostCenterIds)->update(['parent_id' => null]);
+                CostCenter::query()->where('entity_id', $lockedEntity->id)->whereIn('id', $markedCostCenterIds)->update(['parent_id' => null]);
             }
 
             $deleted = 0;
@@ -171,7 +182,13 @@ final class NativeFakeDataResetService
                     $oldAttachmentPaths[] = [$model->disk, $model->path];
                 }
 
-                $model->delete();
+                if ($model instanceof Journal || $model instanceof Account) {
+                    // The reset replaces verified demo journals, including Trashed.
+                    // Hard deletion also releases their entries and unique numbers.
+                    $model->forceDelete();
+                } else {
+                    $model->delete();
+                }
                 $marker->delete();
                 $deleted++;
             }
@@ -224,7 +241,9 @@ final class NativeFakeDataResetService
         /** @var class-string<Model> $modelType */
         $modelType = $marker->model_type;
 
-        return $modelType::query()->find($marker->model_id);
+        return in_array($modelType, [Journal::class, Account::class], true)
+            ? $modelType::withTrashed()->find($marker->model_id)
+            : $modelType::query()->find($marker->model_id);
     }
 
     /** @param Collection<int, string> $markedAssignmentUserIds */
@@ -256,16 +275,34 @@ final class NativeFakeDataResetService
 
     private function hasUnmarkedDependencies(Model $model, Entity $entity): bool
     {
-        if ($model instanceof Journal || $model instanceof FiscalAdjustment) {
+        if ($model instanceof Journal) {
+            $markedJournals = FakeDataRecord::query()->where('entity_id', $entity->id)
+                ->where('model_type', Journal::class)
+                ->whereIn('model_id', Journal::withTrashed()->where('entity_id', $entity->id)->select('id'))->select('model_id');
+            $markedAdjustments = FakeDataRecord::query()->where('entity_id', $entity->id)
+                ->where('model_type', FiscalAdjustment::class)
+                ->whereIn('model_id', FiscalAdjustment::query()->where('entity_id', $entity->id)->select('id'))->select('model_id');
+
+            return $this->hasUnmarkedAttachment($model, $entity)
+                || FiscalAdjustment::query()->where('journal_id', $model->id)->whereNotIn('id', $markedAdjustments)->exists()
+                || TaxProvision::query()->where('journal_id', $model->id)->exists()
+                || Journal::withTrashed()->whereNotIn('id', $markedJournals)
+                    ->where(fn ($query) => $query->where('source_id', $model->id)->orWhere('reversed_by_journal_id', $model->id))->exists();
+        }
+        if ($model instanceof FiscalAdjustment) {
             return $this->hasUnmarkedAttachment($model, $entity);
         }
         if ($model instanceof Period) {
-            return Journal::query()->where('period_id', $model->id)->exists();
+            return Journal::withTrashed()->where('period_id', $model->id)->exists();
         }
         if ($model instanceof Account) {
             return JournalEntry::query()->where('account_id', $model->id)->exists()
                 || JournalTemplateLine::query()->where('account_id', $model->id)->exists()
-                || FiscalAdjustment::query()->where('account_id', $model->id)->exists();
+                || FiscalAdjustment::query()->where('account_id', $model->id)->exists()
+                || Account::withTrashed()->where('parent_account_id', $model->id)->exists()
+                || TaxCode::where('tax_account_id', $model->id)->exists()
+                || TaxProvision::where(fn ($query) => $query->where('expense_account_id', $model->id)
+                    ->orWhere('payable_account_id', $model->id)->orWhere('prepaid_tax_account_id', $model->id))->exists();
         }
         if ($model instanceof JournalTemplate) {
             return RecurringJournal::query()->where('template_id', $model->id)->exists();
@@ -319,7 +356,7 @@ final class NativeFakeDataResetService
             'journals' => Journal::class,
             'auto_mapping' => AutoMappingRawData::class,
         ])->mapWithKeys(fn (string $modelType, string $key): array => [
-            $key => $modelType::query()
+            $key => (in_array($modelType, [Journal::class, Account::class], true) ? $modelType::withTrashed() : $modelType::query())
                 ->where('entity_id', $entity->id)
                 ->whereNotIn('id', FakeDataRecord::query()
                     ->select('model_id')
@@ -332,18 +369,25 @@ final class NativeFakeDataResetService
     /** @param Collection<int, FakeDataRecord> $markers */
     private function fingerprint(Entity $entity, Collection $markers): string
     {
-        $payload = $markers->map(fn (FakeDataRecord $marker): array => [
-            $marker->id,
-            $marker->group_key,
-            $marker->model_type,
-            $marker->model_id,
-            optional($marker->updated_at)?->toIso8601String(),
-        ])->all();
+        $payload = $markers->map(function (FakeDataRecord $marker): array {
+            $model = $this->modelFor($marker);
+
+            return [
+                $marker->id,
+                $marker->group_key,
+                $marker->model_type,
+                $marker->model_id,
+                optional($marker->updated_at)?->toIso8601String(),
+                $model?->getAttributes(),
+                $model instanceof Journal ? $model->entries()->orderBy('id')->get()->map->getAttributes()->all() : null,
+            ];
+        })->all();
 
         return hash('sha256', json_encode([
             'entity_id' => $entity->id,
             'version' => data_get($entity->workspace_settings, 'native_fake_data_version'),
             'markers' => $payload,
+            'manual_counts' => $this->manualRecordCounts($entity),
         ], JSON_THROW_ON_ERROR));
     }
 

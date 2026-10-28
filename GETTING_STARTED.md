@@ -101,3 +101,21 @@ migration yang sudah direview, bila diperlukan:
 ```bash
 docker compose exec accounting php artisan migrate --force
 ```
+
+### Migration wajib untuk rilis soft delete akun — 28 Oktober 2026
+
+Rilis yang membawa kunci periode dan soft delete akun wajib menyertakan file
+`apps/accounting/database/migrations/2026_10_28_000100_add_deleted_at_to_accounts_table.php`
+di image Accounting. Setelah image rilis tersedia pada server tujuan, terapkan
+migration ini sebelum fitur baru digunakan:
+
+```bash
+docker compose exec accounting php artisan migrate --force --path=database/migrations/2026_10_28_000100_add_deleted_at_to_accounts_table.php
+docker compose exec accounting php artisan migrate:status --path=database/migrations/2026_10_28_000100_add_deleted_at_to_accounts_table.php
+```
+
+Status harus `Ran`. Migration menambah kolom nullable `accounts.deleted_at`
+dan indeks `accounts_entity_id_deleted_at_index`; tidak menghapus akun atau
+mengubah jurnal. Pastikan jumlah record tetap sama, pencarian akun berjalan,
+dan backend/frontend menggunakan kode rilis yang sesuai. Keberhasilan migration
+lokal tidak berarti migration pada versi online sudah diterapkan.

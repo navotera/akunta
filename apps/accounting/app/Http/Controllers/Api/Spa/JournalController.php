@@ -13,25 +13,27 @@ use App\Actions\RejectJournalAction;
 use App\Actions\ReverseJournalAction;
 use App\Actions\SubmitJournalAction;
 use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
-use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
+use App\Models\Attachment;
 use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
+use App\Services\AccountDeletionUsage;
+use App\Services\AccountingPermissions;
 use App\Services\JournalNumberGenerator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class JournalController extends Controller
 {
     use AuthorizesBookAccess;
-    use ProtectsNativeFakeData;
 
     public function __construct(
         private readonly PostJournalAction $postJournal,
@@ -62,18 +64,58 @@ class JournalController extends Controller
             $this->authorizeBookRead($request, $mode);
         }
 
-        $applyListFilters = function ($query) use ($mode, $request, $entity): void {
+        $filters = $request->validate([
+            'period_id' => ['nullable', 'string', 'size:26', Rule::exists('periods', 'id')->where('entity_id', $entity->id)],
+            'account_id' => ['nullable', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
+            'deletion_account_id' => ['nullable', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
+            'type' => ['nullable', Rule::in([
+                Journal::TYPE_GENERAL,
+                Journal::TYPE_ADJUSTMENT,
+                Journal::TYPE_REVERSING,
+                Journal::TYPE_CLOSING,
+                Journal::TYPE_OPENING,
+            ])],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d'],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $deletionUsage = null;
+        if ($accountId = $filters['deletion_account_id'] ?? null) {
+            $account = Account::where('entity_id', $entity->id)->findOrFail($accountId);
+            abort_if($this->isInspector($request) && ! $account->isAvailableFor(Journal::MODE_FISCAL), 404);
+            $filters['account_id'] = $account->id;
+            $deletionUsage = app(AccountDeletionUsage::class)->describe($account, $this->isInspector($request));
+        }
+
+        $applyListFilters = function ($query) use ($mode, $filters, $entity): void {
             $query->where('entity_id', $entity->id);
 
             if ($mode !== null) {
                 $query->where('journal_mode', $mode);
             }
 
-            if ($periodId = $request->query('period_id')) {
+            if ($periodId = $filters['period_id'] ?? null) {
                 $query->where('period_id', $periodId);
             }
 
-            if ($search = $request->query('search')) {
+            if ($accountId = $filters['account_id'] ?? null) {
+                $query->whereHas('entries', fn ($entries) => $entries->where('account_id', $accountId));
+            }
+
+            if ($type = $filters['type'] ?? null) {
+                $query->where('type', $type);
+            }
+
+            if ($dateFrom = $filters['date_from'] ?? null) {
+                $query->whereDate('date', '>=', $dateFrom);
+            }
+
+            if ($dateTo = $filters['date_to'] ?? null) {
+                $query->whereDate('date', '<=', $dateTo);
+            }
+
+            if ($search = $filters['search'] ?? null) {
                 $query->where(function ($q) use ($search) {
                     $q->where('number', 'like', "%{$search}%")
                         ->orWhere('transaction_code', 'like', "%{$search}%")
@@ -83,7 +125,8 @@ class JournalController extends Controller
             }
         };
 
-        $query = $isTrashed ? Journal::onlyTrashed() : Journal::query();
+        $query = $isTrashed ? Journal::onlyTrashed()
+            : ($deletionUsage !== null && $status === null ? Journal::withTrashed() : Journal::query());
         $applyListFilters($query);
 
         $statusQuery = Journal::query();
@@ -106,6 +149,9 @@ class JournalController extends Controller
             $statusCounts,
         );
 
+        $trashedQuery = Journal::onlyTrashed();
+        $applyListFilters($trashedQuery);
+
         if ($status !== null && ! $isTrashed) {
             $query->where('status', $status);
         }
@@ -124,7 +170,8 @@ class JournalController extends Controller
                 'per_page' => $page->perPage(),
                 'total' => $page->total(),
                 'status_counts' => $statusCounts,
-                'trashed_count' => $this->trashedCount($entity->id, $mode),
+                'trashed_count' => $trashedQuery->count(),
+                'account_deletion' => $deletionUsage,
             ],
         ]);
     }
@@ -139,6 +186,17 @@ class JournalController extends Controller
         $this->authorizeBookRead($request, $journal->journal_mode);
 
         return response()->json(['data' => array_merge($this->detail($journal), [
+            'combined_input' => $journal->input_group_id !== null && Journal::query()
+                ->where('entity_id', $entity->id)
+                ->where('input_group_id', $journal->input_group_id)
+                ->where('id', '!=', $journal->id)
+                ->where(
+                    'journal_mode',
+                    $journal->journal_mode === Journal::MODE_INTERNAL
+                        ? Journal::MODE_FISCAL
+                        : Journal::MODE_INTERNAL,
+                )
+                ->exists(),
             'audit_trail' => $this->auditTrail($journal),
         ])]);
     }
@@ -234,111 +292,224 @@ class JournalController extends Controller
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $entity = $this->resolveEntity($request);
-        /** @var Journal $journal */
-        $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+        return DB::transaction(function () use ($request, $id): JsonResponse {
+            $entity = $this->resolveEntity($request);
+            /** @var Journal $journal */
+            $journal = Journal::where('entity_id', $entity->id)->lockForUpdate()->findOrFail($id);
 
-        $this->requirePermission('journal.update', $entity);
-        $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
-        $reviewEditable = $journal->status === Journal::STATUS_SUBMITTED
-            && $this->isSupervisorLevel($request, $entity);
-        $storedEditableBySupervisor = $journal->status === Journal::STATUS_POSTED
-            && $this->isSupervisorLevel($request, $entity);
-        if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true)
-            && ! $reviewEditable
-            && ! $storedEditableBySupervisor) {
-            abort(403, 'Jurnal Tersimpan terkunci dan hanya dapat diubah oleh Supervisor.');
-        }
+            $this->assertJournalEditable($request, $entity, $journal);
 
-        $data = $this->validatePayload($request);
-        $inputMode = $data['journal_mode'] ?? $journal->journal_mode;
-        $this->ensureModeEnabled($entity, $inputMode);
-        $period = $this->resolvePeriod($entity, $data['date']);
-        $before = $this->snapshot($journal->load('entries.account'));
-        $paired = null;
+            $data = $this->validatePayload($request);
+            $inputMode = $data['journal_mode'] ?? $journal->journal_mode;
+            // Existing paired books remain independent after their initial creation.
+            if ($journal->input_group_id && $inputMode === 'both') {
+                $inputMode = $journal->journal_mode;
+            }
+            $this->ensureModeEnabled($entity, $inputMode);
+            $period = $this->resolvePeriod($entity, $data['date']);
+            $before = $this->snapshot($journal->load('entries.account'));
+            $paired = null;
 
-        DB::transaction(function () use (&$paired, $journal, $data, $entity, $period, $inputMode) {
-            if ($inputMode === 'both') {
-                $groupId = $journal->input_group_id ?: (string) Str::ulid();
+            DB::transaction(function () use (&$paired, $journal, $data, $entity, $period, $inputMode) {
+                if ($inputMode === 'both') {
+                    $groupId = $journal->input_group_id ?: (string) Str::ulid();
+                    $journal->fill([
+                        'period_id' => $period->id,
+                        'type' => $data['type'] ?? $journal->type,
+                        'journal_mode' => Journal::MODE_INTERNAL,
+                        'input_group_id' => $groupId,
+                        'date' => $data['date'],
+                        'transaction_code' => $data['transaction_code'] ?? null,
+                        'memo' => $data['memo'],
+                        'reference' => $data['reference'] ?? null,
+                    ])->save();
+                    $journal->entries()->delete();
+                    $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+
+                    $paired = Journal::query()
+                        ->where('entity_id', $entity->id)
+                        ->where('input_group_id', $groupId)
+                        ->where('id', '!=', $journal->id)
+                        ->where('journal_mode', Journal::MODE_FISCAL)
+                        ->first();
+                    $createdPairedJournal = $paired === null;
+                    $paired ??= Journal::create([
+                        'entity_id' => $entity->id,
+                        'period_id' => $period->id,
+                        'type' => $data['type'] ?? $journal->type,
+                        'journal_mode' => Journal::MODE_FISCAL,
+                        'input_group_id' => $groupId,
+                        'number' => $this->numberGenerator->next(
+                            $entity->id,
+                            $data['date'],
+                            Journal::MODE_FISCAL,
+                            $data['type'] ?? $journal->type,
+                        ),
+                        'transaction_code' => $data['transaction_code'] ?? null,
+                        'date' => $data['date'],
+                        'memo' => $data['memo'],
+                        'reference' => $data['reference'] ?? null,
+                        'source_app' => 'accounting',
+                        'status' => $journal->status,
+                        'created_by' => $journal->created_by,
+                    ]);
+                    if ($createdPairedJournal) {
+                        $this->mapExistingAttachmentsToPair($journal, $paired, $entity);
+                    }
+                    $paired->fill([
+                        'period_id' => $period->id,
+                        'type' => $data['type'] ?? $journal->type,
+                        'date' => $data['date'],
+                        'transaction_code' => $data['transaction_code'] ?? null,
+                        'memo' => $data['memo'],
+                        'reference' => $data['reference'] ?? null,
+                        'status' => $journal->status,
+                    ])->save();
+                    $paired->entries()->delete();
+                    $this->writeEntries($paired, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+                    $paired = $paired->fresh('entries.account');
+
+                    return;
+                }
+
                 $journal->fill([
                     'period_id' => $period->id,
                     'type' => $data['type'] ?? $journal->type,
-                    'journal_mode' => Journal::MODE_INTERNAL,
-                    'input_group_id' => $groupId,
+                    'journal_mode' => $inputMode,
                     'date' => $data['date'],
                     'transaction_code' => $data['transaction_code'] ?? null,
                     'memo' => $data['memo'],
                     'reference' => $data['reference'] ?? null,
                 ])->save();
+
                 $journal->entries()->delete();
                 $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+            });
 
-                $paired = Journal::query()
-                    ->where('entity_id', $entity->id)
-                    ->where('input_group_id', $groupId)
-                    ->where('id', '!=', $journal->id)
-                    ->where('journal_mode', Journal::MODE_FISCAL)
-                    ->first();
-                $paired ??= Journal::create([
-                    'entity_id' => $entity->id,
-                    'period_id' => $period->id,
-                    'type' => $data['type'] ?? $journal->type,
-                    'journal_mode' => Journal::MODE_FISCAL,
-                    'input_group_id' => $groupId,
-                    'number' => $this->numberGenerator->next(
-                        $entity->id,
-                        $data['date'],
-                        Journal::MODE_FISCAL,
-                        $data['type'] ?? $journal->type,
-                    ),
-                    'transaction_code' => $data['transaction_code'] ?? null,
-                    'date' => $data['date'],
-                    'memo' => $data['memo'],
-                    'reference' => $data['reference'] ?? null,
-                    'source_app' => 'accounting',
-                    'status' => $journal->status,
-                    'created_by' => $journal->created_by,
-                ]);
-                $paired->fill([
-                    'period_id' => $period->id,
-                    'type' => $data['type'] ?? $journal->type,
-                    'date' => $data['date'],
-                    'transaction_code' => $data['transaction_code'] ?? null,
-                    'memo' => $data['memo'],
-                    'reference' => $data['reference'] ?? null,
-                    'status' => $journal->status,
-                ])->save();
-                $paired->entries()->delete();
-                $this->writeEntries($paired, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
-                $paired = $paired->fresh('entries.account');
+            $updated = $journal->fresh('entries.account');
+            $this->auditLogger->record(
+                'journal.updated', Journal::class, $journal->id, $entity->id,
+                ['snapshot' => $this->snapshot($updated), 'previous_snapshot' => $before], Auth::id(),
+            );
 
-                return;
-            }
-
-            $journal->fill([
-                'period_id' => $period->id,
-                'type' => $data['type'] ?? $journal->type,
-                'journal_mode' => $inputMode,
-                'date' => $data['date'],
-                'transaction_code' => $data['transaction_code'] ?? null,
-                'memo' => $data['memo'],
-                'reference' => $data['reference'] ?? null,
-            ])->save();
-
-            $journal->entries()->delete();
-            $this->writeEntries($journal, $entity, $data['entries_debit'] ?? [], $data['entries_credit'] ?? []);
+            return response()->json(['data' => array_merge($this->detail($updated), [
+                'audit_trail' => $this->auditTrail($updated),
+                ...($paired ? ['paired_journal' => $this->detail($paired)] : []),
+            ])]);
         });
+    }
 
-        $updated = $journal->fresh('entries.account');
-        $this->auditLogger->record(
-            'journal.updated', Journal::class, $journal->id, $entity->id,
-            ['snapshot' => $this->snapshot($updated), 'previous_snapshot' => $before], Auth::id(),
-        );
+    public function previewAccountReplacement(Request $request): JsonResponse
+    {
+        return $this->replaceAccounts($request, false);
+    }
 
-        return response()->json(['data' => array_merge($this->detail($updated), [
-            'audit_trail' => $this->auditTrail($updated),
-            ...($paired ? ['paired_journal' => $this->detail($paired)] : []),
-        ])]);
+    public function replaceAccountsBatch(Request $request): JsonResponse
+    {
+        return $this->replaceAccounts($request, true);
+    }
+
+    private function replaceAccounts(Request $request, bool $apply): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.read', $entity);
+        $this->requirePermission('journal.update', $entity);
+        $this->requirePermission('account.read', $entity);
+        abort_if($this->isInspector($request), 403, 'Inspector hanya dapat membaca jurnal Fiskal.');
+        $data = $request->validate([
+            'source_account_id' => ['required', 'string', 'size:26', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)],
+            'replacement_account_id' => ['required', 'string', 'size:26', 'different:source_account_id', Rule::exists('accounts', 'id')->where('entity_id', $entity->id)->whereNull('deleted_at')],
+            'journal_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'journal_ids.*' => ['required', 'string', 'size:26', 'distinct', Rule::exists('journals', 'id')->where('entity_id', $entity->id)],
+            'preview_token' => [$apply ? 'required' : 'nullable', 'string', 'size:64'],
+        ]);
+
+        return DB::transaction(function () use ($request, $entity, $data, $apply): JsonResponse {
+            $accounts = Account::where('entity_id', $entity->id)
+                ->whereIn('id', [$data['source_account_id'], $data['replacement_account_id']])
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $source = $accounts->get($data['source_account_id']);
+            $replacement = $accounts->get($data['replacement_account_id']);
+            abort_unless($source && $replacement, 409, 'Akun berubah atau sudah dihapus. Muat ulang daftar jurnal.');
+            $journals = Journal::withTrashed()->where('entity_id', $entity->id)
+                ->whereIn('id', $data['journal_ids'])->orderBy('id')->lockForUpdate()->get();
+            abort_unless($journals->count() === count($data['journal_ids']), 409, 'Daftar jurnal berubah. Muat ulang daftar.');
+            $periods = Period::where('entity_id', $entity->id)->whereIn('id', $journals->pluck('period_id'))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            $rows = [];
+            $snapshots = [];
+            $fingerprint = [];
+            $entryCount = 0;
+            foreach ($journals as $journal) {
+                if ($journal->trashed()) {
+                    throw ValidationException::withMessages(['journal_ids' => "Jurnal {$journal->number} berada di Trashed. Pulihkan sebelum mengganti akun."]);
+                }
+                $this->assertJournalEditable($request, $entity, $journal);
+                $period = $periods->get($journal->period_id);
+                if (! $period || ! $period->isOpen() || $journal->date->lt($period->start_date) || $journal->date->gt($period->end_date)) {
+                    throw ValidationException::withMessages(['journal_ids' => "Periode jurnal {$journal->number} tidak terbuka atau tanggalnya tidak sesuai periode."]);
+                }
+                $this->ensureModeEnabled($entity, $journal->journal_mode);
+                $entries = $journal->entries()->with('account')->orderBy('id')->lockForUpdate()->get();
+                $journal->setRelation('entries', $entries);
+                $matching = $entries->where('account_id', $source->id);
+                if ($matching->isEmpty()) {
+                    throw ValidationException::withMessages(['journal_ids' => "Jurnal {$journal->number} sudah tidak menggunakan akun sumber. Muat ulang daftar jurnal."]);
+                }
+                $this->assertBalanced((float) $entries->sum('debit'), (float) $entries->sum('credit'));
+                $this->assertJournalAccountsAvailable($journal, $entity, $entries->map(
+                    fn (JournalEntry $entry): string => $entry->account_id === $source->id ? $replacement->id : $entry->account_id,
+                )->unique()->all());
+                $snapshots[$journal->id] = $this->snapshot($journal);
+                $fingerprint[] = [$journal->getAttributes(), $entries->map->getAttributes()->all(), $period->getAttributes()];
+                $rows[] = ['id' => $journal->id, 'number' => $journal->number, 'journal_mode' => $journal->journal_mode, 'status' => $journal->status, 'entries_count' => $matching->count()];
+                $entryCount += $matching->count();
+            }
+            $token = hash('sha256', json_encode([
+                Auth::id(), $entity->id, $source->getAttributes(), $replacement->getAttributes(), $fingerprint,
+            ], JSON_THROW_ON_ERROR));
+            $result = [
+                'source_account' => ['id' => $source->id, 'code' => $source->code, 'name' => $source->name],
+                'replacement_account' => ['id' => $replacement->id, 'code' => $replacement->code, 'name' => $replacement->name],
+                'journals' => $rows, 'journal_count' => count($rows), 'entries_count' => $entryCount,
+                'preview_token' => $token,
+            ];
+            if (! $apply) {
+                return response()->json(['data' => $result]);
+            }
+            abort_unless(hash_equals($token, $data['preview_token']), 409, 'Data jurnal atau akun berubah setelah ringkasan dibuat. Tinjau ulang ringkasan sebelum menyimpan.');
+            $batchId = (string) Str::ulid();
+            foreach ($journals as $journal) {
+                foreach ($journal->entries->where('account_id', $source->id) as $entry) {
+                    $entry->update(['account_id' => $replacement->id]);
+                }
+                $journal->touch();
+                $this->auditLogger->record('journal.updated', Journal::class, $journal->id, $entity->id, [
+                    'previous_snapshot' => $snapshots[$journal->id],
+                    'snapshot' => $this->snapshot($journal->fresh('entries.account')),
+                    'account_replacement' => ['batch_id' => $batchId, 'source_account_id' => $source->id, 'replacement_account_id' => $replacement->id],
+                ], Auth::id());
+            }
+            $auditId = $this->auditLogger->record('journal.accounts_replaced', Account::class, $source->id, $entity->id, [
+                'batch_id' => $batchId, 'source_account' => $result['source_account'], 'replacement_account' => $result['replacement_account'],
+                'journals' => $rows, 'journal_count' => count($rows), 'entries_count' => $entryCount,
+            ], Auth::id());
+
+            return response()->json(['data' => [...$result, 'batch_id' => $batchId, 'audit_id' => $auditId]]);
+        }, 3);
+    }
+
+    private function assertJournalEditable(Request $request, Entity $entity, Journal $journal): void
+    {
+        $this->requirePermission('journal.update', $entity);
+        $this->authorizeBookRead($request, $journal->journal_mode);
+        $reviewEditable = $journal->status === Journal::STATUS_SUBMITTED
+            && Auth::user()?->hasPermission('journal.review', $entity->id);
+        $storedEditable = $journal->status === Journal::STATUS_POSTED && $this->isSupervisorLevel($request, $entity);
+        if (! in_array($journal->status, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true) && ! $reviewEditable && ! $storedEditable) {
+            abort(403, "Jurnal {$journal->number} terkunci. Jurnal Tersimpan memerlukan Supervisor/admin; jurnal Di review memerlukan izin review dan edit. Jurnal Dibalik tidak dapat diubah.");
+        }
+        $journal->assertPeriodOpen(true);
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -362,6 +533,7 @@ class JournalController extends Controller
 
         $before = $this->snapshot($journal->load('entries.account'));
         $statusFrom = $journal->status;
+        $journal->assertPeriodOpen();
         DB::transaction(function () use ($journal, $entity, $before, $statusFrom): void {
             $journal->delete();
             $this->auditLogger->record(
@@ -387,6 +559,7 @@ class JournalController extends Controller
         if (! $journal->trashed()) {
             throw ValidationException::withMessages(['status' => 'Only trashed journals can be restored.']);
         }
+        $journal->assertPeriodOpen();
 
         DB::transaction(function () use ($journal, $entity): void {
             $journal->restore();
@@ -481,7 +654,6 @@ class JournalController extends Controller
         $data = $request->validate(['reason' => 'nullable|string|max:500']);
         /** @var Journal $journal */
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
-        $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
 
         try {
             $this->reverseJournal->execute($journal, Auth::user(), $data['reason'] ?? null);
@@ -502,6 +674,7 @@ class JournalController extends Controller
             ->findOrFail($id);
 
         $period = $this->resolvePeriod($entity, $source->date->toDateString());
+        $this->assertJournalAccountsAvailable($source, $entity, $source->entries->pluck('account_id')->unique()->all());
 
         $copy = DB::transaction(function () use ($source, $period, $entity) {
             /** @var Journal $j */
@@ -571,15 +744,10 @@ class JournalController extends Controller
             return false;
         }
 
-        if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
-            return true;
-        }
+        $permissions = app(AccountingPermissions::class);
 
-        return $user->assignments()
-            ->whereNull('revoked_at')
-            ->where('entity_id', $entity->id)
-            ->whereHas('role', fn ($query) => $query->whereIn('code', ['supervisor', 'admin', 'super_admin']))
-            ->exists();
+        return $permissions->canManage($user, $entity)
+            || in_array('supervisor', $permissions->roles($user, $entity), true);
     }
 
     private function resolvePeriod(Entity $entity, string $date): Period
@@ -647,11 +815,7 @@ class JournalController extends Controller
         foreach ($credits as $row) {
             $sumCredit += (float) ($row['amount'] ?? 0);
         }
-        if ($sumDebit <= 0 || abs($sumDebit - $sumCredit) >= 0.005) {
-            throw ValidationException::withMessages([
-                'entries' => 'Bagian Debit / Credit belum balance. Pastikan total Debit sama dengan total Credit dan lebih dari nol.',
-            ]);
-        }
+        $this->assertBalanced($sumDebit, $sumCredit);
 
         $accountIds = collect($debits)->pluck('account_id')
             ->merge(collect($credits)->pluck('account_id'))
@@ -659,28 +823,7 @@ class JournalController extends Controller
             ->values()
             ->all();
 
-        $availability = $journal->journal_mode === Journal::MODE_INTERNAL
-            ? Account::AVAILABILITY_INTERN
-            : Account::AVAILABILITY_FISKAL;
-
-        $accounts = Account::query()
-            ->whereIn('id', $accountIds)
-            ->where('entity_id', $entity->id)
-            ->where('is_active', true)
-            ->where('is_postable', true)
-            ->where(function ($query) use ($availability) {
-                $query->where('availability', Account::AVAILABILITY_BOTH)
-                    ->orWhere('availability', $availability);
-            })
-            ->get()
-            ->keyBy('id');
-
-        $missing = collect($accountIds)->reject(fn ($id) => $accounts->has($id))->values();
-        if ($missing->isNotEmpty()) {
-            throw ValidationException::withMessages([
-                'entries' => "Account(s) not found in this tenant: {$missing->implode(', ')}",
-            ]);
-        }
+        $this->assertJournalAccountsAvailable($journal, $entity, $accountIds);
 
         $line = 0;
         foreach ($debits as $row) {
@@ -705,6 +848,42 @@ class JournalController extends Controller
         }
     }
 
+    private function assertBalanced(float $sumDebit, float $sumCredit): void
+    {
+        if ($sumDebit <= 0 || abs($sumDebit - $sumCredit) >= 0.005) {
+            throw ValidationException::withMessages([
+                'entries' => 'Bagian Debit / Credit belum balance. Pastikan total Debit sama dengan total Credit dan lebih dari nol.',
+            ]);
+        }
+    }
+
+    private function assertJournalAccountsAvailable(Journal $journal, Entity $entity, array $accountIds): void
+    {
+        $availability = $journal->journal_mode === Journal::MODE_INTERNAL
+            ? Account::AVAILABILITY_INTERN
+            : Account::AVAILABILITY_FISKAL;
+
+        $accounts = Account::query()
+            ->whereIn('id', $accountIds)
+            ->where('entity_id', $entity->id)
+            ->where('is_active', true)
+            ->where('is_postable', true)
+            ->where(function ($query) use ($availability) {
+                $query->where('availability', Account::AVAILABILITY_BOTH)
+                    ->orWhere('availability', $availability);
+            })
+            ->get()
+            ->keyBy('id');
+
+        $missing = collect($accountIds)->reject(fn ($id) => $accounts->has($id))->values();
+        if ($missing->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'entries' => "Account(s) not found in this tenant: {$missing->implode(', ')}",
+            ]);
+        }
+
+    }
+
     private function summary(Journal $j): array
     {
         return [
@@ -714,6 +893,7 @@ class JournalController extends Controller
             'reference' => $j->reference,
             'journal_mode' => $j->journal_mode,
             'input_group_id' => $j->input_group_id,
+            'period_id' => $j->period_id,
             'date' => optional($j->date)?->toDateString() ?? (string) $j->date,
             'type' => $j->type,
             'status' => $j->status,
@@ -722,6 +902,41 @@ class JournalController extends Controller
             'total' => (string) ($j->total_debit ?? 0),
             'deleted_at' => optional($j->deleted_at)?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Preserve existing evidence when a single-book journal is first converted
+     * to a paired Intern/Fiskal input. Both attachment maps point to one stored
+     * object; subsequent changes remain independent between the two journals.
+     */
+    private function mapExistingAttachmentsToPair(Journal $source, Journal $paired, Entity $entity): void
+    {
+        $attachments = Attachment::query()
+            ->where('entity_id', $entity->id)
+            ->where('attachable_type', Journal::class)
+            ->where('attachable_id', $source->id)
+            ->get();
+
+        foreach ($attachments as $attachment) {
+            $mapped = $attachment->replicate();
+            $mapped->attachable_id = $paired->id;
+            $mapped->save();
+        }
+
+        if ($attachments->isNotEmpty()) {
+            $this->auditLogger->record(
+                'journal.attachment_changed',
+                Journal::class,
+                $paired->id,
+                $entity->id,
+                [
+                    'attachment_change' => 'Lampiran dipetakan dari jurnal pasangan',
+                    'source_journal_id' => $source->id,
+                    'attachment_count' => $attachments->count(),
+                ],
+                Auth::id(),
+            );
+        }
     }
 
     private function trashedCount(string $entityId, ?string $mode): int
@@ -744,6 +959,7 @@ class JournalController extends Controller
                 'account_id' => $e->account_id,
                 'account_code' => $e->account?->code,
                 'account_name' => $e->account?->name,
+                'account_deleted_at' => $e->account?->deleted_at?->toIso8601String(),
                 'memo' => $e->memo,
                 'amount' => (string) ($e->debit > 0 ? $e->debit : $e->credit),
             ];

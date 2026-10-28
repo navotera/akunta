@@ -50,7 +50,7 @@ beforeEach(function () {
         'availability' => Account::AVAILABILITY_BOTH,
     ]);
 
-    $this->rbacApp = RbacApp::create(['code' => 'accounting-test-'.uniqid(), 'name' => 'Accounting', 'version' => '1', 'enabled' => true]);
+    $this->rbacApp = RbacApp::create(['code' => 'accounting', 'name' => 'Accounting', 'version' => '1', 'enabled' => true]);
     foreach (['journal.read', 'fiscal.adjustment.read', 'fiscal.adjustment.manage', 'fiscal.adjustment.approve'] as $code) {
         $this->permissions[$code] = Permission::create(['app_id' => $this->rbacApp->id, 'code' => $code]);
     }
@@ -287,8 +287,7 @@ it('forces inspector reads to the fiscal book and rejects internal drill down', 
     $this->actingAs(User::findOrFail($this->inspectorUserId))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/widgets/financial-pulse')
-        ->assertOk()
-        ->assertJsonPath('data.expenses.current', '10000000.00');
+        ->assertForbidden();
 });
 
 it('returns independent internal and fiscal values in combined financial reports', function () {

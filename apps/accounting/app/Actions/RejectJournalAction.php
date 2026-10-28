@@ -13,6 +13,7 @@ class RejectJournalAction extends BaseAction
     public function execute(Journal $journal, User $user, string $note): Journal
     {
         $this->authorize('journal.review', $journal);
+        $journal->assertPeriodOpen();
         if ($journal->status !== Journal::STATUS_SUBMITTED) {
             throw new \DomainException('Hanya jurnal yang diajukan yang dapat ditolak.');
         }

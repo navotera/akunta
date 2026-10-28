@@ -11,6 +11,7 @@ use App\Models\Account;
 use App\Models\Journal;
 use App\Models\JournalTemplate;
 use App\Models\JournalTemplateLine;
+use App\Models\RecurringJournal;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'Tpl T', 'slug' => 'tpl-'.uniqid()]);
@@ -21,6 +22,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'tpl-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'tpl-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['template.read', 'template.create', 'template.update', 'template.delete', 'template.bookmark', 'recurring.create']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
@@ -273,4 +275,27 @@ it('deletes a template', function () {
         ->deleteJson("/api/v1/spa/journal-templates/{$tpl->id}")
         ->assertStatus(204);
     expect(JournalTemplate::find($tpl->id))->toBeNull();
+});
+
+it('does not delete a template used by a recurring journal', function () {
+    $tpl = JournalTemplate::create([
+        'entity_id' => $this->entity->id, 'code' => 'USED', 'name' => 'Used template',
+    ]);
+    RecurringJournal::create([
+        'entity_id' => $this->entity->id,
+        'template_id' => $tpl->id,
+        'name' => 'Monthly recurring journal',
+        'frequency' => 'monthly',
+        'start_date' => '2026-01-01',
+        'created_by' => $this->user->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->deleteJson("/api/v1/spa/journal-templates/{$tpl->id}")
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Template masih digunakan oleh jurnal berulang. Hapus atau ubah jadwal jurnal berulang terlebih dahulu.');
+
+    expect(JournalTemplate::find($tpl->id))->not->toBeNull()
+        ->and(RecurringJournal::where('template_id', $tpl->id)->exists())->toBeTrue();
 });

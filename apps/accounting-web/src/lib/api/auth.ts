@@ -9,6 +9,10 @@ export interface AuthUser {
     id: string;
     tenant_id: string;
     name: string;
+    permissions?: string[];
+    roles?: string[];
+    can_manage_permissions?: boolean;
+    is_fiscal_inspector?: boolean;
     slug: string | null;
     theme_color: string;
     logo_url: string | null;

@@ -7,12 +7,15 @@ use Akunta\Rbac\Models\User;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Period extends Model
 {
     use HasUlids;
 
     public const STATUS_OPEN = 'open';
+
+    public const STATUS_INACTIVE = 'inactive';
 
     public const STATUS_CLOSING = 'closing';
 
@@ -46,6 +49,11 @@ class Period extends Model
     public function closedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    public function journals(): HasMany
+    {
+        return $this->hasMany(Journal::class);
     }
 
     public function isOpen(): bool

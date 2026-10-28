@@ -3,6 +3,17 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import {
+    can,
+    canVisitWorkspacePage,
+    isFiscalInspector,
+    workspaceHome,
+  } from '$lib/stores/permissions.svelte.js';
+  import {
+    getPersistedWorkspaceHref,
+    persistWorkspace,
+    prepareWorkspaceSwitch,
+  } from '$lib/stores/workspace.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { palette } from '$lib/stores/palette.svelte.js';
@@ -206,21 +217,24 @@
   }
 
   const ecosystemOpen = $derived(isGroupOpen('Ekosistem'));
-  const isAdmin = $derived(auth.user?.is_admin ?? auth.user?.is_sso_admin ?? false);
-  const canSwitchPeriod = $derived(
-    Boolean(isAdmin || auth.user?.roles.some((role) => role.toLowerCase() === 'accountant')),
-  );
-  const isInspector = $derived(
-    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
-  );
+  const canSwitchPeriod = $derived(can('period.read'));
+  const isInspector = $derived(isFiscalInspector());
   const currentEntity = $derived(tenant.available.find((item) => item.id === tenant.id));
   const currentEntityIsFake = $derived(currentEntity?.is_fake_data ?? false);
   const currentDemoVersion = $derived(currentEntity?.demo_dataset_version ?? 'legacy');
   const issueReportUrl = $derived(currentEntity?.issue_report_url ?? null);
+  const permittedGroups = $derived(
+    groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => canVisitWorkspacePage(item.href ?? '')),
+      }))
+      .filter((group) => group.items.length > 0),
+  );
   const visibleGroups = $derived(
     isInspector
-      ? groups.filter((group) => group.title === 'Fiskal')
-      : groups.filter(
+      ? permittedGroups.filter((group) => group.title === 'Fiskal')
+      : permittedGroups.filter(
           (group) =>
             group.title !== 'Fiskal' || currentEntity?.bookkeeping_mode === 'independent_books',
         ),
@@ -285,7 +299,7 @@
   $effect(() => {
     // Refetch periods when active tenant changes.
     void tenant.id;
-    if (tenant.id) period.refresh();
+    if (tenant.id && can('period.read')) period.refresh();
   });
 
   $effect(() => {
@@ -408,6 +422,11 @@
 
   function pickEntity(id: string) {
     const selected = tenant.available.find((item) => item.id === id);
+    if (!selected || !auth.user) return;
+    if (id === tenant.id) {
+      entityMenuOpen = false;
+      return;
+    }
     if (selected?.is_active === false) {
       entityMenuOpen = false;
       goto('/settings');
@@ -416,12 +435,17 @@
     // A period selection belongs to exactly one entity. Clear it before the
     // hard reload so switching from (for example) a 2028 workspace to the
     // native demo deterministically selects its sole Demo 2026 period.
+    persistWorkspace(`${$page.url.pathname}${$page.url.search}`);
+    const previousHref = getPersistedWorkspaceHref({ userId: auth.user.id, entityId: id });
+    const targetHref =
+      previousHref && canVisitWorkspacePage(previousHref, id) ? previousHref : workspaceHome(id);
+    prepareWorkspaceSwitch({ userId: auth.user.id, entityId: id });
     period.clear();
     tenant.switch(id);
     entityMenuOpen = false;
     // Force a hard reload so every onMount() refetches with the new tenant.
-    if (typeof window !== 'undefined') window.location.reload();
-    else invalidateAll();
+    if (typeof window !== 'undefined') window.location.assign(targetHref);
+    else void goto(targetHref, { invalidateAll: true });
   }
 
   function handleClickOutside(node: HTMLElement, cb: () => void) {
@@ -445,9 +469,9 @@
     class="ak-sidebar hidden w-60 shrink-0 flex-col border-r border-border-default bg-sidebar-bg md:flex"
   >
     <a
-      href="/dashboard"
+      href={can('dashboard.read') ? '/dashboard' : can('journal.read') ? '/journals' : '/settings'}
       class="ak-sidebar-brand mt-5 mb-5 flex items-center gap-2.5 px-5 py-4 transition-colors"
-      title="Ke Dashboard"
+      title="Beranda Akunta"
     >
       <span
         class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm"

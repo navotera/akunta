@@ -18,8 +18,9 @@ beforeEach(function () {
         'email' => 'pr-'.uniqid().'@example.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'pr-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'pr-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['period.read', 'period.create', 'period.update', 'period.delete', 'period.close']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
@@ -27,6 +28,93 @@ beforeEach(function () {
 
 it('rejects unauthenticated periods', function () {
     $this->getJson('/api/v1/spa/periods')->assertStatus(401);
+});
+
+it('returns period journal counts for the selected book', function () {
+    $period = Period::create([
+        'entity_id' => $this->entity->id,
+        'name' => 'Tahun 2026',
+        'start_date' => '2026-01-01',
+        'end_date' => '2026-12-31',
+    ]);
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-COUNT-INTERNAL',
+        'date' => '2026-03-01',
+    ]);
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_FISCAL,
+        'number' => 'JU-COUNT-FISCAL',
+        'date' => '2026-03-02',
+    ]);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/periods?journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $period->id)
+        ->assertJsonPath('data.0.journals_count', 1);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/periods?journal_mode=fiscal')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $period->id)
+        ->assertJsonPath('data.0.journals_count', 1);
+});
+
+it('forces period journal counts to the Fiscal book for inspectors', function () {
+    $period = Period::create([
+        'entity_id' => $this->entity->id,
+        'name' => 'Tahun 2026',
+        'start_date' => '2026-01-01',
+        'end_date' => '2026-12-31',
+    ]);
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'number' => 'JU-COUNT-PRIVATE',
+        'date' => '2026-03-01',
+    ]);
+    Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_FISCAL,
+        'number' => 'JU-COUNT-INSPECTOR',
+        'date' => '2026-03-02',
+    ]);
+    $inspectorRole = Role::create([
+        'code' => 'inspector',
+        'name' => 'Inspector',
+        'is_preset' => true,
+    ]);
+    $accountingApp = RbacApp::firstOrCreate(
+        ['code' => 'accounting'],
+        ['name' => 'Accounting', 'version' => '1.0', 'enabled' => true],
+    );
+    $this->user->assignments()->create([
+        'entity_id' => $this->entity->id,
+        'app_id' => $accountingApp->id,
+        'role_id' => $inspectorRole->id,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/periods?journal_mode=internal')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $period->id)
+        ->assertJsonPath('data.0.journals_count', 1);
 });
 
 it('creates a period and rejects overlap', function () {
@@ -84,12 +172,12 @@ it('closes a period without drafts and reopens it', function () {
     $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$period->id}/reopen", [])
+        ->postJson("/api/v1/spa/periods/{$period->id}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true])
         ->assertOk()
         ->assertJsonPath('data.status', 'open');
 });
 
-it('creates a new period as closed while another period is active', function () {
+it('creates a new period as inactive while another period is active', function () {
     Period::create([
         'entity_id' => $this->entity->id, 'name' => 'Periode Aktif',
         'start_date' => '2026-01-01', 'end_date' => '2026-01-31',
@@ -103,7 +191,7 @@ it('creates a new period as closed while another period is active', function () 
             'end_date' => '2026-02-28',
         ])
         ->assertCreated()
-        ->assertJsonPath('data.status', 'closed');
+        ->assertJsonPath('data.status', 'inactive');
 });
 
 it('allows an admin to activate another period while the previous period has drafts', function () {
@@ -125,7 +213,7 @@ it('allows an admin to activate another period while the previous period has dra
     $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true])
         ->assertOk()
         ->assertJsonPath('data.status', 'open');
 
@@ -153,7 +241,7 @@ it('does not allow an accountant assigned to the entity to reactivate a period',
 
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true])
         ->assertForbidden();
 
     expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
@@ -180,7 +268,7 @@ it('allows a local admin role to switch the active period', function (string $ro
 
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true])
         ->assertOk();
 
     expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)
@@ -206,7 +294,7 @@ it('allows an admin to activate multiple periods without closing earlier ones', 
     $request = fn (string $periodId) => $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$periodId}/reopen", []);
+        ->postJson("/api/v1/spa/periods/{$periodId}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true]);
 
     $request($second->id)->assertOk();
     $request($third->id)->assertOk();
@@ -229,7 +317,7 @@ it('does not let another role switch the active period', function () {
 
     $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
-        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", [])
+        ->postJson("/api/v1/spa/periods/{$next->id}/reopen", ['reason' => 'Koreksi periode fixture', 'confirmed' => true])
         ->assertForbidden();
 
     expect($current->refresh()->status)->toBe(Period::STATUS_OPEN)

@@ -15,11 +15,20 @@
     side: 'debit' | 'credit';
     index: number;
     accounts: AccountOption[];
+    selectedAccountLabel?: string;
     onChange: (next: Row) => void;
     onRemove: () => void;
   }
 
-  let { row, side, index, accounts, onChange, onRemove }: Props = $props();
+  let {
+    row,
+    side,
+    index,
+    accounts,
+    onChange,
+    onRemove,
+    selectedAccountLabel = '',
+  }: Props = $props();
 
   let amountDisplay = $state(
     row.amount && Number(row.amount) > 0 ? formatRupiah(row.amount, { withSymbol: false }) : '',
@@ -131,6 +140,7 @@
   <AccountCombobox
     {accounts}
     value={row.account_id}
+    selectedLabel={selectedAccountLabel}
     testId={`entry-account-${side}-${index}`}
     onSelect={pickAccount}
   />

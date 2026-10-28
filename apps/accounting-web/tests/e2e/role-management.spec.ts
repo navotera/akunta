@@ -82,6 +82,7 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
         json: {
           data: {
             entity_id: ENTITY_ID,
+            unassigned_users: [],
             users: [
               {
                 assignment_id: ADMIN_ASSIGNMENT_ID,
@@ -174,7 +175,9 @@ test('Akunta admin manages roles and impersonates a lower-level user', async ({ 
   const higherAdminRoleSelect = page.getByLabel('Role Akunta untuk Admin Lebih Tinggi');
   await expect(higherAdminRoleSelect).toBeDisabled();
   await expect(
-    page.getByRole('row', { name: /Admin Lebih Tinggi/ }).getByText('Role Anda hanya dapat diubah oleh Super Admin.'),
+    page
+      .getByRole('row', { name: /Admin Lebih Tinggi/ })
+      .getByText('Role Anda hanya dapat diubah oleh Super Admin.'),
   ).toBeVisible();
 
   const otherUserRoleSelect = page.getByLabel('Role Akunta untuk User Ecopa');

@@ -38,7 +38,7 @@ class TrialBalanceService
 
     private function computeSingle(string $entityId, string $asOfDate, string $journalMode): array
     {
-        $rows = Account::query()
+        $rows = Account::withTrashed()
             ->where('accounts.entity_id', $entityId)
             ->where('accounts.is_postable', true)
             ->leftJoin('journal_entries', 'journal_entries.account_id', '=', 'accounts.id')

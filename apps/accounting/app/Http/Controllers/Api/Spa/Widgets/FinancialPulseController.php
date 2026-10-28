@@ -172,7 +172,7 @@ class FinancialPulseController extends Controller
     /** @return list<string> */
     private function cashAccountIds(string $entityId): array
     {
-        $accounts = Account::query()
+        $accounts = Account::withTrashed()
             ->where('entity_id', $entityId)
             ->where('type', 'asset')
             ->get(['id', 'parent_account_id', 'name', 'is_postable']);

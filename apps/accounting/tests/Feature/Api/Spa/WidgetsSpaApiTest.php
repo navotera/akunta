@@ -23,6 +23,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'wg-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'wg-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['dashboard.read', 'journal.read']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);

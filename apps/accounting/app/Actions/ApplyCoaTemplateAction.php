@@ -39,7 +39,7 @@ class ApplyCoaTemplateAction
             ? Account::AVAILABILITY_BOTH
             : Account::AVAILABILITY_INTERN;
 
-        $existing = Account::query()
+        $existing = Account::withTrashed()
             ->where('entity_id', $entityId)
             ->pluck('id', 'code')
             ->all();

@@ -1,5 +1,11 @@
 <?php
 
+use Akunta\Rbac\Models\App;
+use Akunta\Rbac\Models\Permission;
+use Akunta\Rbac\Models\Role;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -11,8 +17,8 @@
 |
 */
 
-pest()->extend(Tests\TestCase::class)
-    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
     ->in('Feature');
 
 /*
@@ -44,4 +50,14 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/** Grant explicit fixture permissions; production authorization middleware stays enabled. */
+function grantSpaPermissionsForTest(Role $role, App $app, array $codes): void
+{
+    $ids = collect($codes)->map(fn (string $code) => Permission::firstOrCreate(
+        ['app_id' => $app->id, 'code' => $code],
+        ['description' => 'SPA API test fixture permission', 'category' => 'test_fixture'],
+    )->id);
+    $role->permissions()->syncWithoutDetaching($ids);
 }

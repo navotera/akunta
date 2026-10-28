@@ -25,6 +25,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'src-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'src-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['report.read', 'journal.read']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
@@ -83,9 +84,9 @@ it('writes source cols + JSON snapshot + upserts registry on instantiate', funct
         sourceApp: 'poso',
         sourceRefs: [
             1 => [
-                'ref_type'  => 'customer',
-                'ref_id'    => 'CUST01HX',
-                'ref_code'  => 'CUST-001',
+                'ref_type' => 'customer',
+                'ref_id' => 'CUST01HX',
+                'ref_code' => 'CUST-001',
                 'ref_label' => 'PT. Alfa',
                 'ref_attrs' => ['npwp' => '01.234.567.8-901.000'],
             ],
@@ -95,7 +96,7 @@ it('writes source cols + JSON snapshot + upserts registry on instantiate', funct
     $journal->loadMissing('entries');
 
     // Indexed cols only on the line that carried a source.
-    $arEntry  = $journal->entries->firstWhere('account_id', $this->ar->id);
+    $arEntry = $journal->entries->firstWhere('account_id', $this->ar->id);
     $revEntry = $journal->entries->firstWhere('account_id', $this->revenue->id);
 
     expect($arEntry->source_app)->toBe('poso');
@@ -182,10 +183,10 @@ it('aggregates posted entries by source ref over a period', function () {
     $res = $this->actingAs($this->user)
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/reports/by-source-ref?'.http_build_query([
-            'source_app'   => 'poso',
-            'ref_type'     => 'customer',
+            'source_app' => 'poso',
+            'ref_type' => 'customer',
             'period_start' => '2026-05-01',
-            'period_end'   => '2026-05-31',
+            'period_end' => '2026-05-31',
         ]));
 
     $res->assertOk();

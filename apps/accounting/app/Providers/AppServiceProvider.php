@@ -19,6 +19,7 @@ use App\Models\RecurringJournal;
 use App\Models\TaxCode;
 use App\Models\WebhookSubscription;
 use App\Observers\JournalEntryObserver;
+use App\Services\AccountingPermissions;
 use App\Services\CronLogger;
 use App\Services\EcopaIntegrationService;
 use App\Services\WebhookDispatcher;
@@ -36,6 +37,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->scoped(AccountingPermissions::class);
         $this->app->singleton(TenantProvisioner::class, function ($app) {
             $driver = $this->resolveProvisionerDriver($app);
 
@@ -67,6 +69,8 @@ class AppServiceProvider extends ServiceProvider
         }
 
         $this->registerJournalGates();
+        Gate::define('accounting.permission', fn (?User $user, string $code, Entity $entity): bool => app(AccountingPermissions::class)->allows($user, $code, $entity));
+        Gate::define('permissions.manage', fn (?User $user, Entity $entity): bool => app(AccountingPermissions::class)->canManage($user, $entity));
         $this->registerWebhookListeners();
         $this->registerCronLogger();
         $this->registerSettingsPermissions();
@@ -125,6 +129,9 @@ class AppServiceProvider extends ServiceProvider
 
             try {
                 app(PermissionRegistry::class)->registerMany('accounting', [
+                    ...array_map(fn (array $permission): array => [
+                        'code' => $permission['code'], 'description' => $permission['label'], 'category' => $permission['group'],
+                    ], app(AccountingPermissions::class)->catalog()),
                     [
                         'code' => 'settings.coa_template.manage',
                         'description' => 'Akses halaman Pengaturan → Template CoA.',
@@ -231,20 +238,27 @@ class AppServiceProvider extends ServiceProvider
     protected function registerJournalGates(): void
     {
         Gate::define('journal.post', function (?User $user, Journal $journal): bool {
-            return $user?->hasPermission('journal.post', $journal->entity_id) ?? false;
+            return $this->journalPermission($user, $journal, 'journal.post');
         });
 
         Gate::define('journal.submit', function (?User $user, Journal $journal): bool {
-            return $user?->hasPermission('journal.submit', $journal->entity_id) ?? false;
+            return $this->journalPermission($user, $journal, 'journal.submit');
         });
 
         Gate::define('journal.review', function (?User $user, Journal $journal): bool {
-            return $user?->hasPermission('journal.review', $journal->entity_id) ?? false;
+            return $this->journalPermission($user, $journal, 'journal.review');
         });
 
         Gate::define('journal.reverse', function (?User $user, Journal $journal): bool {
-            return $user?->hasPermission('journal.reverse', $journal->entity_id) ?? false;
+            return $this->journalPermission($user, $journal, 'journal.reverse');
         });
+    }
+
+    private function journalPermission(?User $user, Journal $journal, string $code): bool
+    {
+        $entity = Entity::find($journal->entity_id);
+
+        return $entity !== null && app(AccountingPermissions::class)->allows($user, $code, $entity);
     }
 
     private function resolveProvisionerDriver($app): string

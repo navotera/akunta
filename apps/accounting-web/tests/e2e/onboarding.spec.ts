@@ -84,13 +84,14 @@ test('redirects away from onboarding after installation setup is complete', asyn
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.waitForTimeout(300);
   await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole('tab', { name: 'Dashboard Tutup Dashboard' })).toBeVisible();
   const workspaceState = await page.evaluate(() => ({
     tabs: localStorage.getItem('akunta:accounting-workspace-tabs'),
     active: localStorage.getItem('akunta:accounting-workspace-active'),
   }));
   expect(workspaceState).toEqual({
-    tabs: JSON.stringify([{ href: '/dashboard', label: 'Dashboard', icon: '⌂' }]),
-    active: '/dashboard',
+    tabs: null,
+    active: null,
   });
 });
 

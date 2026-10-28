@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import {
     recurringApi,
     type RecurringJournal,
@@ -173,7 +174,7 @@
       type="button"
       class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
       onclick={openCreate}
-      disabled={templates.length === 0}
+      disabled={templates.length === 0 || !can('recurring.create')}
       title={templates.length === 0 ? 'Buat template jurnal dulu' : undefined}
     >
       + Schedule Baru
@@ -307,7 +308,7 @@
           />
         </label>
         <label class="col-span-2 flex items-center gap-2">
-          <input type="checkbox" bind:checked={form.auto_post} />
+          <input type="checkbox" bind:checked={form.auto_post} disabled={!can('journal.post')} />
           <span>Auto-post setelah jalankan</span>
         </label>
       </div>
@@ -320,6 +321,7 @@
                 type="button"
                 class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
                 onclick={() => pause(editing!)}
+                disabled={!can('recurring.update')}
               >
                 Pause
               </button>
@@ -328,6 +330,7 @@
                 type="button"
                 class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white"
                 onclick={() => resume(editing!)}
+                disabled={!can('recurring.update')}
               >
                 Resume
               </button>
@@ -336,6 +339,7 @@
               type="button"
               class="rounded-md border border-primary/40 bg-primary-light px-3 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
               onclick={() => run(editing!)}
+              disabled={!can('recurring.run') || (editing.auto_post && !can('journal.post'))}
             >
               Run Sekarang
             </button>
@@ -343,6 +347,7 @@
               type="button"
               class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
               onclick={() => destroy(editing!)}
+              disabled={!can('recurring.delete')}
             >
               Hapus
             </button>
@@ -358,7 +363,9 @@
             type="button"
             class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
             onclick={save}
-            disabled={saving}
+            disabled={saving ||
+              !can(editing ? 'recurring.update' : 'recurring.create') ||
+              (form.auto_post && !can('journal.post'))}
           >
             {saving ? 'Menyimpan…' : 'Simpan'}
           </button>

@@ -13,6 +13,7 @@ class CancelJournalReviewAction extends BaseAction
     public function execute(Journal $journal, ?User $user = null): Journal
     {
         $this->authorize('journal.submit', $journal);
+        $journal->assertPeriodOpen();
 
         if ($journal->status !== Journal::STATUS_SUBMITTED) {
             throw new \DomainException('Hanya jurnal yang sedang direview yang dapat dibatalkan.');
@@ -31,6 +32,7 @@ class CancelJournalReviewAction extends BaseAction
 
         $this->runInTransaction(function () use ($journals, $user): void {
             foreach ($journals as $item) {
+                $item->assertPeriodOpen(true);
                 $item->forceFill([
                     'status' => Journal::STATUS_DRAFT,
                     'review_note' => null,

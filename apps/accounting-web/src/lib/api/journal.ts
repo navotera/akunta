@@ -11,6 +11,7 @@ export interface JournalSummary {
   reference: string | null;
   journal_mode: JournalMode;
   input_group_id?: string | null;
+  period_id?: string | null;
   date: string;
   type: string;
   status: JournalStatus;
@@ -24,6 +25,7 @@ export interface JournalEntry {
   account_id: string;
   account_code?: string;
   account_name?: string;
+  account_deleted_at?: string | null;
   memo: string | null;
   amount: string;
 }
@@ -34,6 +36,7 @@ export interface JournalDetail {
   transaction_code: string | null;
   journal_mode: JournalMode;
   input_group_id?: string | null;
+  combined_input?: boolean;
   date: string;
   type: string;
   status: JournalStatus;
@@ -75,6 +78,36 @@ export interface JournalAuditTrailItem {
   status_to?: JournalStatus | null;
 }
 
+export interface AccountDeletionContext {
+  account: { id: string; code: string; name: string };
+  journal_count: number;
+  trashed_count: number;
+  fiscal_only: boolean;
+  other_blockers: Array<{ label: string; count: number }>;
+  is_system: boolean;
+}
+
+export interface AccountReplacementInput {
+  source_account_id: string;
+  replacement_account_id: string;
+  journal_ids: string[];
+}
+
+export interface AccountReplacementPreview {
+  source_account: { id: string; code: string; name: string };
+  replacement_account: { id: string; code: string; name: string };
+  journals: Array<{
+    id: string;
+    number: string;
+    journal_mode: string;
+    status: string;
+    entries_count: number;
+  }>;
+  journal_count: number;
+  entries_count: number;
+  preview_token: string;
+}
+
 export interface JournalListResponse {
   data: JournalSummary[];
   meta: {
@@ -84,6 +117,7 @@ export interface JournalListResponse {
     total: number;
     status_counts?: Partial<Record<JournalStatus, number>>;
     trashed_count?: number;
+    account_deletion?: AccountDeletionContext | null;
   };
 }
 
@@ -104,6 +138,17 @@ export interface JournalCreateResult extends JournalDetail {
 }
 
 export const journalApi = {
+  previewAccountReplacement: (input: AccountReplacementInput) =>
+    api<{ data: AccountReplacementPreview }>('/api/v1/spa/journals/replace-account/preview', {
+      json: input,
+    }).then((response) => response.data),
+
+  replaceAccountsBatch: (input: AccountReplacementInput & { preview_token: string }) =>
+    api<{ data: AccountReplacementPreview & { batch_id: string; audit_id: string } }>(
+      '/api/v1/spa/journals/replace-account',
+      { json: input },
+    ).then((response) => response.data),
+
   list: (params: Record<string, string | number | undefined> = {}, tenantSlug?: string | null) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => v !== undefined && qs.set(k, String(v)));

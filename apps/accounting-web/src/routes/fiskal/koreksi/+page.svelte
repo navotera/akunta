@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { formatRupiah } from '@akunta/ui';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import { accountApi, type Account } from '$lib/api/account.js';
   import { attachmentApi, type Attachment } from '$lib/api/attachment.js';
   import { ApiError } from '$lib/api/client.js';
@@ -41,8 +42,8 @@
   let savedEvidence = $state<Attachment[]>([]);
   let evidenceLoading = $state(false);
   let accountLocked = $state(false);
-  let readOnly = $derived(editing?.status === 'approved');
   let canManage = $state(false);
+  let readOnly = $derived(editing?.status === 'approved' || !canManage);
   let canApprove = $state(false);
   let canReadTaxProvision = $state(false);
   let canManageTaxProvision = $state(false);
@@ -569,6 +570,7 @@
                     type="button"
                     class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
                     title="Tambah koreksi positif"
+                    disabled={!canManage}
                     aria-label="Tambah koreksi positif untuk {row.name}"
                     onclick={() => openQuickAdjustment(row.account_id, 'positive')}>+</button
                   >
@@ -585,6 +587,7 @@
                     type="button"
                     class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
                     title="Tambah koreksi negatif"
+                    disabled={!canManage}
                     aria-label="Tambah koreksi negatif untuk {row.name}"
                     onclick={() => openQuickAdjustment(row.account_id, 'negative')}>+</button
                   >
@@ -810,7 +813,7 @@
                       class="min-w-0 truncate text-left font-medium text-primary hover:underline"
                       onclick={() => viewEvidence(attachment.id)}>{attachment.filename}</button
                     >
-                    {#if !readOnly}
+                    {#if !readOnly && can('attachment.delete')}
                       <button
                         type="button"
                         class="shrink-0 text-xs font-semibold text-danger"
@@ -930,7 +933,7 @@
             disabled={readOnly}
           ></textarea></label
         >
-        {#if !readOnly}
+        {#if !readOnly && can('attachment.upload')}
           <label class="text-sm sm:col-span-2"
             ><span class="mb-1 block font-medium">Bukti pendukung</span><input
               type="file"

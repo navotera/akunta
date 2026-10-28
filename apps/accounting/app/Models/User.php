@@ -5,11 +5,24 @@ namespace App\Models;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User as RbacUser;
 use App\Http\Middleware\SharedEntitySelector;
+use App\Services\AccountingPermissions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class User extends RbacUser
 {
+    public function hasPermission(string $permissionCode, ?string $entityId = null): bool
+    {
+        $permissions = app(AccountingPermissions::class);
+        if ($entityId !== null && $permissions->knows($permissionCode)) {
+            $entity = Entity::find($entityId);
+
+            return $entity !== null && $permissions->allows($this, $permissionCode, $entity);
+        }
+
+        return parent::hasPermission($permissionCode, $entityId);
+    }
+
     /** @return Collection<int, Entity> */
     public function getTenants(): Collection
     {

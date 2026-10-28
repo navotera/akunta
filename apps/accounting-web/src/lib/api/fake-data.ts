@@ -23,6 +23,8 @@ export interface FakeDatasetInfo {
   immutable_period: boolean;
   immutable_posted_journals: boolean;
   background_recurring_disabled: boolean;
+  last_restored_at?: string | null;
+  last_restored_by?: string | null;
 }
 
 export interface FakeDatasetResetPreview {
@@ -34,6 +36,7 @@ export interface FakeDatasetResetPreview {
     total: number;
     groups: Record<string, number>;
     stale_markers: number;
+    trashed_journals?: number;
   };
   preserved_manual_records: Record<string, number>;
   confirmation_phrase: string;

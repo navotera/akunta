@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import PanelHeader from './PanelHeader.svelte';
   import EntryRow from './EntryRow.svelte';
   import AddLineButton from './AddLineButton.svelte';
@@ -22,13 +23,13 @@
   } from '$lib/api/template.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { formatDate, getTodayIso } from '$lib/utils/date.js';
-  import { auth } from '$lib/stores/auth.svelte.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import SavedAttachments from './SavedAttachments.svelte';
   import { page } from '$app/stores';
   import {
     loadJournalDraft,
     saveJournalDraft,
+    journalDraftScope,
     type JournalDraft,
   } from '$lib/stores/journalDraft.js';
 
@@ -40,6 +41,7 @@
 
   interface Props {
     initial?: Partial<JournalDetail>;
+    highlightAccountId?: string | null;
     accounts: AccountOption[];
     templates: JournalTemplateSummary[];
     title?: string;
@@ -48,6 +50,7 @@
     serverErrors?: Record<string, string[]> | null;
     serverMessage?: string | null;
     allowPosting?: boolean;
+    allowModeChange?: boolean;
     reviewMode?: boolean;
     readOnly?: boolean;
     allowSaveAsTemplate?: boolean;
@@ -89,6 +92,7 @@
 
   let {
     initial,
+    highlightAccountId = null,
     accounts,
     templates,
     title = 'Jurnal Umum Baru',
@@ -97,6 +101,7 @@
     serverErrors = null,
     serverMessage = null,
     allowPosting = true,
+    allowModeChange = true,
     reviewMode = false,
     readOnly = false,
     allowSaveAsTemplate = false,
@@ -119,11 +124,13 @@
   }: Props = $props();
 
   const canChangeMode = $derived(
-    reviewMode || !initial || ['draft', 'rejected'].includes(initial.status ?? ''),
+    allowModeChange &&
+      (reviewMode || !initial || ['draft', 'rejected'].includes(initial.status ?? '')),
   );
 
   const draftPath = $page.url.pathname;
-  const restoredDraft = initial || templateMode ? null : loadJournalDraft(draftPath);
+  const draftScope = journalDraftScope();
+  const restoredDraft = initial || templateMode ? null : loadJournalDraft(draftPath, draftScope);
 
   function fieldError(name: string): string | null {
     return serverErrors?.[name]?.[0] ?? null;
@@ -188,7 +195,9 @@
 
   $effect(() => {
     const selectedDate = date;
-    const activePeriod = period.active;
+    const activePeriod = initial?.period_id
+      ? period.available.find((item) => item.id === initial.period_id)
+      : period.active;
     if (!selectedDate) {
       periodError = null;
       return;
@@ -282,7 +291,7 @@
       entries_debit: debits,
       entries_credit: credits,
     };
-    saveJournalDraft(draftPath, draft);
+    saveJournalDraft(draftPath, draft, draftScope);
   });
 
   $effect(() => {
@@ -328,6 +337,14 @@
             : account.availability === 'fiskal'),
     ),
   );
+  function historicalAccountLabel(accountId: string): string {
+    const entry = [...(initial?.entries_debit ?? []), ...(initial?.entries_credit ?? [])].find(
+      (entry) => entry.account_id === accountId,
+    );
+    return entry
+      ? `${entry.account_code ?? accountId} — ${entry.account_name ?? 'Akun lama'}${entry.account_deleted_at ? ' (dihapus)' : ''}`
+      : '';
+  }
   const visibleTemplates = $derived(
     templates.filter((template) => {
       const templateMode = template.journal_mode ?? 'internal';
@@ -476,7 +493,7 @@
   }
 
   function handlePosting() {
-    if (!validateAttachments()) return;
+    if ((!initial || can('journal.update')) && !validateAttachments()) return;
     void onPosting(payload());
   }
 
@@ -568,7 +585,13 @@
 <svelte:window on:keydown={handleWindowKeydown} />
 
 <div class="ak-journal-shell">
-  <fieldset disabled={readOnly} class="contents">
+  <fieldset
+    disabled={readOnly ||
+      (!templateMode &&
+        (!can(initial ? 'journal.update' : 'journal.create') ||
+          (reviewMode && !can('journal.review'))))}
+    class="contents"
+  >
     <header class="px-6 pt-4 pb-2">
       <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
       <div class="flex flex-wrap items-center justify-between gap-3 mt-1">
@@ -668,7 +691,7 @@
       {/if}
 
       <!-- Main: debit + credit panels + lampiran -->
-      <div class="xl:col-span-9 flex flex-col gap-4">
+      <div id="journal-account-entries" class="xl:col-span-9 flex flex-col gap-4 scroll-mt-24">
         <section
           class="rounded-lg border border-border-default bg-card-bg p-4 shadow-xs"
           data-testid="debit-panel"
@@ -676,14 +699,29 @@
           <PanelHeader side="debit" total={debitTotal} />
           <div class="flex flex-col gap-2">
             {#each debits as row, i (i)}
-              <EntryRow
-                {row}
-                side="debit"
-                index={i}
-                accounts={visibleAccounts}
-                onChange={(n) => updateDebit(i, n)}
-                onRemove={() => removeDebit(i)}
-              />
+              <div
+                class={highlightAccountId && row.account_id === highlightAccountId
+                  ? 'rounded-lg border border-primary bg-page-bg p-2'
+                  : 'contents'}
+                data-testid={highlightAccountId && row.account_id === highlightAccountId
+                  ? 'account-to-replace-debit-' + i
+                  : undefined}
+              >
+                {#if highlightAccountId && row.account_id === highlightAccountId}<p
+                    class="mb-2 text-xs font-semibold text-text-default"
+                  >
+                    Akun yang akan dihapus — pilih akun pengganti
+                  </p>{/if}
+                <EntryRow
+                  {row}
+                  side="debit"
+                  index={i}
+                  accounts={visibleAccounts}
+                  selectedAccountLabel={historicalAccountLabel(row.account_id)}
+                  onChange={(n) => updateDebit(i, n)}
+                  onRemove={() => removeDebit(i)}
+                />
+              </div>
             {/each}
           </div>
           <AddLineButton side="debit" onclick={addDebit} />
@@ -696,14 +734,29 @@
           <PanelHeader side="credit" total={creditTotal} />
           <div class="flex flex-col gap-2">
             {#each credits as row, i (i)}
-              <EntryRow
-                {row}
-                side="credit"
-                index={i}
-                accounts={visibleAccounts}
-                onChange={(n) => updateCredit(i, n)}
-                onRemove={() => removeCredit(i)}
-              />
+              <div
+                class={highlightAccountId && row.account_id === highlightAccountId
+                  ? 'rounded-lg border border-primary bg-page-bg p-2'
+                  : 'contents'}
+                data-testid={highlightAccountId && row.account_id === highlightAccountId
+                  ? 'account-to-replace-credit-' + i
+                  : undefined}
+              >
+                {#if highlightAccountId && row.account_id === highlightAccountId}<p
+                    class="mb-2 text-xs font-semibold text-text-default"
+                  >
+                    Akun yang akan dihapus — pilih akun pengganti
+                  </p>{/if}
+                <EntryRow
+                  {row}
+                  side="credit"
+                  index={i}
+                  accounts={visibleAccounts}
+                  selectedAccountLabel={historicalAccountLabel(row.account_id)}
+                  onChange={(n) => updateCredit(i, n)}
+                  onRemove={() => removeCredit(i)}
+                />
+              </div>
             {/each}
           </div>
           <AddLineButton side="credit" onclick={addCredit} />
@@ -719,7 +772,7 @@
               <div class="mb-4">
                 <SavedAttachments
                   attachments={savedAttachments}
-                  canDelete={canManageAttachments}
+                  canDelete={canManageAttachments && can('attachment.delete')}
                   {onDeleteAttachment}
                 />
               </div>
@@ -732,12 +785,14 @@
               multiple
               onchange={(event) => selectAttachments(event.currentTarget.files)}
               data-testid="journal-attachments-input"
+              disabled={!can('attachment.upload')}
             />
             <button
               type="button"
               class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
               onclick={() => attachmentInput?.click()}
               data-testid="journal-attachments-picker"
+              disabled={!can('attachment.upload')}
             >
               Klik untuk pilih file
               <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span>
@@ -981,7 +1036,7 @@
   >
     <BalancePill {debits} {credits} />
     <div class="flex items-center gap-3">
-      {#if !readOnly && !templateMode && (allowPosting || initial)}
+      {#if !readOnly && !templateMode && (allowPosting || initial) && can(initial ? 'journal.update' : 'journal.create') && (!reviewMode || can('journal.review'))}
         <button
           type="button"
           onclick={handleSaveDraft}
@@ -1006,11 +1061,11 @@
           Simpan sebagai Template
         </button>
       {/if}
-      {#if !readOnly && !templateMode && reviewMode}
+      {#if !readOnly && !templateMode && reviewMode && (onApprove || onRevise)}
         <button
           type="button"
           onclick={() => onApprove?.(payload())}
-          disabled={saving || !balanced || !!periodError}
+          disabled={saving || !balanced || !!periodError || !can('journal.post')}
           title={!balanced ? 'Total debit harus sama dengan kredit dan lebih dari nol.' : undefined}
           class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
           data-testid="approve-and-post"
@@ -1020,13 +1075,13 @@
         <button
           type="button"
           onclick={() => onRevise?.(payload())}
-          disabled={saving}
+          disabled={saving || !can('journal.review')}
           class="rounded-md border border-warning/50 bg-warning-light px-4 py-2 text-sm font-semibold text-black hover:bg-warning hover:text-black disabled:opacity-50"
           data-testid="request-revision"
         >
           Revisi
         </button>
-      {:else if !readOnly && !templateMode && allowPosting}
+      {:else if !readOnly && !templateMode && allowPosting && (initial || can('journal.create')) && (can('journal.post') || can('journal.submit'))}
         <button
           type="button"
           onclick={handlePosting}
@@ -1035,12 +1090,10 @@
           class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="posting-jurnal"
         >
-          {auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')
-            ? 'Ajukan Review'
-            : 'Posting Jurnal'}
+          {!can('journal.post') && can('journal.submit') ? 'Ajukan Review' : 'Posting Jurnal'}
         </button>
       {/if}
-      {#if readOnly && initial?.status === 'submitted' && onCancelReview}
+      {#if readOnly && initial?.status === 'submitted' && onCancelReview && can('journal.submit')}
         <button
           type="button"
           onclick={() => void onCancelReview?.()}
@@ -1051,13 +1104,13 @@
           Batalkan Review
         </button>
       {/if}
-      {#if !readOnly && !templateMode && ['draft', 'posted'].includes(initial?.status ?? '') && onDelete}
+      {#if (templateMode || !readOnly) && onDelete && can(templateMode ? 'template.delete' : 'journal.delete') && (templateMode ? !!template : ['draft', 'posted'].includes(initial?.status ?? ''))}
         <button
           type="button"
           onclick={() => void onDelete?.()}
           disabled={saving}
           class="rounded-md border border-danger/50 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger-light disabled:cursor-not-allowed disabled:opacity-50"
-          data-testid="delete-journal"
+          data-testid={templateMode ? 'delete-template' : 'delete-journal'}
         >
           Hapus
         </button>

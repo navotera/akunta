@@ -87,6 +87,8 @@ beforeEach(function () {
         'enabled' => true,
     ]);
     $permissionCodes = [
+        'account.read',
+        'report.read',
         'journal.read',
         'journal.post',
         'journal.reverse',

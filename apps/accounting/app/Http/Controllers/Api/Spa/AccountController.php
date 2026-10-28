@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Core\Contracts\AuditLogger;
 use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Journal;
-use App\Models\JournalEntry;
+use App\Services\AccountDeletionUsage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AccountController extends Controller
@@ -19,10 +21,13 @@ class AccountController extends Controller
     use AuthorizesBookAccess;
     use ResolvesTenant;
 
+    public function __construct(private readonly AuditLogger $auditLogger) {}
+
     public function index(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
         $postableOnly = $request->boolean('postable_only', true);
+        $activeOnly = $request->boolean('active_only', true);
         $search = (string) $request->query('search', '');
         $journalMode = $request->query('journal_mode');
         if ($this->isInspector($request)) {
@@ -35,12 +40,14 @@ class AccountController extends Controller
 
         $query = Account::query()
             ->where('entity_id', $entity->id)
-            ->where('is_active', true)
             ->withExists(['fakeDataRecords as is_fake' => fn ($query) => $query
                 ->where('entity_id', $entity->id)
                 ->where('group_key', 'accounts')])
             ->orderBy('code');
 
+        if ($activeOnly) {
+            $query->where('is_active', true);
+        }
         if ($postableOnly) {
             $query->where('is_postable', true);
         }
@@ -71,11 +78,13 @@ class AccountController extends Controller
     public function show(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $account = Account::where('entity_id', $entity->id)
+        $account = Account::withTrashed()->where('entity_id', $entity->id)
             ->withExists(['fakeDataRecords as is_fake' => fn ($query) => $query
                 ->where('entity_id', $entity->id)
                 ->where('group_key', 'accounts')])
             ->findOrFail($id);
+
+        abort_if($this->isInspector($request) && ! $account->isAvailableFor(Journal::MODE_FISCAL), 403);
 
         return response()->json(['data' => $this->serialize($account)]);
     }
@@ -113,24 +122,34 @@ class AccountController extends Controller
         $entity = $this->resolveEntity($request);
         $account = Account::where('entity_id', $entity->id)->findOrFail($id);
 
-        if ($account->isSystemAccount()) {
-            throw ValidationException::withMessages([
-                'account' => 'Akun wajib sistem tidak dapat dihapus.',
+        $usage = app(AccountDeletionUsage::class)->describe($account, $this->isInspector($request));
+        $reason = match (true) {
+            $account->isSystemAccount() => 'system_account',
+            $account->children()->exists() => 'account_has_dependencies',
+            default => null,
+        };
+        if ($reason !== null) {
+            $message = match ($reason) {
+                'system_account' => 'Akun wajib sistem tidak dapat dihapus.',
+                default => 'Akun masih memiliki sub-akun. Pindahkan atau hapus sub-akun terlebih dahulu.',
+            };
+            $this->auditLogger->record('account.delete_blocked', Account::class, $account->id, $entity->id, [
+                'reason' => $reason, 'usage' => $usage,
             ]);
+
+            return response()->json([
+                'message' => $message,
+                'errors' => ['account' => [$message]],
+                'code' => $reason,
+            ], 422);
         }
 
-        if (JournalEntry::where('account_id', $account->id)->exists()) {
-            throw ValidationException::withMessages([
-                'account' => 'Account in use by existing journal entries; deactivate instead.',
+        DB::transaction(function () use ($account, $entity): void {
+            $this->auditLogger->record('account.deleted', Account::class, $account->id, $entity->id, [
+                'account' => $this->serialize($account), 'deletion_type' => 'soft', 'usage' => app(AccountDeletionUsage::class)->describe($account),
             ]);
-        }
-        if ($account->children()->exists()) {
-            throw ValidationException::withMessages([
-                'account' => 'Account has child accounts; remove children first.',
-            ]);
-        }
-
-        $account->delete();
+            $account->delete();
+        });
 
         return response()->json(null, 204);
     }
@@ -191,6 +210,7 @@ class AccountController extends Controller
             'system_key' => $a->system_key,
             'is_system' => $a->isSystemAccount(),
             'is_fake' => $isFake,
+            'deleted_at' => $a->deleted_at?->toIso8601String(),
         ];
     }
 

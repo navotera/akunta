@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { can } from '$lib/stores/permissions.svelte.js';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
@@ -1436,12 +1437,12 @@
                 type="button"
                 class="h-10 rounded-md border border-[#dbdfe9] bg-white px-4 text-[13px] font-semibold text-[#4b5675] hover:border-[#1b84ff] hover:text-[#1b84ff]"
                 onclick={reprocess}
-                disabled={!raw?.rule}>Reprocess Raw Lama</button
+                disabled={!raw?.rule || !can('automapping.manage')}>Reprocess Raw Lama</button
               ><button
                 type="button"
                 class="h-10 rounded-md bg-[#1b84ff] px-5 text-[13px] font-semibold text-white hover:bg-[#056ee9] disabled:opacity-50"
                 onclick={save}
-                disabled={saving || !canSave}
+                disabled={saving || !canSave || !can('automapping.manage')}
                 >{saving ? 'Menyimpan...' : 'Simpan Rule Variant'}</button
               >
             </div>

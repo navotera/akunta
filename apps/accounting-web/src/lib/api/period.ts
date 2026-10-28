@@ -1,6 +1,6 @@
 import { api } from './client.js';
 
-export type PeriodStatus = 'open' | 'closing' | 'closed';
+export type PeriodStatus = 'open' | 'inactive' | 'closing' | 'closed';
 
 export interface Period {
   id: string;
@@ -10,6 +10,7 @@ export interface Period {
   status: PeriodStatus;
   closed_at: string | null;
   closed_by: string | null;
+  journals_count?: number;
 }
 
 export interface PeriodInput {
@@ -19,10 +20,19 @@ export interface PeriodInput {
 }
 
 export const periodApi = {
-  list: (status?: PeriodStatus, tenantSlug?: string | null) =>
-    api<{ data: Period[] }>(`/api/v1/spa/periods${status ? `?status=${status}` : ''}`, {
-      tenantSlug,
-    }).then((r) => r.data),
+  list: (
+    status?: PeriodStatus,
+    tenantSlug?: string | null,
+    journalMode?: 'internal' | 'fiscal',
+  ) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (journalMode) params.set('journal_mode', journalMode);
+    const query = params.size ? `?${params.toString()}` : '';
+    return api<{ data: Period[] }>(`/api/v1/spa/periods${query}`, { tenantSlug }).then(
+      (r) => r.data,
+    );
+  },
 
   show: (id: string, tenantSlug?: string | null) =>
     api<{ data: Period }>(`/api/v1/spa/periods/${id}`, { tenantSlug }).then((r) => r.data),
@@ -45,8 +55,14 @@ export const periodApi = {
       (r) => r.data,
     ),
 
-  reopen: (id: string, tenantSlug?: string | null) =>
-    api<{ data: Period }>(`/api/v1/spa/periods/${id}/reopen`, { json: {}, tenantSlug }).then(
+  deactivate: (id: string, tenantSlug?: string | null) =>
+    api<{ data: Period }>(`/api/v1/spa/periods/${id}/deactivate`, { json: {}, tenantSlug }).then(
       (r) => r.data,
     ),
+
+  reopen: (id: string, reason: string, tenantSlug?: string | null) =>
+    api<{ data: Period }>(`/api/v1/spa/periods/${id}/reopen`, {
+      json: { reason, confirmed: true },
+      tenantSlug,
+    }).then((r) => r.data),
 };

@@ -20,6 +20,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'ob-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'ob-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['account.read', 'period.create', 'settings.coa_template.manage', 'workspace.manage']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);

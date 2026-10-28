@@ -89,8 +89,8 @@ test('Fake Data controls remain hidden when switching to the native demo entity'
                     version: '2026.1.0',
                     target_version: '2026.1.0',
                     period_year: 2026,
-                    immutable_period: true,
-                    immutable_posted_journals: true,
+                    immutable_period: false,
+                    immutable_posted_journals: false,
                     background_recurring_disabled: true,
                   }
                 : null,
@@ -178,7 +178,22 @@ test('Fake Data controls remain hidden when switching to the native demo entity'
       return;
     }
 
-    await route.fulfill({ json: { data: [] } });
+    if (url.pathname === '/api/v1/spa/scheduler/status') {
+      await route.fulfill({
+        json: {
+          data: {
+            scheduler: { healthy: true, last: null, age_seconds: null, threshold_seconds: 300 },
+            tasks: [],
+            recent_runs: [],
+          },
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 403,
+      json: { message: 'Endpoint di luar fixture perpindahan entitas.' },
+    });
   });
   const initialSettingsReady = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/v1/spa/ecopa-integration',

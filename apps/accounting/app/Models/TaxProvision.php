@@ -64,17 +64,17 @@ class TaxProvision extends Model
 
     public function expenseAccount(): BelongsTo
     {
-        return $this->belongsTo(Account::class, 'expense_account_id');
+        return $this->belongsTo(Account::class, 'expense_account_id')->withTrashed();
     }
 
     public function payableAccount(): BelongsTo
     {
-        return $this->belongsTo(Account::class, 'payable_account_id');
+        return $this->belongsTo(Account::class, 'payable_account_id')->withTrashed();
     }
 
     public function prepaidTaxAccount(): BelongsTo
     {
-        return $this->belongsTo(Account::class, 'prepaid_tax_account_id');
+        return $this->belongsTo(Account::class, 'prepaid_tax_account_id')->withTrashed();
     }
 
     public function creator(): BelongsTo

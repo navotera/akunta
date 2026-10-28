@@ -32,7 +32,7 @@ class IncomeStatementService
      */
     public function compute(string $entityId, string $periodStart, string $periodEnd, string $journalMode = Journal::MODE_INTERNAL): array
     {
-        $rows = Account::query()
+        $rows = Account::withTrashed()
             ->where('accounts.entity_id', $entityId)
             ->where('accounts.is_postable', true)
             ->whereIn('accounts.type', ['revenue', 'cogs', 'expense'])

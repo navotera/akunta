@@ -19,6 +19,7 @@ beforeEach(function () {
     ]);
     $app = RbacApp::create(['code' => 'rc-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'rc-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $app, ['recurring.read', 'recurring.create', 'recurring.update', 'recurring.delete', 'recurring.run']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);

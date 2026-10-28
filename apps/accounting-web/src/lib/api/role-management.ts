@@ -19,6 +19,8 @@ export interface ManagedUser {
   disabled_at: string | null;
   can_update_role: boolean;
   can_impersonate: boolean;
+  scope?: 'entity' | 'all_entities';
+  assignment_active?: boolean;
 }
 
 export interface UnassignedUser {
@@ -36,6 +38,12 @@ export interface RoleManagementData {
 }
 
 export const roleManagementApi = {
+  bulkAssign: (entityId: string, roleCode: string, assignmentIds: string[]) =>
+    api<{ data: { message: string } }>('/api/v1/spa/role-management/bulk-assign', {
+      method: 'POST',
+      tenantSlug: entityId,
+      json: { role_code: roleCode, assignment_ids: assignmentIds },
+    }).then((r) => r.data),
   list: (entityId: string) =>
     api<{ data: RoleManagementData }>('/api/v1/spa/role-management', {
       tenantSlug: entityId,

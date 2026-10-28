@@ -10,7 +10,8 @@ class JournalTemplateLine extends Model
 {
     use HasUlids;
 
-    public const SIDE_DEBIT  = 'debit';
+    public const SIDE_DEBIT = 'debit';
+
     public const SIDE_CREDIT = 'credit';
 
     protected $fillable = [
@@ -26,7 +27,7 @@ class JournalTemplateLine extends Model
     ];
 
     protected $casts = [
-        'amount'  => 'decimal:2',
+        'amount' => 'decimal:2',
         'line_no' => 'integer',
     ];
 
@@ -37,7 +38,7 @@ class JournalTemplateLine extends Model
 
     public function account(): BelongsTo
     {
-        return $this->belongsTo(Account::class);
+        return $this->belongsTo(Account::class)->withTrashed();
     }
 
     public function costCenter(): BelongsTo

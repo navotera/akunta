@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can, isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { widgetsApi, type FinancialPulse, type RecentJournal } from '$lib/api/widgets.js';
@@ -26,8 +27,9 @@
 
   const colors = ['#1B84FF', '#7239EA', '#17C653', '#F6C000', '#F8285A', '#7AA2FF'];
   let hasFiscalBook = $derived(
-    tenant.available.find((item) => item.id === tenant.id)?.bookkeeping_mode ===
-      'independent_books',
+    can('report.read') &&
+      tenant.available.find((item) => item.id === tenant.id)?.bookkeeping_mode ===
+        'independent_books',
   );
   let estimatedTaxableIncome = $derived(Math.max(0, Number(fiscalReport?.final_net_income ?? 0)));
   let estimatedIncomeTax = $derived((estimatedTaxableIncome * taxRate) / 100);
@@ -56,8 +58,12 @@
         return;
       }
     }
-    if (auth.user?.roles.some((role) => role.toLowerCase() === 'inspector')) {
+    if (isFiscalInspector()) {
       await goto('/journals', { replaceState: true });
+      return;
+    }
+    if (!can('dashboard.read')) {
+      await goto(can('journal.read') ? '/journals' : '/settings', { replaceState: true });
       return;
     }
 

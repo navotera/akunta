@@ -128,6 +128,12 @@ class JournalTemplateController extends Controller
         $entity = $this->resolveEntity($request);
         $template = JournalTemplate::where('entity_id', $entity->id)->findOrFail($id);
 
+        if ($template->recurringSchedules()->exists()) {
+            return response()->json([
+                'message' => 'Template masih digunakan oleh jurnal berulang. Hapus atau ubah jadwal jurnal berulang terlebih dahulu.',
+            ], 409);
+        }
+
         $template->delete();
 
         return response()->json(null, 204);

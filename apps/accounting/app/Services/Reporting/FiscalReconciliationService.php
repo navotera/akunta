@@ -34,7 +34,7 @@ class FiscalReconciliationService
             ->concat($book['revenue']['lines'])
             ->concat($book['cogs']['lines'])
             ->concat($book['expenses']['lines']);
-        $missingAccounts = Account::query()
+        $missingAccounts = Account::withTrashed()
             ->where('entity_id', $entityId)
             ->whereIn('id', $adjustments->keys())
             ->whereNotIn('id', $bookLines->pluck('id'))

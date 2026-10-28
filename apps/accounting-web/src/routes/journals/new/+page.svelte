@@ -3,6 +3,7 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
   import { journalApi } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
@@ -13,10 +14,11 @@
   } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
   import { attachmentApi } from '$lib/api/attachment.js';
-  import { clearJournalDraft } from '$lib/stores/journalDraft.js';
+  import { clearJournalDraft, journalDraftScope } from '$lib/stores/journalDraft.js';
   import { formatMessageDates } from '$lib/utils/date.js';
 
   const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
+  const draftScope = journalDraftScope();
 
   let accounts = $state<AccountOption[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
@@ -30,7 +32,7 @@
 
   async function refreshAccounts() {
     const request = ++accountsRequest;
-    const loadedAccounts = await accountApi.list();
+    const loadedAccounts = await accountApi.list('', undefined, true, undefined, false);
     if (request === accountsRequest) accounts = loadedAccounts;
   }
 
@@ -64,7 +66,7 @@
         return;
       }
     }
-    const availableTemplates = await templateApi.list(50);
+    const availableTemplates = can('template.read') ? await templateApi.list(50) : [];
     await refreshAccounts();
     templates = availableTemplates;
     if (templateId) editingTemplate = await templateApi.show(templateId);
@@ -74,10 +76,16 @@
     created: Awaited<ReturnType<typeof journalApi.create>>,
     files: File[],
   ) {
-    const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
     await Promise.all(
-      journals.flatMap((journal) =>
-        files.map((file) => attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, journal.id, file)),
+      files.map((file) =>
+        attachmentApi.upload(
+          JOURNAL_ATTACHABLE_TYPE,
+          created.id,
+          file,
+          null,
+          null,
+          Boolean(created.paired_journal),
+        ),
       ),
     );
   }
@@ -99,7 +107,7 @@
         entries_credit: payload.entries_credit,
       });
       await uploadAttachments(created, payload.attachments);
-      clearJournalDraft('/journals/new');
+      clearJournalDraft('/journals/new', draftScope);
       goto(created.paired_journal ? '/journals' : `/journals/${created.id}`);
     } catch (e) {
       captureError(e);
@@ -128,12 +136,12 @@
       const journals = [created, ...(created.paired_journal ? [created.paired_journal] : [])];
       await Promise.all(
         journals.map((journal) =>
-          auth.user?.roles?.some((role) => role.toLowerCase() === 'accountant')
+          !can('journal.post') && can('journal.submit')
             ? journalApi.submit(journal.id)
             : journalApi.post(journal.id),
         ),
       );
-      clearJournalDraft('/journals/new');
+      clearJournalDraft('/journals/new', draftScope);
       goto('/journals');
     } catch (e) {
       captureError(e);
@@ -170,7 +178,7 @@
           ...payload.entries_credit.map((line) => ({ ...line, side: 'credit' as const })),
         ],
       });
-      clearJournalDraft('/journals/new');
+      clearJournalDraft('/journals/new', draftScope);
       goto('/template-jurnal');
     } catch (e) {
       captureError(e);
@@ -210,8 +218,26 @@
     }
   }
 
+  async function deleteTemplate() {
+    if (saving || !templateMode || !editingTemplate) return;
+    const template = editingTemplate;
+    if (!window.confirm(`Hapus template "${template.name}"?`)) return;
+
+    saving = true;
+    serverErrors = null;
+    serverMessage = null;
+    try {
+      await templateApi.destroy(template.id);
+      await goto('/template-jurnal');
+    } catch (e) {
+      captureError(e);
+    } finally {
+      saving = false;
+    }
+  }
+
   function cancel() {
-    clearJournalDraft('/journals/new');
+    clearJournalDraft('/journals/new', draftScope);
     goto(templateMode ? '/template-jurnal' : '/journals');
   }
 </script>
@@ -225,7 +251,8 @@
     {saving}
     {serverErrors}
     {serverMessage}
-    allowSaveAsTemplate={templateMode}
+    allowSaveAsTemplate={templateMode && can(templateId ? 'template.update' : 'template.create')}
+    readOnly={templateMode && !can(templateId ? 'template.update' : 'template.create')}
     {templateMode}
     template={editingTemplate}
     title={templateMode ? 'Template Jurnal Baru' : undefined}
@@ -234,6 +261,9 @@
     onPosting={postingJurnal}
     onSaveAsTemplate={saveAsTemplate}
     onUpdateTemplate={updateTemplate}
+    onDelete={templateMode && editingTemplate && can('template.delete')
+      ? deleteTemplate
+      : undefined}
     onCancel={cancel}
   />
 {/if}

@@ -11,13 +11,19 @@ class TaxCode extends Model
 {
     use HasUlids;
 
-    public const KIND_OUTPUT_VAT  = 'output_vat';     // PPN Keluaran (Penjualan)
-    public const KIND_INPUT_VAT   = 'input_vat';      // PPN Masukan (Pembelian)
-    public const KIND_WHT_PPH_21  = 'wht_pph_21';     // Pemotongan PPh 21
-    public const KIND_WHT_PPH_23  = 'wht_pph_23';     // Pemotongan PPh 23
+    public const KIND_OUTPUT_VAT = 'output_vat';     // PPN Keluaran (Penjualan)
+
+    public const KIND_INPUT_VAT = 'input_vat';      // PPN Masukan (Pembelian)
+
+    public const KIND_WHT_PPH_21 = 'wht_pph_21';     // Pemotongan PPh 21
+
+    public const KIND_WHT_PPH_23 = 'wht_pph_23';     // Pemotongan PPh 23
+
     public const KIND_WHT_PPH_4_2 = 'wht_pph_4_2';    // PPh Final 4(2)
-    public const KIND_WHT_PPH_26  = 'wht_pph_26';     // PPh 26
-    public const KIND_OTHER       = 'other';
+
+    public const KIND_WHT_PPH_26 = 'wht_pph_26';     // PPh 26
+
+    public const KIND_OTHER = 'other';
 
     public const KINDS = [
         self::KIND_OUTPUT_VAT,
@@ -41,9 +47,9 @@ class TaxCode extends Model
     ];
 
     protected $casts = [
-        'rate'      => 'decimal:4',
+        'rate' => 'decimal:4',
         'is_active' => 'boolean',
-        'metadata'  => 'array',
+        'metadata' => 'array',
     ];
 
     protected $attributes = [
@@ -57,7 +63,7 @@ class TaxCode extends Model
 
     public function taxAccount(): BelongsTo
     {
-        return $this->belongsTo(Account::class, 'tax_account_id');
+        return $this->belongsTo(Account::class, 'tax_account_id')->withTrashed();
     }
 
     /** Compute tax amount from a base, rounded to 2 decimals. */

@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
-use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
+use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Attachment;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Services\AccountingPermissions;
 use App\Services\AttachmentImageProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -23,7 +25,6 @@ use Throwable;
 
 class AttachmentController extends Controller
 {
-    use ProtectsNativeFakeData;
     use ResolvesTenant;
 
     public const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -63,12 +64,23 @@ class AttachmentController extends Controller
             'attachable_id' => 'required|string|size:26',
             'file' => 'required|file|max:5120', // KB
             'description' => 'nullable|string|max:255',
+            'mirror_to_paired' => 'nullable|boolean',
         ]);
 
         $this->authorizeParent($request, $entity->id, $data['attachable_type'], $data['attachable_id'], true);
+        $pairedJournal = null;
         if ($data['attachable_type'] === Journal::class) {
             $journal = Journal::query()->where('entity_id', $entity->id)->findOrFail($data['attachable_id']);
-            $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
+            if ($request->boolean('mirror_to_paired')) {
+                abort_unless($journal->input_group_id, 422, 'Jurnal ini tidak memiliki pasangan Intern/Fiskal.');
+                $pairedJournal = Journal::query()
+                    ->where('entity_id', $entity->id)
+                    ->where('input_group_id', $journal->input_group_id)
+                    ->where('id', '!=', $journal->id)
+                    ->whereIn('journal_mode', [Journal::MODE_INTERNAL, Journal::MODE_FISCAL])
+                    ->firstOrFail();
+                $this->authorizeParent($request, $entity->id, Journal::class, $pairedJournal->id, true);
+            }
         }
 
         $file = $request->file('file');
@@ -111,20 +123,34 @@ class AttachmentController extends Controller
                 $metadata = null;
             }
 
-            $attachment = Attachment::create([
-                'attachable_type' => $data['attachable_type'],
-                'attachable_id' => $data['attachable_id'],
-                'entity_id' => $entity->id,
-                'filename' => $filename,
-                'mime_type' => $mimeType,
-                'size_bytes' => $size,
-                'disk' => $disk,
-                'path' => $path,
-                'checksum_sha256' => $checksum,
-                'description' => $data['description'] ?? null,
-                'uploaded_by' => Auth::id(),
-                'metadata' => $metadata,
-            ]);
+            [$attachment] = DB::transaction(function () use ($data, $entity, $pairedJournal, $filename, $mimeType, $size, $disk, $path, $checksum, $metadata): array {
+                $attributes = [
+                    'attachable_type' => $data['attachable_type'],
+                    'entity_id' => $entity->id,
+                    'filename' => $filename,
+                    'mime_type' => $mimeType,
+                    'size_bytes' => $size,
+                    'disk' => $disk,
+                    'path' => $path,
+                    'checksum_sha256' => $checksum,
+                    'description' => $data['description'] ?? null,
+                    'uploaded_by' => Auth::id(),
+                    'metadata' => $metadata,
+                ];
+                $attachment = Attachment::create([
+                    ...$attributes,
+                    'attachable_id' => $data['attachable_id'],
+                ]);
+
+                if ($pairedJournal) {
+                    Attachment::create([
+                        ...$attributes,
+                        'attachable_id' => $pairedJournal->id,
+                    ]);
+                }
+
+                return [$attachment];
+            });
         } catch (Throwable $exception) {
             if ($storedPaths !== []) {
                 Storage::disk($disk)->delete($storedPaths);
@@ -135,6 +161,9 @@ class AttachmentController extends Controller
 
         if ($attachment->attachable_type === Journal::class) {
             $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
+            if ($pairedJournal) {
+                $this->auditAttachment($pairedJournal->id, $entity->id, 'Lampiran dipetakan dari jurnal pasangan');
+            }
         }
 
         return response()->json(['data' => $this->serialize($attachment)], 201);
@@ -158,11 +187,6 @@ class AttachmentController extends Controller
         $entity = $this->resolveEntity($request);
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
         $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true);
-        if ($attachment->attachable_type === Journal::class) {
-            $journal = Journal::query()->where('entity_id', $entity->id)->findOrFail($attachment->attachable_id);
-            $this->assertNativeFakeRecordedJournalMutable($entity, $journal);
-        }
-
         $attachment->delete();
 
         if ($attachment->attachable_type === Journal::class) {
@@ -240,10 +264,23 @@ class AttachmentController extends Controller
             if (! $journal) {
                 throw ValidationException::withMessages(['attachable_id' => 'Parent journal not found in this tenant.']);
             }
-            $isInspector = $user?->assignments()->whereNull('revoked_at')
-                ->whereHas('role', fn ($query) => $query->where('code', 'inspector'))->exists() ?? false;
+            $entity = Entity::findOrFail($entityId);
+            $permissions = app(AccountingPermissions::class);
+            $isInspector = $permissions->isInspector($user, $entity);
             abort_if($isInspector && $journal->journal_mode !== Journal::MODE_FISCAL, 403);
             abort_unless($user?->hasPermission($write ? 'journal.update' : 'journal.read', $entityId), 403);
+            if ($write) {
+                $journal->assertPeriodOpen();
+                abort_if($journal->status === Journal::STATUS_REVERSED, 403, 'Lampiran jurnal yang sudah dibalik bersifat read-only.');
+                if ($journal->status === Journal::STATUS_POSTED) {
+                    abort_unless($permissions->canManage($user, $entity)
+                        || in_array('supervisor', $permissions->roles($user, $entity), true), 403,
+                        'Lampiran jurnal Tersimpan hanya dapat diubah oleh Supervisor atau admin.');
+                }
+                if ($journal->status === Journal::STATUS_SUBMITTED) {
+                    abort_unless($permissions->allows($user, 'journal.review', $entity), 403);
+                }
+            }
 
             return;
         }

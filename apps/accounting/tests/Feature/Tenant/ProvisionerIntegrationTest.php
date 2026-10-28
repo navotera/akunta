@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
+use Akunta\Core\Hooks;
 use Akunta\Rbac\Models\Tenant;
 use App\Actions\ProvisionTenantAction;
 use App\Exceptions\ProvisionException;
 use App\Tenancy\Contracts\TenantProvisioner;
-use App\Tenancy\SqliteTenantProvisioner;
+use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
     $this->storage = sys_get_temp_dir().'/akunta-provisioner-int-'.uniqid();
@@ -60,8 +61,8 @@ it('rolls back tenant DB file when inner transaction fails', function () {
     // Induce mid-tx failure by subscribing to USER_ROLE_ASSIGNED (fired by AssignmentService
     // inside the transaction) and throwing. This exercises the catch-branch that calls
     // provisioner->drop() on the already-allocated tenant DB.
-    Event::listen(\Akunta\Core\Hooks::USER_ROLE_ASSIGNED, function () {
-        throw new \RuntimeException('induced failure for rollback test');
+    Event::listen(Hooks::USER_ROLE_ASSIGNED, function () {
+        throw new RuntimeException('induced failure for rollback test');
     });
 
     $filesBefore = count(glob($this->storage.'/*.sqlite') ?: []);
@@ -73,7 +74,7 @@ it('rolls back tenant DB file when inner transaction fails', function () {
             'admin_email' => 'rb@rollback.test',
         ]);
         $this->fail('Expected exception');
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // expected
     }
 

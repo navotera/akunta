@@ -1,21 +1,14 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import {
-    ensureWorkspaceTab,
-    initializeWorkspace,
-    isWorkspaceHref,
-    persistWorkspace,
-    workspace,
-  } from '$lib/stores/workspace.svelte.js';
+  import { isWorkspaceHref, persistWorkspace, workspace } from '$lib/stores/workspace.svelte.js';
 
   function currentHref(): string {
     return `${$page.url.pathname}${$page.url.search}`;
   }
 
   let tabsScroll: HTMLDivElement;
-  let trimmingTabs = false;
 
   function keepActiveTabFirst() {
     const activeIndex = workspace.tabs.findIndex((tab) => tab.href === currentHref());
@@ -31,45 +24,21 @@
     persistWorkspace();
   }
 
-  async function trimOverflowingTabs() {
-    if (!tabsScroll || trimmingTabs) return;
-
-    trimmingTabs = true;
-    try {
-      await tick();
-      while (tabsScroll.scrollWidth > tabsScroll.clientWidth && workspace.tabs.length > 1) {
-        const activeIndex = workspace.tabs.findIndex((tab) => tab.href === currentHref());
-        const removableIndex = workspace.tabs.findIndex((_, index) => index !== activeIndex);
-        workspace.tabs = workspace.tabs.filter((_, index) => index !== removableIndex);
-        persistWorkspace();
-        await tick();
-      }
-    } finally {
-      trimmingTabs = false;
-    }
-  }
-
-  onMount(() => {
-    const href = currentHref();
-    if (!isWorkspaceHref(href)) return;
-
-    initializeWorkspace(href);
-    keepActiveTabFirst();
-
-    const resizeObserver = new ResizeObserver(() => void trimOverflowingTabs());
-    resizeObserver.observe(tabsScroll);
-    void trimOverflowingTabs();
-
-    return () => resizeObserver.disconnect();
-  });
-
   $effect(() => {
     $page.url.pathname;
     $page.url.search;
-    if (workspace.initialized && isWorkspaceHref(currentHref())) {
-      ensureWorkspaceTab(currentHref());
+    if (
+      workspace.initialized &&
+      !workspace.switching &&
+      workspace.activeHref === currentHref() &&
+      isWorkspaceHref(currentHref())
+    ) {
       keepActiveTabFirst();
-      void trimOverflowingTabs();
+      void tick().then(() =>
+        tabsScroll
+          ?.querySelector('[aria-selected="true"]')
+          ?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
+      );
     }
   });
 
@@ -92,7 +61,7 @@
 
     workspace.tabs = remainingTabs;
     if (workspace.tabs.length === 0) workspace.emptyAt = href;
-    persistWorkspace();
+    persistWorkspace(currentHref());
   }
 
   function closeOtherTabs() {

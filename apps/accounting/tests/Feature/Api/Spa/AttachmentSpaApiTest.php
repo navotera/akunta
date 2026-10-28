@@ -14,6 +14,7 @@ use App\Models\Period;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     Storage::fake('local');
@@ -29,6 +30,7 @@ beforeEach(function () {
     $role->permissions()->attach(collect(['journal.read', 'journal.update'])->map(
         fn (string $code) => Permission::create(['app_id' => $app->id, 'code' => $code])->id,
     ));
+    grantSpaPermissionsForTest($role, $app, ['attachment.read', 'attachment.upload', 'attachment.delete']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id, 'app_id' => $app->id, 'role_id' => $role->id,
     ]);
@@ -68,6 +70,42 @@ it('uploads an attachment to a journal', function () {
         ->getJson('/api/v1/spa/attachments?attachable_type='.urlencode(Journal::class).'&attachable_id='.$this->journal->id)
         ->assertOk()
         ->assertJsonPath('data.0.filename', 'invoice.pdf');
+});
+
+it('stores one file object and maps it to both journals when requested', function () {
+    $groupId = (string) Str::ulid();
+    $this->journal->update([
+        'journal_mode' => Journal::MODE_INTERNAL,
+        'input_group_id' => $groupId,
+    ]);
+    $paired = Journal::create([
+        'entity_id' => $this->entity->id,
+        'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL,
+        'journal_mode' => Journal::MODE_FISCAL,
+        'input_group_id' => $groupId,
+        'number' => 'J-AT-2',
+        'date' => '2026-01-05',
+        'status' => Journal::STATUS_DRAFT,
+    ]);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->withHeader('Accept', 'application/json')
+        ->post('/api/v1/spa/attachments', [
+            'attachable_type' => Journal::class,
+            'attachable_id' => $this->journal->id,
+            'file' => UploadedFile::fake()->create('shared.pdf', 50, 'application/pdf'),
+            'mirror_to_paired' => true,
+        ])
+        ->assertCreated();
+
+    $sourceAttachment = Attachment::where('attachable_id', $this->journal->id)->sole();
+    $pairedAttachment = Attachment::where('attachable_id', $paired->id)->sole();
+
+    expect($pairedAttachment->id)->not->toBe($sourceAttachment->id)
+        ->and($pairedAttachment->path)->toBe($sourceAttachment->path)
+        ->and(Storage::disk('local')->allFiles('attachments'))->toHaveCount(1);
 });
 
 it('deletes an attachment from an editable draft journal', function () {

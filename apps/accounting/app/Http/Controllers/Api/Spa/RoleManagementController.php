@@ -12,11 +12,13 @@ use Akunta\Rbac\Models\User as RbacUser;
 use Akunta\Rbac\Models\UserAppAssignment;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountingPermissions;
 use App\Services\UserAccessRevoker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -103,6 +105,7 @@ class RoleManagementController extends Controller
                 'ecopa_user_id' => $assignment->user?->main_tier_user_id,
                 'ecopa_role' => $assignment->ecopa_role,
                 'scope' => $assignment->entity_id === null ? 'all_entities' : 'entity',
+                'assignment_active' => $assignment->isActive(),
                 'role_id' => $assignment->role_id,
                 'role_code' => $assignment->role?->code,
                 'role_name' => $assignment->role?->name,
@@ -211,6 +214,10 @@ class RoleManagementController extends Controller
         );
 
         $assignment = DB::transaction(function () use ($actor, $app, $data, $entity, $shadowAssignment, $user): UserAppAssignment {
+            $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
+            $roles = Role::query()->whereKey($data['role_id']);
+            $this->restrictToConfiguredAccountingRoles($roles, $locked);
+            $roles->firstOrFail();
             $assignment = new UserAppAssignment;
             $assignment->id = (string) Str::ulid();
             $assignment->user_id = $user->id;
@@ -299,6 +306,12 @@ class RoleManagementController extends Controller
 
         $before = $assignment->role_id;
         DB::transaction(function () use ($assignment, $data, $entity, $before): void {
+            $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
+            if (isset($data['role_id'])) {
+                $roles = Role::query()->whereKey($data['role_id']);
+                $this->restrictToConfiguredAccountingRoles($roles, $locked);
+                $roles->firstOrFail();
+            }
             $assignment->forceFill([
                 'role_id' => $data['role_id'] ?? null,
                 'assigned_by' => request()->user()?->id,
@@ -329,6 +342,43 @@ class RoleManagementController extends Controller
             'role_id' => $assignment->role_id,
             'message' => 'Role Akunta berhasil diperbarui. User perlu login ulang.',
         ]]);
+    }
+
+    public function bulkUpdate(Request $request): JsonResponse
+    {
+        $entity = $this->resolveManagedEntity($request);
+        Gate::authorize('permissions.manage', $entity);
+        $data = $request->validate([
+            'role_code' => ['required', 'string', 'max:80'],
+            'assignment_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'assignment_ids.*' => ['required', 'string', 'distinct'],
+        ]);
+        DB::transaction(function () use ($request, $entity, $data): void {
+            $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
+            $permissions = app(AccountingPermissions::class);
+            abort_unless($permissions->managedRole($locked, $data['role_code']), 422, 'Role tidak tersedia di workspace ini.');
+            $custom = $permissions->customRoles($locked)[$data['role_code']] ?? null;
+            $role = $custom
+                ? Role::where('tenant_id', $locked->tenant_id)->findOrFail($custom['id'])
+                : Role::firstOrCreate(['tenant_id' => null, 'code' => $data['role_code']], [
+                    'name' => config('accounting_permissions.roles')[$data['role_code']], 'is_preset' => true,
+                ]);
+            $assignments = UserAppAssignment::query()->whereIn('id', $data['assignment_ids'])
+                ->where('entity_id', $entity->id)->where('app_id', $this->accountingApp()->id)
+                ->whereNull('revoked_at')
+                ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
+                ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>', now()))
+                ->whereHas('user', fn ($query) => $query->whereNull('disabled_at'))
+                ->lockForUpdate()->get();
+            abort_unless($assignments->count() === count($data['assignment_ids']), 422,
+                'Pilih hanya assignment user aktif di workspace ini; assignment lintas workspace tidak dapat diubah sekaligus.');
+            $request->replace(['role_id' => $role->id]);
+            foreach ($assignments as $assignment) {
+                $this->update($request, $assignment->id);
+            }
+        });
+
+        return response()->json(['data' => ['message' => count($data['assignment_ids']).' user berhasil dipindahkan ke role ini. User perlu login ulang.']]);
     }
 
     public function impersonate(Request $request, string $assignmentId): JsonResponse
@@ -390,7 +440,11 @@ class RoleManagementController extends Controller
         /** @var User|null $user */
         $user = $request->user();
         abort_unless(
-            $user && ($user->isSsoAdmin() || $user->hasPermission('workspace.manage', $entity->id)),
+            $user && (! session()->has('impersonator_id') || $request->isMethod('get')) && $user->disabled_at === null
+                && ! app(AccountingPermissions::class)->isInspector($user, $entity)
+                && (app(AccountingPermissions::class)->canManage($user, $entity)
+                    || ($request->isMethod('get') && $user->isSsoAdmin())
+                    || $user->hasPermission('workspace.manage', $entity->id)),
             403,
             'Hanya Admin Aplikasi Akunta yang dapat mengatur role.',
         );
@@ -404,17 +458,27 @@ class RoleManagementController extends Controller
      */
     private function restrictToConfiguredAccountingRoles($query, Entity $entity): void
     {
-        $query
-            ->whereIn('code', self::ACCOUNTING_ROLES)
-            ->where(function ($roles) use ($entity): void {
-                $roles->whereNull('tenant_id')->orWhere('tenant_id', $entity->tenant_id);
-            })
-            ->whereExists(function ($permissions): void {
-                $permissions
-                    ->selectRaw('1')
-                    ->from('role_permissions')
-                    ->whereColumn('role_permissions.role_id', 'roles.id');
+        $managed = app(AccountingPermissions::class);
+        $customIds = array_column($managed->customRoles($entity), 'id');
+        $query->where(function ($choices) use ($entity, $customIds): void {
+            $choices->where(function ($legacy) use ($entity): void {
+                $legacy
+                    ->whereIn('code', self::ACCOUNTING_ROLES)
+                    ->where(function ($roles) use ($entity): void {
+                        $roles->whereNull('tenant_id')->orWhere('tenant_id', $entity->tenant_id);
+                    })
+                    ->whereExists(function ($permissions): void {
+                        $permissions
+                            ->selectRaw('1')
+                            ->from('role_permissions')
+                            ->whereColumn('role_permissions.role_id', 'roles.id');
+                    });
+            })->orWhere(function ($presets): void {
+                $presets->whereNull('tenant_id')->whereIn('code', array_keys(config('accounting_permissions.roles')));
+            })->orWhere(function ($custom) use ($entity, $customIds): void {
+                $custom->where('tenant_id', $entity->tenant_id)->whereIn('id', $customIds);
             });
+        });
     }
 
     private function accountingApp(): RbacApp

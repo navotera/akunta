@@ -14,6 +14,7 @@ class ReverseJournalAction extends BaseAction
     public function execute(Journal $journal, ?User $user = null, ?string $reason = null): Journal
     {
         $this->authorize('journal.reverse', $journal);
+        $journal->assertPeriodOpen();
 
         if ($journal->status !== Journal::STATUS_POSTED) {
             throw JournalException::notPosted($journal->status);

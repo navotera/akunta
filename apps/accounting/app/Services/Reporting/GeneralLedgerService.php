@@ -47,7 +47,7 @@ class GeneralLedgerService
         array $filters = [],
         string $journalMode = Journal::MODE_INTERNAL,
     ): array {
-        $account = Account::query()
+        $account = Account::withTrashed()
             ->where('entity_id', $entityId)
             ->where('id', $accountId)
             ->firstOrFail();

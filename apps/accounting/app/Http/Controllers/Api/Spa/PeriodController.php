@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
-use App\Http\Controllers\Api\Spa\Concerns\ProtectsNativeFakeData;
+use Akunta\Rbac\Models\Entity;
+use App\Actions\ChangePeriodStatusAction;
+use App\Http\Controllers\Api\Spa\Concerns\AuthorizesBookAccess;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
@@ -12,13 +14,13 @@ use App\Models\Period;
 use App\Services\InstallationOnboardingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class PeriodController extends Controller
 {
-    use ProtectsNativeFakeData;
+    use AuthorizesBookAccess;
     use ResolvesTenant;
 
     public function __construct(private readonly InstallationOnboardingService $installationOnboarding) {}
@@ -26,17 +28,40 @@ class PeriodController extends Controller
     public function index(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
+        $journalMode = $request->query('journal_mode');
+        if ($this->isInspector($request)) {
+            $journalMode = Journal::MODE_FISCAL;
+        }
+        if ($journalMode !== null && ! in_array($journalMode, [Journal::MODE_INTERNAL, Journal::MODE_FISCAL], true)) {
+            throw ValidationException::withMessages(['journal_mode' => 'Invalid journal mode.']);
+        }
+        if ($journalMode !== null) {
+            $this->authorizeBookRead($request, $journalMode);
+        }
 
         $query = Period::query()
             ->where('entity_id', $entity->id)
             ->orderByDesc('start_date');
+
+        if ($journalMode !== null) {
+            $query->withCount([
+                'journals as journals_count' => fn ($journals) => $journals->where('journal_mode', $journalMode),
+            ]);
+        }
 
         if ($status = $request->query('status')) {
             $query->where('status', $status);
         }
 
         return response()->json([
-            'data' => $query->get()->map(fn (Period $p) => $this->serialize($p))->all(),
+            'data' => $query->get()->map(function (Period $period) use ($journalMode): array {
+                $data = $this->serialize($period);
+                if ($journalMode !== null) {
+                    $data['journals_count'] = (int) $period->journals_count;
+                }
+
+                return $data;
+            })->all(),
         ]);
     }
 
@@ -51,7 +76,6 @@ class PeriodController extends Controller
     public function store(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->assertNativeFakePeriodMutable($entity);
         $data = $this->validatePayload($request);
 
         $this->assertNoOverlap($entity->id, $data['start_date'], $data['end_date'], null);
@@ -65,9 +89,7 @@ class PeriodController extends Controller
             $period = Period::create([
                 ...$data,
                 'entity_id' => $entity->id,
-                'status' => $hasOpenPeriod ? Period::STATUS_CLOSED : Period::STATUS_OPEN,
-                'closed_at' => $hasOpenPeriod ? now() : null,
-                'closed_by' => $hasOpenPeriod ? Auth::id() : null,
+                'status' => $hasOpenPeriod ? Period::STATUS_INACTIVE : Period::STATUS_OPEN,
             ]);
 
             $this->installationOnboarding->markCompletedIfReady($entity->refresh());
@@ -81,7 +103,6 @@ class PeriodController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         if ($period->status !== Period::STATUS_OPEN) {
@@ -101,10 +122,9 @@ class PeriodController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
-        if (Journal::where('period_id', $period->id)->exists()) {
+        if (Journal::withTrashed()->where('entity_id', $entity->id)->where('period_id', $period->id)->exists()) {
             throw ValidationException::withMessages([
                 'period' => 'Period contains journals; cannot delete.',
             ]);
@@ -118,27 +138,9 @@ class PeriodController extends Controller
     public function close(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
-        if ($period->status === Period::STATUS_CLOSED) {
-            return response()->json(['data' => $this->serialize($period)]);
-        }
-
-        $draftCount = Journal::where('period_id', $period->id)
-            ->where('status', Journal::STATUS_DRAFT)
-            ->count();
-        if ($draftCount > 0) {
-            throw ValidationException::withMessages([
-                'period' => "Period has {$draftCount} draft journal(s); post or delete them first.",
-            ]);
-        }
-
-        $period->forceFill([
-            'status' => Period::STATUS_CLOSED,
-            'closed_at' => now(),
-            'closed_by' => Auth::id(),
-        ])->save();
+        $period = app(ChangePeriodStatusAction::class)->execute($period, Period::STATUS_CLOSED);
 
         return response()->json(['data' => $this->serialize($period->refresh())]);
     }
@@ -146,24 +148,25 @@ class PeriodController extends Controller
     public function reopen(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $this->assertNativeFakePeriodMutable($entity);
         $period = Period::where('entity_id', $entity->id)->findOrFail($id);
 
         $this->assertCanActivate($entity->id);
-
-        DB::transaction(function () use ($period): void {
-            // Activation is scoped to the requesting session/browser. Keep
-            // other periods open so an admin can work across multiple
-            // non-overlapping periods without implicitly closing one that is
-            // still in progress (including periods with draft journals).
-            $period->forceFill([
-                'status' => Period::STATUS_OPEN,
-                'closed_at' => null,
-                'closed_by' => null,
-            ])->save();
-        });
+        $data = $request->validate([
+            'reason' => 'required|string|max:1000',
+            'confirmed' => 'required|accepted',
+        ]);
+        $period = app(ChangePeriodStatusAction::class)->execute($period, Period::STATUS_OPEN, $data['reason']);
 
         return response()->json(['data' => $this->serialize($period->refresh())]);
+    }
+
+    public function deactivate(Request $request, string $id): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $period = Period::where('entity_id', $entity->id)->findOrFail($id);
+        $period = app(ChangePeriodStatusAction::class)->execute($period, Period::STATUS_INACTIVE);
+
+        return response()->json(['data' => $this->serialize($period)]);
     }
 
     private function validatePayload(Request $request): array
@@ -196,24 +199,7 @@ class PeriodController extends Controller
 
     private function assertCanActivate(string $entityId): void
     {
-        $user = Auth::user();
-        $canActivate = $user !== null
-            && ((method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
-                || session('ecopa.app_role') === 'admin'
-                || $user->assignments()
-                    ->whereNull('revoked_at')
-                    ->where(function ($query) use ($entityId): void {
-                        $query->whereNull('entity_id')->orWhere('entity_id', $entityId);
-                    })
-                    ->whereHas('role', fn ($query) => $query->whereIn('code', [
-                        'admin',
-                        'super_admin',
-                    ]))
-                    ->exists());
-
-        if (! $canActivate) {
-            abort(403, 'Hanya admin atau super admin yang dapat mengaktifkan kembali periode.');
-        }
+        Gate::authorize('accounting.permission', ['period.reopen', Entity::findOrFail($entityId)]);
     }
 
     private function serialize(Period $p): array

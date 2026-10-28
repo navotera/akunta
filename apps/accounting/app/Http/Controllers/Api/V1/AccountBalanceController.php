@@ -21,13 +21,13 @@ class AccountBalanceController extends Controller
     public function show(Request $request, string $account): JsonResponse
     {
         $data = $request->validate([
-            'as_of'          => 'nullable|date_format:Y-m-d',
+            'as_of' => 'nullable|date_format:Y-m-d',
             'cost_center_id' => 'nullable|string|size:26',
-            'project_id'     => 'nullable|string|size:26',
-            'branch_id'      => 'nullable|string|size:26',
+            'project_id' => 'nullable|string|size:26',
+            'branch_id' => 'nullable|string|size:26',
         ]);
 
-        $acc = Account::find($account);
+        $acc = Account::withTrashed()->find($account);
         if ($acc === null) {
             return response()->json(['error' => 'account_not_found'], 404);
         }
@@ -57,20 +57,20 @@ class AccountBalanceController extends Controller
             : bcsub($tc, $td, 2);
 
         return response()->json([
-            'account_id'     => $acc->id,
-            'entity_id'      => $acc->entity_id,
-            'code'           => $acc->code,
-            'name'           => $acc->name,
-            'type'           => $acc->type,
+            'account_id' => $acc->id,
+            'entity_id' => $acc->entity_id,
+            'code' => $acc->code,
+            'name' => $acc->name,
+            'type' => $acc->type,
             'normal_balance' => $acc->normal_balance,
-            'as_of'          => $asOf,
-            'total_debit'    => $td,
-            'total_credit'   => $tc,
-            'balance'        => $balance,
-            'filters'        => array_filter([
+            'as_of' => $asOf,
+            'total_debit' => $td,
+            'total_credit' => $tc,
+            'balance' => $balance,
+            'filters' => array_filter([
                 'cost_center_id' => $data['cost_center_id'] ?? null,
-                'project_id'     => $data['project_id']     ?? null,
-                'branch_id'      => $data['branch_id']      ?? null,
+                'project_id' => $data['project_id'] ?? null,
+                'branch_id' => $data['branch_id'] ?? null,
             ]),
         ]);
     }

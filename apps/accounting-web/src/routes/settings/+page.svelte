@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { ApiError } from '$lib/api/client.js';
+  import PermissionManagement from '$lib/components/settings/RoleManagement.svelte';
+  import { can, canManagePermissions, isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import {
     ecopaIntegrationApi,
     type EcopaIntegrationStatus,
@@ -63,11 +66,17 @@
       { id: 'users', label: 'User & Roles', description: 'Pengguna dan hak akses', icon: '♙' },
       {
         id: 'permissions',
-        label: 'Permission Management',
-        description: 'Atur akses fitur per role',
+        label: 'Role Management',
+        description: 'Role, izin, dan anggota',
         icon: '✓',
       },
       { id: 'integration', label: 'Integration', description: 'Koneksi dengan Ecopa', icon: '↔' },
+      {
+        id: 'fake-data',
+        label: 'Fake Data & Pemulihan',
+        description: 'Pulihkan data latihan bawaan',
+        icon: 'F',
+      },
     ];
 
   sections.splice(1, 0, {
@@ -184,6 +193,7 @@
   let isAdmin = $derived(Boolean(auth.user?.is_admin || auth.user?.is_sso_admin));
   let fakeDataGroups = $state<FakeDataGroup[]>([]);
   let fakeDataMessage = $state<string | null>(null);
+  let fakeDataFailed = $state(false);
   let schedulerHealth = $state<SchedulerHealth | null>(null);
   let schedulerLoading = $state(false);
   let schedulerError = $state<string | null>(null);
@@ -194,6 +204,9 @@
   let resetPreviewLoading = $state(false);
   let resetConfirmation = $state('');
   let resetBusy = $state(false);
+  let resetPreviewEntityId = $state<string | null>(null);
+  let resetPreviewExpired = $state(false);
+  let fakeDataEntityId = $state<string | null>(null);
   let availableWorkspaceRecords = $derived(
     isAdmin && workspaceRecords.length > 0 ? workspaceRecords : tenant.available,
   );
@@ -212,25 +225,43 @@
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
   let canManageFakeData = $derived(
-    Boolean(
-      auth.user?.is_sso_admin ||
-      auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
-    ),
+    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
+      ? can('settings.fake_data.manage')
+      : Boolean(
+          auth.user?.is_sso_admin ||
+          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
+        ),
   );
   let canManageCron = $derived(
-    Boolean(
-      auth.user?.is_sso_admin ||
-      auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
-    ),
+    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
+      ? can('settings.cron.manage')
+      : Boolean(
+          auth.user?.is_sso_admin ||
+          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
+        ),
   );
   let showFakeDataSettings = $derived(currentWorkspaceIsFake && canManageFakeData);
   let visibleSections = $derived(
     sections.filter(
       (section) =>
         (section.id !== 'fake-data' || showFakeDataSettings) &&
+        (section.id !== 'permissions' || canManagePermissions()) &&
         (section.id !== 'cron' || canManageCron),
     ),
   );
+
+  $effect(() => {
+    if (fakeDataEntityId !== tenant.id) {
+      fakeDataEntityId = tenant.id;
+      fakeDataset = null;
+      fakeDataGroups = [];
+      resetPreview = null;
+      resetPreviewEntityId = null;
+      resetConfirmation = '';
+      fakeDataMessage = null;
+    }
+    if (activeSection === 'fake-data' && !showFakeDataSettings) activeSection = 'general';
+  });
 
   function selectLogo(event: Event) {
     const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
@@ -241,6 +272,7 @@
 
   function selectSection(section: SettingSection) {
     activeSection = section;
+    if (section === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (section === 'users' && isAdmin) void loadRoleManagement();
     if (section === 'integration' && isAdmin) void loadEcopaWebhookLogs();
     if (section !== 'entity-profile') return;
@@ -268,14 +300,17 @@
 
   async function initializeSettings() {
     await auth.refresh();
-    if (auth.user?.roles.some((role) => role.toLowerCase() === 'inspector')) {
+    if (isFiscalInspector()) {
       await goto('/dashboard', { replaceState: true });
       return;
     }
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
     if ($page.url.searchParams.get('section') === 'users') activeSection = 'users';
+    if ($page.url.searchParams.get('section') === 'permissions') activeSection = 'permissions';
     if ($page.url.searchParams.get('section') === 'integration') activeSection = 'integration';
     if ($page.url.searchParams.get('section') === 'cron') activeSection = 'cron';
+    if ($page.url.searchParams.get('section') === 'fake-data' && showFakeDataSettings)
+      activeSection = 'fake-data';
     await loadEcopaIntegration();
     dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
@@ -288,6 +323,7 @@
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
     if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
+    if (activeSection === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (canManageCron) {
       void loadSchedulerHealth();
       schedulerPoll ??= window.setInterval(() => void loadSchedulerHealth(), 60_000);
@@ -347,22 +383,36 @@
   }
 
   async function loadFakeData() {
+    const entityId = tenant.id;
+    if (!showFakeDataSettings || !entityId) return;
     try {
-      const result = await fakeDataApi.list(tenant.id);
+      const result = await fakeDataApi.list(entityId);
+      if (tenant.id !== entityId) return;
       fakeDataGroups = result.groups;
       fakeDataset = result.dataset;
     } catch (error) {
+      if (tenant.id !== entityId) return;
+      fakeDataFailed = true;
       fakeDataMessage = error instanceof Error ? error.message : 'Gagal memuat fake data.';
     }
   }
 
   async function previewDatasetReset() {
+    const entityId = tenant.id;
+    if (!showFakeDataSettings || !entityId) return;
     resetPreviewLoading = true;
     fakeDataMessage = null;
+    fakeDataFailed = false;
     try {
-      resetPreview = await fakeDataApi.resetPreview(tenant.id);
+      const preview = await fakeDataApi.resetPreview(entityId);
+      if (tenant.id !== entityId) return;
+      resetPreview = preview;
+      resetPreviewEntityId = entityId;
+      resetPreviewExpired = false;
       resetConfirmation = '';
     } catch (error) {
+      if (tenant.id !== entityId) return;
+      fakeDataFailed = true;
       fakeDataMessage = error instanceof Error ? error.message : 'Preview reset dataset gagal.';
     } finally {
       resetPreviewLoading = false;
@@ -370,9 +420,18 @@
   }
 
   async function resetNativeDataset() {
-    if (!resetPreview || resetConfirmation !== resetPreview.confirmation_phrase) return;
+    if (
+      !showFakeDataSettings ||
+      !resetPreview ||
+      resetPreviewExpired ||
+      resetPreviewEntityId !== tenant.id ||
+      resetConfirmation !== resetPreview.confirmation_phrase
+    )
+      return;
+    const entityId = resetPreviewEntityId;
     resetBusy = true;
     fakeDataMessage = null;
+    fakeDataFailed = false;
     try {
       const result = await fakeDataApi.reset(
         {
@@ -380,15 +439,19 @@
           expected_version: resetPreview.target_version,
           preview_token: resetPreview.preview_token,
         },
-        tenant.id,
+        entityId,
       );
+      if (tenant.id !== entityId) return;
       resetPreview = null;
       resetConfirmation = '';
-      fakeDataMessage = `${result.message} ${result.deleted} record dikeluarkan dan ${result.created} record dibangun ulang.`;
+      fakeDataMessage = `${result.message} Pemulihan tercatat di audit trail.${result.preserved_managed > 0 ? ' Sebagian data demo dipertahankan karena terkait data tambahan atau merupakan akun wajib sistem.' : ''}`;
       period.clear();
       await Promise.all([loadFakeData(), auth.refresh()]);
       await period.refresh();
     } catch (error) {
+      if (tenant.id !== entityId) return;
+      fakeDataFailed = true;
+      resetPreviewExpired = error instanceof ApiError && error.status === 409;
       fakeDataMessage = error instanceof Error ? error.message : 'Reset dataset gagal.';
     } finally {
       resetBusy = false;
@@ -396,10 +459,17 @@
   }
 
   function fakeGroupLabel(key: string): string {
-    return (
-      fakeDataGroups.find((group) => group.key === key)?.label ??
-      (key === 'native_fake_entity' ? 'Master Data, Integrasi & Lampiran' : key)
-    );
+    const labels: Record<string, string> = {
+      periods: 'Periode',
+      accounts: 'Bagan Akun',
+      journals: 'Jurnal',
+      journal_templates: 'Template Jurnal',
+      recurring_journals: 'Jurnal Berulang',
+      auto_mapping: 'Auto Mapping',
+      users: 'Pengguna Demo',
+      native_fake_entity: 'Master Data, Integrasi & Lampiran',
+    };
+    return labels[key] ?? fakeDataGroups.find((group) => group.key === key)?.label ?? key;
   }
 
   async function loadWorkspaces() {
@@ -2195,52 +2265,65 @@
           </div>
         {/if}
       {:else if activeSection === 'fake-data' && showFakeDataSettings}
-        <h2 class="text-lg font-bold">Fake Data</h2>
+        <h2 class="text-lg font-bold">Pulihkan Data Demo PT. Fake Data</h2>
         <p class="mt-1 text-sm text-text-muted">
-          Gunakan data simulasi untuk mencoba alur aplikasi tanpa data produksi.
+          Gunakan PT. Fake Data untuk latihan dan mengulang uji coba bug. Pulihkan data demo bawaan
+          yang diubah atau dihapus agar dapat digunakan kembali.
         </p>
         <div
-          class="mt-5 rounded-md border border-warning/40 bg-warning-light p-4 text-sm text-warning"
+          class="mt-5 rounded-md border border-border-default bg-page-bg p-4 text-sm text-text-default"
         >
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div class="flex flex-wrap items-center gap-2">
-                <strong>Dataset bawaan aktif.</strong>
+                <strong>Kembalikan data latihan bawaan</strong>
                 <span
-                  class="rounded-full border border-warning/30 bg-card-bg px-2.5 py-1 text-xs font-bold text-warning"
+                  class="rounded-full border border-border-default bg-card-bg px-2.5 py-1 text-xs font-semibold text-text-muted"
                   data-testid="demo-dataset-version"
                 >
                   {fakeDataset?.label ?? 'Demo 2026'} · v{fakeDataset?.version ?? 'legacy'}
                 </span>
               </div>
               <p class="mt-2 leading-6">
-                PT. Fake Data berisi satu periode Demo 2026. Periode dan jurnal Tersimpan bersifat
-                read-only. Jurnal berulang hanya contoh dan tidak diproses scheduler.
+                Pemulihan membangun ulang akun, jurnal Intern/Fiskal, template, dan data contoh
+                bawaan. Perubahan pada data demo akan diganti. Data tambahan yang dibuat manual
+                tetap disimpan, sehingga workspace tidak selalu persis sama dengan kondisi sebelum
+                latihan.
               </p>
             </div>
             <button
               type="button"
-              class="rounded-md border border-warning/40 bg-card-bg px-3 py-2 text-sm font-semibold text-warning hover:border-warning disabled:opacity-50"
+              class="shrink-0 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
               onclick={previewDatasetReset}
               disabled={resetPreviewLoading || resetBusy}
               data-testid="preview-demo-reset"
             >
-              {resetPreviewLoading ? 'Menyiapkan preview…' : 'Tinjau Reset Dataset'}
+              {resetPreviewLoading ? 'Menyiapkan ringkasan…' : 'Pulihkan Data Demo'}
             </button>
           </div>
         </div>
+        <p class="mt-3 text-sm text-text-muted" data-testid="demo-last-restored">
+          {#if fakeDataset?.last_restored_at}
+            Terakhir dipulihkan {formatDateTime(
+              fakeDataset.last_restored_at,
+            )}{fakeDataset.last_restored_by ? ` oleh ${fakeDataset.last_restored_by}` : ''}.
+            Tercatat di audit trail.
+          {:else}
+            Riwayat pemulihan akan ditampilkan setelah pemulihan pertama.
+          {/if}
+        </p>
         <div class="mt-4 grid gap-3 sm:grid-cols-3">
           <div class="rounded-md border border-border-soft bg-card-bg p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Periode</p>
-            <p class="mt-1 text-sm font-bold">Demo 2026 terkunci</p>
+            <p class="mt-1 text-sm font-bold">Dapat dikelola untuk latihan</p>
           </div>
           <div class="rounded-md border border-border-soft bg-card-bg p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Jurnal</p>
-            <p class="mt-1 text-sm font-bold">Tersimpan read-only</p>
+            <p class="mt-1 text-sm font-bold">Dapat diedit sesuai izin dan status</p>
           </div>
           <div class="rounded-md border border-border-soft bg-card-bg p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-text-muted">Pemulihan</p>
-            <p class="mt-1 text-sm font-bold">Marker-only &amp; diaudit</p>
+            <p class="mt-1 text-sm font-bold">Data demo bawaan &amp; audit trail</p>
           </div>
         </div>
         {#if resetPreview}
@@ -2259,16 +2342,13 @@
             >
               <div class="flex items-start justify-between gap-3">
                 <div>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-warning">
-                    Preview operasi destructive terkontrol
-                  </p>
                   <h3 id="reset-demo-title" class="mt-1 text-xl font-bold">
-                    Reset Dataset Demo 2026
+                    Konfirmasi Pemulihan Data Demo
                   </h3>
                   <p class="mt-2 text-sm leading-6 text-text-muted">
-                    Hanya record dengan marker provenance PT. Fake Data yang dihapus. Record manual
-                    tetap dipertahankan, lalu dataset versi {resetPreview.target_version} dibangun ulang
-                    dan dicatat pada audit log.
+                    Data demo bawaan PT. Fake Data akan dibangun ulang ke {resetPreview.dataset_label}
+                    versi {resetPreview.target_version}. Perubahan pada data demo akan diganti. Data
+                    tambahan yang dibuat manual tetap disimpan. Pemulihan dicatat di audit trail.
                   </p>
                 </div>
                 <button
@@ -2276,7 +2356,7 @@
                   class="rounded-md px-2 py-1 text-xl text-text-muted hover:bg-page-bg"
                   onclick={() => (resetPreview = null)}
                   disabled={resetBusy}
-                  aria-label="Tutup preview reset">×</button
+                  aria-label="Tutup ringkasan pemulihan">×</button
                 >
               </div>
 
@@ -2290,14 +2370,14 @@
                   <p class="mt-1 font-bold">v{resetPreview.target_version}</p>
                 </div>
                 <div class="rounded-md bg-page-bg p-3">
-                  <p class="text-xs text-text-muted">Record bermarker</p>
+                  <p class="text-xs text-text-muted">Data demo yang ditinjau</p>
                   <p class="mt-1 font-bold">{resetPreview.managed_records.total}</p>
                 </div>
               </div>
 
               <div class="mt-5 grid gap-5 md:grid-cols-2">
                 <div>
-                  <h4 class="text-sm font-semibold">Record yang dikelola reset</h4>
+                  <h4 class="text-sm font-semibold">Data demo yang dibangun ulang</h4>
                   <div class="mt-2 space-y-1.5">
                     {#each Object.entries(resetPreview.managed_records.groups) as [key, count]}
                       <div class="flex justify-between rounded-md bg-page-bg px-3 py-2 text-sm">
@@ -2307,7 +2387,7 @@
                   </div>
                 </div>
                 <div>
-                  <h4 class="text-sm font-semibold">Record manual yang dipertahankan</h4>
+                  <h4 class="text-sm font-semibold">Data tambahan yang tetap disimpan</h4>
                   <div class="mt-2 space-y-1.5">
                     {#each Object.entries(resetPreview.preserved_manual_records) as [key, count]}
                       <div class="flex justify-between rounded-md bg-page-bg px-3 py-2 text-sm">
@@ -2320,11 +2400,32 @@
 
               {#if resetPreview.managed_records.stale_markers > 0}
                 <p
-                  class="mt-4 rounded-md border border-warning/30 bg-warning-light p-3 text-sm text-warning"
+                  class="mt-4 rounded-md border border-border-default bg-page-bg p-3 text-sm text-text-default"
                 >
-                  {resetPreview.managed_records.stale_markers} marker lama tidak lagi memiliki record
-                  sumber dan akan dibersihkan.
+                  {resetPreview.managed_records.stale_markers} catatan data demo sudah terhapus. Data
+                  contoh yang hilang akan dibuat kembali dari data bawaan.
                 </p>
+              {/if}
+              {#if resetPreview.managed_records.trashed_journals}
+                <p class="mt-3 text-sm text-text-muted">
+                  Termasuk {resetPreview.managed_records.trashed_journals} jurnal demo di Trashed. Jurnal
+                  tersebut akan diganti dengan jurnal contoh bawaan.
+                </p>
+              {/if}
+              {#if fakeDataFailed && fakeDataMessage}
+                <div
+                  class="mt-4 rounded-md border border-danger/30 bg-danger-light p-3 text-sm text-danger"
+                  role="alert"
+                  data-testid="demo-restore-error"
+                >
+                  <p>{fakeDataMessage}</p>
+                  {#if resetPreviewExpired}<button
+                      type="button"
+                      class="mt-2 font-semibold underline"
+                      disabled={resetPreviewLoading}
+                      onclick={previewDatasetReset}>Perbarui Ringkasan</button
+                    >{/if}
+                </div>
               {/if}
 
               <label class="mt-5 block">
@@ -2353,66 +2454,26 @@
                   type="button"
                   class="rounded-md bg-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   onclick={resetNativeDataset}
-                  disabled={resetBusy || resetConfirmation !== resetPreview.confirmation_phrase}
+                  disabled={resetBusy ||
+                    resetPreviewExpired ||
+                    resetConfirmation !== resetPreview.confirmation_phrase}
                   data-testid="execute-demo-reset"
                 >
-                  {resetBusy ? 'Mereset dataset…' : 'Reset dan Bangun Ulang'}
+                  {resetBusy ? 'Memulihkan data demo…' : 'Pulihkan Sekarang'}
                 </button>
               </div>
             </div>
           </div>
         {/if}
-        {#if fakeDataMessage}<p class="mt-4 text-sm text-paid" role="status">
+        {#if fakeDataMessage && !resetPreview}<p
+            class="mt-4 text-sm {fakeDataFailed ? 'text-danger' : 'text-paid'}"
+            role={fakeDataFailed ? 'alert' : 'status'}
+            data-testid="demo-restore-result"
+          >
             {fakeDataMessage}
           </p>{/if}
       {:else if activeSection === 'permissions'}
-        <h2 class="text-lg font-bold">Permission Management</h2>
-        <p class="mt-1 text-sm text-text-muted">
-          Tentukan role mana yang boleh mengonfigurasi fitur Auto Mapping.
-        </p>
-
-        <div class="mt-6 rounded-lg border border-primary/20 bg-primary-light/40 p-4">
-          <div class="flex items-start gap-3">
-            <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-white"
-              >✓</span
-            >
-            <div>
-              <h3 class="text-sm font-semibold text-text-default">Auto Mapping Configuration</h3>
-              <p class="mt-1 text-xs leading-5 text-text-muted">
-                Permission ini mengatur siapa yang dapat membuat dan mengubah rule Auto Mapping,
-                memilih akun COA, mengatur tanggal jurnal, dan menyusun deskripsi.
-              </p>
-            </div>
-            <span
-              class="ml-auto shrink-0 rounded-full bg-paid-light px-2.5 py-1 text-[11px] font-semibold text-paid"
-              >Registered</span
-            >
-          </div>
-          <div
-            class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/15 bg-card-bg px-3 py-3"
-          >
-            <div>
-              <code class="text-xs font-semibold text-primary">automapping.manage</code>
-              <p class="mt-1 text-xs text-text-muted">
-                Berikan permission ini kepada role yang boleh mengonfigurasi Auto Mapping.
-              </p>
-            </div>
-            <span
-              class="rounded-md border border-border-default bg-page-bg px-3 py-2 text-xs font-medium text-text-muted"
-              >Dikelola melalui Role Management</span
-            >
-          </div>
-        </div>
-
-        <div
-          class="mt-5 rounded-md border border-border-soft bg-page-bg p-4 text-sm text-text-muted"
-        >
-          Identitas dan status akses user berasal dari Ecopa. Role serta permission rinci dikelola
-          oleh Admin Aplikasi di Akunta. Setelah role diberi <code
-            class="font-semibold text-text-default">automapping.manage</code
-          >, perubahan akses langsung berlaku pada halaman Auto Mapping.
-        </div>
+        <PermissionManagement />
       {:else if activeSection === 'users'}
         <h2 class="text-lg font-bold">User &amp; Roles</h2>
         <p class="mt-1 text-sm text-text-muted">

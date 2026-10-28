@@ -39,7 +39,7 @@ class CashFlowService
         string $periodEnd,
         string $journalMode = Journal::MODE_INTERNAL,
     ): array {
-        $cashIds = Account::query()
+        $cashIds = Account::withTrashed()
             ->where('entity_id', $entityId)
             ->where('type', 'asset')
             ->where(function ($q) {

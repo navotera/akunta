@@ -81,7 +81,7 @@ class PostJournalAction extends BaseAction
             if ($account->entity_id !== $journal->entity_id) {
                 throw JournalException::entityMismatch();
             }
-            if (! $account->is_postable) {
+            if ($account->trashed() || ! $account->is_postable) {
                 throw JournalException::accountNotPostable($account->code);
             }
             if (! $account->isAvailableFor($journal->journal_mode)) {

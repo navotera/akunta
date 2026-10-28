@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import {
     templateApi,
@@ -241,6 +242,7 @@
       type="button"
       class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
       onclick={openCreate}
+      disabled={!can('template.create')}
     >
       + Template Baru
     </button>
@@ -320,7 +322,7 @@
                     aria-pressed={t.is_bookmarked === true}
                     title={t.is_bookmarked ? 'Hapus bookmark' : 'Bookmark template'}
                     onclick={(event) => toggleBookmark(event, t)}
-                    disabled={bookmarking === t.id}
+                    disabled={bookmarking === t.id || !can('template.bookmark')}
                   >
                     <svg
                       width="16"

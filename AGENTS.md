@@ -129,6 +129,171 @@ onboarding, atau RBAC:
    kompatibel, dan major untuk breaking change. Lakukan bump setelah seluruh
    perubahan PR selesai agar satu PR hanya menghasilkan satu kenaikan versi.
    Versi aplikasi ini terpisah dari versi dataset Fake Data `2026.1.0`.
+13. Utamakan penggunaan ulang UI, komponen, route, dan alur bisnis yang sudah
+    tersedia. Ikuti aturan pada bagian berikut sebelum menambahkan halaman,
+    form, modal, atau alur baru.
+14. Setiap penambahan, perubahan, atau penghapusan fitur wajib meninjau dampaknya
+    terhadap Permission Management dan menyesuaikan implementasi yang relevan.
+    Pemeriksaan ini adalah bagian dari penyelesaian fitur, bukan pekerjaan
+    tambahan yang menunggu permintaan user. Ikuti bagian berikut.
+
+## Permission Management wajib mengikuti perubahan fitur
+
+Agent harus secara proaktif mengintegrasikan kontrol akses ketika mengubah
+fitur. Jangan menunggu user mengingatkan untuk menambahkan permission, default
+role, atau pemeriksaan backend setelah UI selesai dibuat.
+
+- Petakan aksi yang ditambah atau berubah: melihat daftar/detail, membuat,
+  mengganti nama, mengedit, mengaktifkan/nonaktifkan, menghapus, approval/posting,
+  import/export, lampiran, dan aksi massal/otomatis yang relevan. Gunakan kembali
+  permission yang maknanya sama; tambah kode baru hanya jika wewenangnya memang
+  berbeda. Perubahan tampilan murni tidak memerlukan permission baru.
+- Untuk Accounting, baca [docs/permission-management.md](docs/permission-management.md)
+  dan telusuri implementasi utama: `apps/accounting/config/accounting_permissions.php`,
+  `AccountingPermissions`, `EnforceSpaPermissions`, Gate/policy/action terkait,
+  serta `apps/accounting-web/src/lib/stores/permissions.svelte.ts`.
+  Untuk aplikasi lain, gunakan registry dan mekanisme otorisasi aplikasi tersebut;
+  jangan membuat sistem permission paralel.
+- Jika perlu permission baru, daftarkan kode, label/kategori, dependency, dan
+  default role pada sumber katalog yang tersedia agar muncul di Role Management.
+  Periksa juga dampaknya pada Restore to Default. Jangan mengubah arti kode lama
+  tanpa meninjau kontrak dan penggunaannya.
+- Tetapkan bawaan Supervisor, Operator, dan Inspector Fiskal sesuai wewenang
+  yang terdokumentasi. Jangan memberi semua role akses tulis ke fitur baru
+  sebagai jalan pintas. Inspector dan salinannya tetap hanya membaca Fiskal,
+  tanpa akses Intern, dashboard, atau mutasi data. Operasi khusus admin dan
+  batas status/periode jurnal tetap mengikuti invariant domain.
+- Role custom harus dapat diberi atau dicabut permission melalui UI yang sudah
+  tersedia. Pertahankan allowlist eksplisit per workspace, gabungan izin beberapa
+  role, serta snapshot izin awal custom role. Permission baru tidak otomatis
+  diberikan pada role custom atau override yang tidak mencantumkannya; jangan
+  menimpa konfigurasi admin atau pivot preset global demi mengaktifkan fitur.
+- Otorisasi wajib diterapkan pada setiap jalur backend yang terdampak, termasuk
+  request langsung dan jalur massal/otomatis. Pertahankan tenant/entity context
+  dan pemeriksaan terhadap record induk. Memiliki akses ke satu aksi tidak boleh
+  menjadi cara melewati izin aksi lain, misalnya menjalankan jadwal untuk
+  melewati izin posting.
+- Navigasi, tombol, input, dan mode read-only memakai permission efektif pada
+  workspace aktif. Jangan hanya memeriksa nama role untuk aksi yang dapat
+  dikonfigurasi, atau mengandalkan penyembunyian tombol sebagai otorisasi.
+  Gunakan form utama yang sama untuk detail dan edit sesuai aturan di bawah.
+- Entitas demo memakai permission dan aturan bisnis normal yang sama. Jangan
+  menambahkan bypass otorisasi maupun kunci tulis khusus demo untuk fitur baru;
+  pemulihan data demo tetap mengikuti kontrak provenance.
+- Untuk perubahan permission atau aksi baru, tambahkan/perbarui test izin
+  diberikan dan ditolak, request langsung, grant/revoke pada role custom, dan
+  isolasi workspace. Sertakan regresi Inspector serta Intern/Fiskal bila
+  terdampak; periksa UI yang relevan tanpa menonaktifkan middleware otorisasi.
+- Perbarui dokumentasi/kontrak bila perilaku akses berubah. Saat menyerahkan
+  perubahan permission, jelaskan izin yang dipakai/ditambah, default role yang
+  berubah, dan hasil pengujiannya. Jika peninjauan tidak menemukan dampak akses,
+  pertahankan permission yang ada tanpa menambah pengaturan yang tidak diperlukan.
+
+## Gunakan ulang UI dan alur yang sudah tersedia
+
+**Jangan reinvent the wheel.** Penuhi kebutuhan user dengan memanfaatkan UI dan
+fitur yang sudah ada terlebih dahulu. Permintaan fitur baru tidak otomatis
+berarti perlu halaman baru, form baru, popup baru, atau implementasi paralel.
+Perluas UI yang tersedia secukupnya apabila kebutuhan dapat dipenuhi di sana.
+Aturan ini berlaku untuk seluruh aplikasi di monorepo, termasuk Bagan Akun,
+jurnal, template jurnal, laporan, Settings, dan alur pemulihan data.
+
+### Pemeriksaan wajib sebelum membuat UI
+
+- Telusuri route, halaman daftar/detail, form, komponen bersama, action, dan
+  endpoint yang menangani objek serta pekerjaan yang sama. Baca implementasinya;
+  jangan menyimpulkan fitur belum ada hanya karena tombolnya tidak terlihat.
+- Periksa apakah masalah sebenarnya berupa navigasi yang belum tersambung,
+  menu yang tersembunyi, filter yang belum diterapkan, atau kondisi permission
+  yang salah. Perbaiki penyebab tersebut pada alur yang tersedia.
+- Identifikasi form utama, validasi, aturan status/periode, tenant context,
+  permission, dan audit trail yang harus dipakai kembali. Periksa juga variasi
+  mode edit dan read-only yang sudah dimiliki komponen tersebut.
+- Pilih perubahan terkecil yang memenuhi kebutuhan: sambungkan tombol/tautan,
+  kirim konteks melalui parameter route, gunakan filter daftar, atau tambahkan
+  informasi pada halaman yang sudah ada. Hindari membuat tujuan navigasi baru
+  untuk pekerjaan yang telah didukung halaman lain.
+
+### Satu form utama untuk detail dan edit objek yang sama
+
+- Gunakan form utama yang sama untuk menampilkan detail dan mengedit record.
+  Perbedaan pintu masuk, tujuan user, atau role bukan alasan untuk menyalin form
+  maupun membuat editor alternatif.
+- Jika user memiliki izin membaca tetapi tidak memiliki izin mengubah record,
+  tampilkan form tersebut dalam mode read-only. Jika user berhak mengubah dan
+  status record serta periode mengizinkan, aktifkan input dan action edit pada
+  form yang sama. Jika izin membaca tidak ada, akses harus ditolak.
+- Mode read-only harus mencegah perubahan dan penyimpanan, termasuk melalui
+  pemilih akun, penambahan/penghapusan baris, lampiran, dan action terkait.
+  Informasi tetap dapat dibaca. Backend wajib mengotorisasi setiap mutasi;
+  kondisi disabled/read-only di frontend tidak menggantikan authorization.
+- Bila form utama belum mendukung kebutuhan tersebut, perluas komponen itu
+  dengan state atau parameter yang jelas. Jangan membuat salinan form khusus
+  untuk satu konteks, role, tombol, atau proses penghapusan.
+- Gunakan kembali validasi, endpoint, audit trail, dan aturan bisnis yang sama.
+  Jangan menyediakan jalur simpan kedua yang melewati pemeriksaan pada alur
+  utama, mengubah ledger pasangan secara otomatis, atau mengabaikan jurnal
+  balance, status, periode, tenant, maupun batas akses Intern/Fiskal.
+
+### Kasus wajib: mengganti akun sebelum penghapusan Bagan Akun
+
+- Saat akun tidak dapat dihapus karena dipakai jurnal, arahkan user ke daftar
+  jurnal yang sudah tersedia dengan filter akun terkait. Gunakan daftar,
+  pagination, tab status, dan pembatasan buku yang sudah ada.
+- Petunjuk langkah dan jumlah jurnal yang masih menggunakan akun dapat
+  ditambahkan sebagai alert lembut di atas daftar tersebut. Penambahan konteks
+  ini tidak memerlukan halaman daftar jurnal alternatif atau editor baru.
+- Saat user membuka salah satu jurnal terkait, buka form detail jurnal utama:
+  `apps/accounting-web/src/routes/journals/[id]/+page.svelte`, yang menggunakan
+  `apps/accounting-web/src/lib/components/journal/JournalForm.svelte`.
+  Jika struktur aplikasi berubah, cari pengganti form utama tersebut terlebih
+  dahulu; jangan membuat form duplikat karena path lama sudah berubah.
+- User yang berhak mengedit mengganti akun langsung pada input debit/kredit
+  form tersebut, lalu menyimpan melalui proses edit jurnal yang tersedia.
+  User yang hanya boleh membaca melihat form yang sama secara read-only,
+  dengan penjelasan jika memerlukan bantuan role yang berwenang.
+- Pertahankan konteks navigasi agar user dapat kembali ke daftar jurnal terkait,
+  melihat jumlah terbaru setelah penyimpanan, lalu kembali ke Bagan Akun untuk
+  mencoba penghapusan. Pemeriksaan penghapusan tetap dilakukan oleh backend.
+- Jangan membuat halaman khusus penggantian akun, popup edit jurnal, form edit
+  ringkas, atau penggantian akun massal sebagai solusi otomatis untuk kasus ini.
+- Jika user secara eksplisit meminta penggantian akun batch, gunakan daftar
+  jurnal terkait dan popup pemilihan akun/konfirmasi yang terbatas pada jurnal
+  pilihan user. Pakai pemeriksaan edit jurnal yang sama, transaksi atomik, dan
+  audit per jurnal; jangan membuat editor jurnal paralel atau mengganti pasangan
+  buku yang tidak dipilih. Permintaan batch eksplisit ini adalah pengecualian
+  terhadap larangan membuat penggantian massal secara otomatis di atas.
+
+### Batas pembuatan halaman, form, dan popup baru
+
+- UI baru hanya dibuat jika UI yang tersedia memang tidak dapat memenuhi
+  kebutuhan, atau user secara eksplisit meminta bentuk UI baru tersebut.
+  Kesulitan menemukan kode, kebutuhan meneruskan konteks, atau kemudahan
+  implementasi bukan bukti bahwa UI yang tersedia tidak dapat digunakan.
+- Sebelum mengambil pengecualian, jelaskan secara konkret UI yang sudah
+  diperiksa, kebutuhan yang belum dapat dipenuhi, dan alasan perluasannya tidak
+  memadai. Catat alasan tersebut dalam penjelasan perubahan atau PR agar
+  keputusan dapat ditinjau. Jangan mengada-adakan hambatan untuk membenarkan
+  duplikasi.
+- Bila UI baru memang diperlukan, gunakan kembali komponen, validasi, action,
+  serta kontrak API yang tersedia. Tetapkan satu implementasi utama untuk
+  perilaku yang sama; jangan membiarkan salinan logika berkembang sendiri.
+- Popup/modal untuk konfirmasi tindakan yang memang memerlukan konfirmasi,
+  seperti penghapusan atau pemulihan dataset, tetap dapat digunakan. Jangan
+  menjadikan popup sebagai editor alternatif ketika form edit utama sudah ada.
+
+### Kriteria penyelesaian perubahan UI
+
+- Tinjau diff untuk memastikan tidak ada route, halaman, form, modal, endpoint,
+  atau logika simpan duplikat yang tidak diperlukan.
+- Verifikasi pintu masuk baru menggunakan alur utama dan mempertahankan konteks
+  kembali. Untuk perubahan perilaku, cakup kondisi boleh membaca saja, boleh
+  mengedit, dan tidak boleh mengakses, sesuai risiko perubahan.
+- Pastikan hak edit ditentukan oleh permission dan keadaan record, bukan oleh
+  halaman asal user. Pastikan perubahan tetap tercatat melalui audit yang sama.
+- Jika menemukan duplikasi pada area yang sedang diubah, arahkan pekerjaan baru
+  ke implementasi utama dan konsolidasikan bagian yang diperlukan dalam scope.
+  Jangan memperluas pekerjaan menjadi refactor seluruh aplikasi tanpa kebutuhan.
 
 ## Perintah kerja dan verifikasi
 
@@ -243,6 +408,15 @@ Vite CLI through Node. Do not start a second copy if ports 8000 or 5175 are
 already serving the application. Keep the launcher process running while
 working and stop it with `Ctrl+C` when the session ends.
 
+## Handover terbaru — 2026-10-27
+
+Baca [`docs/handover-2026-10-27.md`](docs/handover-2026-10-27.md) sebelum
+melanjutkan pekerjaan sesi berikutnya. Dokumen tersebut memuat konteks alur
+penghapusan akun, penggunaan ulang form jurnal, batch penggantian akun,
+pemulihan demo, dan catatan verifikasi. Untuk perilaku PT. Fake Data, ikuti
+amendment sandbox latihan di `docs/spec.md` dan `docs/decisions.md`; handover
+Agustus di bawah merupakan catatan historis.
+
 ## Current handover — 2026-08-24
 
 The latest delivered work is committed and pushed on `main` as
@@ -255,8 +429,9 @@ synced after the push. The working tree was clean at handoff.
 `entities.is_fake_data = true` and workspace code `FAKE-DATA`. Its complete
 database-backed fixture is provisioned by `FakeDataEntitySeeder` through
 `NativeFakeDataProvisioner`, not by the generic UI importer. The current fixture
-is version `2026.1.0`, labelled `Demo 2026`, and must contain exactly one open
-period from `2026-01-01` through `2026-12-31`.
+is version `2026.1.0`, labelled `Demo 2026`, and initially contains one open
+baseline period from `2026-01-01` through `2026-12-31`. Additional manual
+practice periods may exist and are preserved by dataset restore.
 
 The fixture intentionally includes COA, Intern/Fiskal journals in multiple
 workflow statuses, journal templates, recurring-journal examples, fiscal
@@ -265,11 +440,11 @@ webhooks/deliveries, attachments, and demo users/roles. Recurring examples are
 display-only: `RunRecurringJournalsCommand` skips fake entities.
 
 When switching from an entity on period 2028 (or another year) to PT. Fake Data,
-the frontend clears the old period selection and loads the sole Demo 2026
-period. Backend period queries remain entity-scoped and reject cross-entity
+the frontend clears the old period selection and loads an eligible period in
+that entity (initially Demo 2026). Backend period queries remain entity-scoped and reject cross-entity
 period IDs.
 
-### Import, reset, and immutability contracts
+### Import, reset, and sandbox contracts
 
 For normal entities, SPA fake-data import is deliberately limited to the COA
 (`accounts`) and impersonation users (`users`). Import All, periods, journals,
@@ -289,14 +464,18 @@ the fixture transactionally, and records `fake_data.dataset_reset`. The audit
 row is written before destructive record/storage work so an audit failure aborts
 the reset. Attachment objects are cleaned only after a successful commit.
 
-Native periods reject create/update/delete/close/reopen at the API boundary.
-Native `posted` and `reversed` journals, plus their attachments, are read-only;
-draft examples remain available for permission-appropriate simulation. The
-guard is in `app/Http/Controllers/Api/Spa/Concerns/ProtectsNativeFakeData.php`.
+Product amendment 2026-10-27: PT. Fake Data is an editable practice sandbox.
+Native periods, journals, and journal attachments use the same role, status,
+open-period, and balancing rules as ordinary entities. There is no additional
+native-demo write lock. Supervisor/admin may edit posted examples with the
+required permissions; operators still cannot edit posted journals, and Inspector
+remains fiscal-only/read-only. Reversed journals remain read-only by the normal
+workflow. Restore Demo Data rebuilds verified marked fixtures and preserves
+manual/unverifiable records. Background recurring execution remains disabled.
 
 ### Frontend handover
 
-Settings shows the dataset/version badge, immutable-period/journal notices, and
+Settings shows the dataset/version badge, editable-sandbox guidance, and
 the preview/confirmation/reset modal. The Fake Data menu is shown only when the
 active entity grants `settings.fake_data.manage` or the session is an SSO admin;
 the backend remains the authorization boundary. The auth bootstrap exposes

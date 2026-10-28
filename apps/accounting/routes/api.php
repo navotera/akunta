@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Spa\FiscalAdjustmentController;
 use App\Http\Controllers\Api\Spa\InstallationOnboardingController;
 use App\Http\Controllers\Api\Spa\OnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
+use App\Http\Controllers\Api\Spa\PermissionManagementController;
 use App\Http\Controllers\Api\Spa\ReportingController;
 use App\Http\Controllers\Api\Spa\RoleManagementController;
 use App\Http\Controllers\Api\Spa\SchedulerHealthController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Api\V1\JournalController;
 use App\Http\Controllers\Api\V1\JournalTemplateController;
 use App\Http\Controllers\Api\V1\RecurringJournalController;
 use App\Http\Controllers\Api\V1\WebhookSubscriptionController;
+use App\Http\Middleware\EnforceSpaPermissions;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -62,9 +64,15 @@ Route::post('webhooks/incoming/{secret}', InboundWebhookController::class)
 | SPA-only API surface (cookie auth) — `/api/v1/spa/*`
 |--------------------------------------------------------------------------
 */
-Route::middleware(['web', 'auth:sanctum'])
+Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
     ->prefix('v1/spa')
     ->group(function () {
+        Route::get('permission-management', [PermissionManagementController::class, 'index']);
+        Route::post('permission-management/roles', [PermissionManagementController::class, 'createRole']);
+        Route::patch('permission-management/roles/{role}', [PermissionManagementController::class, 'renameRole']);
+        Route::delete('permission-management/roles/{role}', [PermissionManagementController::class, 'removeRole']);
+        Route::put('permission-management/{role}', [PermissionManagementController::class, 'update']);
+        Route::delete('permission-management/{role}', [PermissionManagementController::class, 'reset']);
         Route::get('accounts', [AccountController::class, 'index']);
         Route::get('accounts/{id}', [AccountController::class, 'show']);
         Route::post('accounts', [AccountController::class, 'store']);
@@ -78,6 +86,7 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::delete('periods/{id}', [PeriodController::class, 'destroy']);
         Route::post('periods/{id}/close', [PeriodController::class, 'close']);
         Route::post('periods/{id}/reopen', [PeriodController::class, 'reopen']);
+        Route::post('periods/{id}/deactivate', [PeriodController::class, 'deactivate']);
         Route::get('journal-templates', [App\Http\Controllers\Api\Spa\JournalTemplateController::class, 'index']);
         Route::get('journal-templates/{id}', [App\Http\Controllers\Api\Spa\JournalTemplateController::class, 'show']);
         Route::post('journal-templates', [App\Http\Controllers\Api\Spa\JournalTemplateController::class, 'store']);
@@ -102,6 +111,8 @@ Route::middleware(['web', 'auth:sanctum'])
         Route::get('journals', [App\Http\Controllers\Api\Spa\JournalController::class, 'index']);
         Route::get('journals/next-number', [App\Http\Controllers\Api\Spa\JournalController::class, 'nextNumber']);
         Route::get('journals/next-transaction-code', [App\Http\Controllers\Api\Spa\JournalController::class, 'nextTransactionCode']);
+        Route::post('journals/replace-account/preview', [App\Http\Controllers\Api\Spa\JournalController::class, 'previewAccountReplacement']);
+        Route::post('journals/replace-account', [App\Http\Controllers\Api\Spa\JournalController::class, 'replaceAccountsBatch']);
         Route::get('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'show']);
         Route::post('journals', [App\Http\Controllers\Api\Spa\JournalController::class, 'store']);
         Route::patch('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'update']);
@@ -158,6 +169,7 @@ Route::middleware(['web', 'auth:sanctum'])
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
         Route::post('role-management/assignments', [RoleManagementController::class, 'assign']);
+        Route::post('role-management/bulk-assign', [RoleManagementController::class, 'bulkUpdate']);
         Route::patch('role-management/{assignmentId}', [RoleManagementController::class, 'update']);
         Route::post('role-management/{assignmentId}/impersonate', [RoleManagementController::class, 'impersonate']);
         Route::post('role-management/stop-impersonation', [RoleManagementController::class, 'stopImpersonation']);

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Audit\Models\AuditLog;
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountingPermissions;
 use App\Services\FakeDataService;
 use App\Services\NativeFakeDataProvisioner;
 use App\Services\NativeFakeDataResetService;
@@ -63,7 +65,7 @@ class FakeDataController extends Controller
 
         return response()->json(['data' => [
             ...$result,
-            'message' => 'Dataset PT. Fake Data berhasil di-reset ke Demo 2026.',
+            'message' => 'Data demo PT. Fake Data berhasil dipulihkan ke Demo 2026.',
             'dataset' => $this->dataset($entity->fresh()),
         ]]);
     }
@@ -103,6 +105,7 @@ class FakeDataController extends Controller
     private function authorizeFakeData(Entity $entity): void
     {
         $user = Auth::user();
+        abort_if($user !== null && app(AccountingPermissions::class)->isInspector($user, $entity), 403, 'Inspector hanya dapat membaca data Fiskal.');
         abort_unless(
             $user !== null && (
                 (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
@@ -154,14 +157,23 @@ class FakeDataController extends Controller
             return null;
         }
 
+        $lastReset = AuditLog::query()->with('actor:id,name')
+            ->where('entity_id', $entity->id)
+            ->where('resource_type', Entity::class)
+            ->where('resource_id', $entity->id)
+            ->where('action', 'fake_data.dataset_reset')
+            ->latest('created_at')->first();
+
         return [
             'label' => NativeFakeDataProvisioner::DATASET_LABEL,
             'version' => (string) data_get($entity->workspace_settings, 'native_fake_data_version', 'legacy'),
             'target_version' => NativeFakeDataProvisioner::DATASET_VERSION,
             'period_year' => FakeDataService::NATIVE_DEMO_YEAR,
-            'immutable_period' => true,
-            'immutable_posted_journals' => true,
+            'immutable_period' => false,
+            'immutable_posted_journals' => false,
             'background_recurring_disabled' => true,
+            'last_restored_at' => $lastReset?->created_at?->toIso8601String(),
+            'last_restored_by' => $lastReset?->actor?->name,
         ];
     }
 }

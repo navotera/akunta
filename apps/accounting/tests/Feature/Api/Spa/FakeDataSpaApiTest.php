@@ -10,13 +10,12 @@ use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use App\Models\Account;
-use App\Models\Attachment;
 use App\Models\FakeDataRecord;
 use App\Models\Journal;
+use App\Models\JournalTemplate;
 use App\Models\Period;
 use App\Models\User;
 use App\Services\NativeFakeDataProvisioner;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -180,6 +179,124 @@ it('previews and resets only the versioned native dataset with an audit trail', 
             ->exists())->toBeTrue();
 });
 
+it('restores edited deleted and Trashed demo data repeatedly while preserving manual practice records', function () {
+    Storage::fake('local');
+    config()->set('filesystems.default', 'local');
+    $this->entity->forceFill(['is_fake_data' => true, 'workspace_settings' => ['bookkeeping_mode' => 'independent_books']])->save();
+    app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
+    $journalCount = Journal::where('entity_id', $this->entity->id)->count();
+    $draft = Journal::where('entity_id', $this->entity->id)->where('status', 'draft')->firstOrFail();
+    $draftNumber = $draft->number;
+    $draftMemo = $draft->memo;
+    $draft->delete();
+    $edited = Journal::where('entity_id', $this->entity->id)->where('journal_mode', 'fiscal')->firstOrFail();
+    $editedNumber = $edited->number;
+    $editedMemo = $edited->memo;
+    $edited->update(['memo' => 'Perubahan untuk uji coba bug']);
+    $template = JournalTemplate::where('entity_id', $this->entity->id)->whereDoesntHave('recurringSchedules')->firstOrFail();
+    $templateCode = $template->code;
+    $template->delete();
+
+    $manualAccount = Account::create([
+        'entity_id' => $this->entity->id, 'code' => 'MANUAL-PRACTICE', 'name' => 'Latihan manual',
+        'type' => 'asset', 'normal_balance' => 'debit', 'availability' => 'both',
+    ]);
+    $manual = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $draft->period_id,
+        'number' => 'MANUAL-PRACTICE', 'date' => '2026-10-01', 'memo' => 'Latihan tambahan tetap ada',
+    ]);
+    $manual->entries()->createMany([
+        ['line_no' => 1, 'account_id' => $manualAccount->id, 'debit' => 100, 'credit' => 0],
+        ['line_no' => 2, 'account_id' => $manualAccount->id, 'debit' => 0, 'credit' => 100],
+    ]);
+    $manual->delete();
+
+    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    foreach ([1, 2] as $attempt) {
+        $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
+        $preview->assertJsonPath('data.managed_records.trashed_journals', $attempt === 1 ? 1 : 0)
+            ->assertJsonPath('data.preserved_manual_records.journals', 1);
+        $this->postJson('/api/v1/spa/fake-data/reset', [
+            'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+            'preview_token' => $preview->json('data.preview_token'),
+        ])->assertOk()->assertJsonPath('data.dataset.last_restored_by', $this->user->name);
+        expect(Journal::withTrashed()->where('entity_id', $this->entity->id)->count())->toBe($journalCount + 1)
+            ->and(Journal::where('entity_id', $this->entity->id)->where('number', $draftNumber)->sole()->memo)->toBe($draftMemo)
+            ->and(Journal::where('entity_id', $this->entity->id)->where('number', $editedNumber)->sole()->memo)->toBe($editedMemo)
+            ->and(JournalTemplate::where('entity_id', $this->entity->id)->where('code', $templateCode)->exists())->toBeTrue()
+            ->and(Journal::withTrashed()->find($manual->id)?->trashed())->toBeTrue()
+            ->and(Journal::withTrashed()->find($manual->id)?->entries()->count())->toBe(2);
+    }
+    expect(Journal::withTrashed()->find($draft->id))->toBeNull()
+        ->and(AuditLog::where('entity_id', $this->entity->id)->where('action', 'fake_data.dataset_reset')->count())->toBe(2);
+});
+
+it('requires a new restore preview after a demo journal is changed or deleted', function (string $change) {
+    Storage::fake('local');
+    config()->set('filesystems.default', 'local');
+    $this->entity->forceFill(['is_fake_data' => true, 'workspace_settings' => ['bookkeeping_mode' => 'independent_books']])->save();
+    app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
+    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
+    $draft = Journal::where('entity_id', $this->entity->id)->where('status', 'draft')->firstOrFail();
+    if ($change === 'deleted') {
+        $draft->delete();
+    } else {
+        $draft->update(['memo' => 'Aktivitas setelah ringkasan pemulihan']);
+    }
+    $this->postJson('/api/v1/spa/fake-data/reset', [
+        'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+        'preview_token' => $preview->json('data.preview_token'),
+    ])->assertConflict();
+    expect(AuditLog::where('action', 'fake_data.dataset_reset')->exists())->toBeFalse();
+})->with(['edited', 'deleted']);
+
+it('preserves foreign records even when corrupt demo markers refer to them during restore', function () {
+    Storage::fake('local');
+    config()->set('filesystems.default', 'local');
+    $this->entity->forceFill(['is_fake_data' => true, 'workspace_settings' => ['bookkeeping_mode' => 'independent_books']])->save();
+    app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
+    $foreign = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'Foreign restore fixture']);
+    $parent = Account::create(['entity_id' => $foreign->id, 'code' => '1000', 'name' => 'Parent', 'type' => 'asset', 'normal_balance' => 'debit']);
+    $child = Account::create(['entity_id' => $foreign->id, 'code' => '1001', 'name' => 'Child', 'type' => 'asset', 'normal_balance' => 'debit', 'parent_account_id' => $parent->id]);
+    $foreignPeriod = Period::create(['entity_id' => $foreign->id, 'name' => '2026', 'start_date' => '2026-01-01', 'end_date' => '2026-12-31']);
+    $foreignJournal = Journal::create(['entity_id' => $foreign->id, 'period_id' => $foreignPeriod->id, 'number' => 'FOREIGN-RESTORE', 'date' => '2026-10-01', 'memo' => 'Do not change']);
+    $foreignJournal->update(['source_id' => $foreignJournal->id]);
+    foreach ([$child, $foreignJournal] as $foreignModel) {
+        FakeDataRecord::create(['entity_id' => $this->entity->id, 'group_key' => 'native_fake_entity', 'model_type' => $foreignModel::class, 'model_id' => $foreignModel->id]);
+    }
+    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
+    $this->postJson('/api/v1/spa/fake-data/reset', [
+        'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+        'preview_token' => $preview->json('data.preview_token'),
+    ])->assertOk();
+    expect($child->refresh()->parent_account_id)->toBe($parent->id)
+        ->and($foreignJournal->refresh()->source_id)->toBe($foreignJournal->id)
+        ->and($foreignJournal->memo)->toBe('Do not change');
+});
+
+it('limits native restore to authorized users in the demo workspace', function (string $access, int $status) {
+    if ($access !== 'normal') {
+        $this->entity->update(['is_fake_data' => true]);
+    }
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id);
+    if ($access !== 'denied') {
+        $this->withSession(['ecopa.app_role' => 'admin']);
+    }
+    if ($access === 'inspector') {
+        $this->user->assignments()->delete();
+        $role = Role::create(['code' => 'inspector', 'name' => 'Inspector', 'is_preset' => true]);
+        $this->user->assignments()->create(['entity_id' => $this->entity->id, 'app_id' => RbacApp::where('code', 'accounting')->sole()->id, 'role_id' => $role->id]);
+    }
+    $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertStatus($status);
+    $this->postJson('/api/v1/spa/fake-data/reset', [
+        'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+        'preview_token' => str_repeat('a', 64),
+    ])->assertStatus($status);
+    expect(AuditLog::where('action', 'fake_data.dataset_reset')->exists())->toBeFalse();
+})->with([['normal', 409], ['denied', 403], ['inspector', 403]]);
+
 it('rolls back before reset mutations when the audit trail cannot be written', function () {
     Storage::fake('local');
     config()->set('filesystems.default', 'local');
@@ -229,7 +346,7 @@ it('rolls back before reset mutations when the audit trail cannot be written', f
             ->exists())->toBeFalse();
 });
 
-it('rejects stale reset previews and locks native periods and recorded journals', function () {
+it('rejects stale reset previews before changing sandbox data', function () {
     Storage::fake('local');
     config()->set('filesystems.default', 'local');
     $this->entity->forceFill([
@@ -258,55 +375,5 @@ it('rejects stale reset previews and locks native periods and recorded journals'
             'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
             'preview_token' => $preview->json('data.preview_token'),
         ])
-        ->assertConflict();
-
-    $period = Period::query()->where('entity_id', $this->entity->id)->sole();
-    $attachment = Attachment::query()
-        ->where('entity_id', $this->entity->id)
-        ->where('attachable_type', Journal::class)
-        ->firstOrFail();
-    $posted = Journal::query()
-        ->where('entity_id', $this->entity->id)
-        ->where('status', Journal::STATUS_POSTED)
-        ->findOrFail($attachment->attachable_id);
-    $headers = ['X-Tenant-Slug' => $this->entity->id];
-
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->postJson('/api/v1/spa/periods', [
-            'name' => 'Demo 2027',
-            'start_date' => '2027-01-01',
-            'end_date' => '2027-12-31',
-        ])->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->patchJson('/api/v1/spa/periods/'.$period->id, [
-            'name' => 'Diubah',
-            'start_date' => '2026-01-01',
-            'end_date' => '2026-12-31',
-        ])->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->deleteJson('/api/v1/spa/periods/'.$period->id)
-        ->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->postJson('/api/v1/spa/periods/'.$period->id.'/close')
-        ->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->postJson('/api/v1/spa/periods/'.$period->id.'/reopen')
-        ->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->patchJson('/api/v1/spa/journals/'.$posted->id, [])
-        ->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->postJson('/api/v1/spa/journals/'.$posted->id.'/reverse', ['reason' => 'Tidak boleh'])
-        ->assertConflict();
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->post('/api/v1/spa/attachments', [
-            'attachable_type' => Journal::class,
-            'attachable_id' => $posted->id,
-            'file' => UploadedFile::fake()->create('locked.pdf', 10, 'application/pdf'),
-        ], $headers)
-        ->assertConflict();
-
-    $this->actingAs($this->user)->withHeaders($headers)
-        ->deleteJson('/api/v1/spa/attachments/'.$attachment->id)
         ->assertConflict();
 });
