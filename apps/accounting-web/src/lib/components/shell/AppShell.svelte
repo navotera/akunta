@@ -220,6 +220,16 @@
   const canSwitchPeriod = $derived(can('period.read'));
   const isInspector = $derived(isFiscalInspector());
   const currentEntity = $derived(tenant.available.find((item) => item.id === tenant.id));
+  const impersonatedRole = $derived(
+    (currentEntity?.roles ?? auth.user?.roles ?? [])
+      .map((role) =>
+        role
+          .split(/[_\s-]+/)
+          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' '),
+      )
+      .join(', ') || 'Tanpa role',
+  );
   const currentEntityIsFake = $derived(currentEntity?.is_fake_data ?? false);
   const currentDemoVersion = $derived(currentEntity?.demo_dataset_version ?? 'legacy');
   const issueReportUrl = $derived(currentEntity?.issue_report_url ?? null);
@@ -1023,7 +1033,10 @@
       <div
         class="flex items-center justify-between gap-3 bg-warning px-6 py-2 text-sm font-semibold text-white"
       >
-        <span class="text-black">Anda sedang melihat aplikasi sebagai user fake.</span>
+        <span class="text-black">
+          Anda sedang melihat aplikasi sebagai user {auth.user?.name ?? 'tidak diketahui'} :
+          {impersonatedRole}.
+        </span>
         <button
           type="button"
           class="rounded bg-[#0F172A] px-3 py-1 text-xs text-white hover:bg-[#1E293B]"
