@@ -9,6 +9,7 @@ use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use App\Models\Account;
 use App\Models\Journal;
+use App\Models\JournalTemplate;
 use App\Models\Period;
 use App\Models\User;
 use App\Services\AccountingPermissions;
@@ -105,6 +106,42 @@ it('applies template grants and revocations immediately without changing shared 
     $this->actingAs($this->operator)->postJson('/api/v1/spa/journal-templates', [...$template, 'code' => 'DENIED'])
         ->assertForbidden();
     expect(DB::table('role_permissions')->count())->toBe($pivotCount);
+});
+
+it('applies saved template edit and delete grants during operator impersonation', function () {
+    $template = JournalTemplate::create([
+        'entity_id' => $this->entity->id, 'code' => 'PERM-TPL', 'name' => 'Template awal',
+    ]);
+    $url = '/api/v1/spa/journal-templates/'.$template->id;
+    $payload = ['code' => 'PERM-TPL', 'name' => 'Template diperbarui', 'lines' => []];
+    $defaults = app(AccountingPermissions::class)->defaults('operator');
+
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->withSession(['ecopa.app_role' => 'admin', 'impersonator_id' => $this->admin->id])
+        ->patchJson($url, $payload)->assertForbidden();
+    $this->deleteJson($url)->assertForbidden();
+
+    session()->forget(['impersonator_id', 'ecopa.app_role']);
+    saveOperatorPermissions($this, [...$defaults, 'template.update', 'template.delete']);
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->withSession(['ecopa.app_role' => 'admin', 'impersonator_id' => $this->admin->id]);
+    $permissions = collect($this->getJson('/api/v1/me')->assertOk()->json('data.tenants'))
+        ->firstWhere('id', $this->entity->id)['permissions'];
+    expect($permissions)->toContain('template.update', 'template.delete');
+    $this->patchJson($url, $payload)->assertOk()->assertJsonPath('data.name', 'Template diperbarui');
+    $this->deleteJson($url)->assertNoContent();
+
+    session()->forget(['impersonator_id', 'ecopa.app_role']);
+    saveOperatorPermissions($this, $defaults);
+    $second = JournalTemplate::create([
+        'entity_id' => $this->entity->id, 'code' => 'PERM-TPL-2', 'name' => 'Template kedua',
+    ]);
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->withSession(['ecopa.app_role' => 'admin', 'impersonator_id' => $this->admin->id])
+        ->patchJson('/api/v1/spa/journal-templates/'.$second->id, [
+            'code' => $second->code, 'name' => 'Ditolak', 'lines' => [],
+        ])->assertForbidden();
+    $this->deleteJson('/api/v1/spa/journal-templates/'.$second->id)->assertForbidden();
 });
 
 it('keeps inspector boundaries even if a second role grants dashboard access', function () {

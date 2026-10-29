@@ -464,11 +464,28 @@
             >
           </div>
           {#if activeTab === 'permissions'}
-            <div class="mt-3 flex flex-wrap items-center justify-end gap-3">
+            <div
+              class="sticky top-0 z-10 mt-3 flex flex-wrap items-center justify-end gap-3 border-b border-border-default bg-card-bg py-3"
+            >
               <p class="min-w-0 flex-1 basis-52 text-xs leading-5 text-text-muted">
-                Izin baca pendukung ikut diaktifkan saat memilih aksi. Angka aktif mengikuti pilihan
-                Anda.
+                {#if changed(selected.code)}
+                  <span class="font-semibold text-warning" role="status"
+                    >Perubahan belum disimpan.</span
+                  >
+                  Klik Simpan sebelum impersonasi agar izin baru berlaku.
+                {:else}
+                  Izin yang tersimpan berlaku saat impersonasi. Izin baca pendukung ikut diaktifkan
+                  saat memilih aksi.
+                {/if}
               </p>
+              <button
+                type="button"
+                class="shrink-0 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                disabled={busy || !changed(selected.code)}
+                onclick={() => savePermissions()}
+                data-testid={'save-permissions-top-' + selected.code}
+                >{busy ? 'Menyimpan…' : 'Simpan ' + selected.name}</button
+              >
               {#if selected.is_preset !== false}
                 <button
                   type="button"

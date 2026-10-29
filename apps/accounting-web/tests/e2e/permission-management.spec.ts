@@ -267,11 +267,14 @@ test('summarizes active permissions per category and preserves changes when coll
   await expect(supervisorCount).toHaveText('5/5 aktif');
   await page.getByTestId('select-role-operator').click();
   await expect(category).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('save-permissions-top-operator')).toBeDisabled();
   await expect(page.getByTestId('permission-operator-account.rename')).not.toBeVisible();
   await expect(operatorCount).toHaveText('1/5 aktif');
   await category.focus();
   await page.keyboard.press('Enter');
   await page.getByTestId('permission-operator-account.rename').check();
+  await expect(page.getByText('Perubahan belum disimpan.')).toBeVisible();
+  await expect(page.getByTestId('save-permissions-top-operator')).toBeEnabled();
   await expect(operatorCount).toHaveText('2/5 aktif');
   await category.click();
   await expect(category).toHaveAttribute('aria-expanded', 'false');
@@ -285,8 +288,9 @@ test('summarizes active permissions per category and preserves changes when coll
   await page.getByTestId('select-role-supervisor').click();
   await expect(supervisorCount).toContainText('5/5 aktif');
   await page.getByTestId('select-role-operator').click();
-  await page.getByTestId('save-permissions-operator').click();
+  await page.getByTestId('save-permissions-top-operator').click();
   await expect(page.getByRole('status')).toContainText('berhasil disimpan');
+  await expect(page.getByText('Perubahan belum disimpan.')).toHaveCount(0);
   page.once('dialog', (dialog) => void dialog.accept());
   await page.getByTestId('reset-permissions-operator').click();
   await expect(operatorCount).toHaveText('1/5 aktif');
