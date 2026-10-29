@@ -35,18 +35,27 @@ async function mockTemplateApi(page: Page, deleteStatus = 204) {
       await route.fulfill({
         json: {
           data: {
-            id: 'template-admin',
-            name: 'Admin Template',
+            id: 'template-operator',
+            name: 'Operator Template',
             email: 'template@example.test',
-            roles: ['admin'],
-            is_admin: true,
-            is_sso_admin: true,
+            roles: ['operator'],
+            is_admin: false,
+            is_sso_admin: false,
+            is_impersonating: true,
             tenants: [
               {
                 id: ENTITY_ID,
                 name: 'PT Template Test',
                 is_active: true,
                 bookkeeping_mode: 'independent_books',
+                roles: ['operator'],
+                permissions: [
+                  'account.read',
+                  'template.read',
+                  'template.create',
+                  'template.update',
+                  'template.delete',
+                ],
               },
             ],
           },
