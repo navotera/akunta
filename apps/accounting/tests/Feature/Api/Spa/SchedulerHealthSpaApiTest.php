@@ -24,7 +24,7 @@ beforeEach(function () {
         'password_hash' => bcrypt('x'),
     ]);
     $app = RbacApp::create([
-        'code' => 'scheduler-'.uniqid(),
+        'code' => 'accounting',
         'name' => 'Scheduler App',
         'version' => '0.1',
         'enabled' => true,

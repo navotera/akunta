@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import {
     sourceRefApi,
     type SourceRefAggregateRow,
@@ -29,9 +30,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let journalMode = $state<BookToggleValue>('internal');
-  let isInspector = $derived(
-    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
-  );
+  let isInspector = $derived(isFiscalInspector());
 
   function parsePair(): { source_app: string; ref_type: string } | null {
     if (!pair) return null;

@@ -519,7 +519,7 @@
                       ><th scope="row" class="text-left font-semibold"
                         ><button
                           type="button"
-                          class="flex w-full items-center gap-2 px-3 py-3 text-left hover:bg-primary-light focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2"
+                          class="flex w-full items-center gap-2 px-3 py-3 text-left hover:bg-page-bg focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2"
                           aria-expanded={expanded}
                           aria-controls={groupId}
                           onclick={() =>

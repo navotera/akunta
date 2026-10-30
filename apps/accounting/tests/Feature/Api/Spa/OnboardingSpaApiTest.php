@@ -18,7 +18,7 @@ beforeEach(function () {
         'name' => 'OB', 'email' => 'ob-'.uniqid().'@x.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'ob-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'ob-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
     grantSpaPermissionsForTest($role, $app, ['account.read', 'period.create', 'settings.coa_template.manage', 'workspace.manage']);
     $this->user->assignments()->create([
