@@ -3,7 +3,8 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
-  import { can } from '$lib/stores/permissions.svelte.js';
+  import { can, canVisitWorkspacePage } from '$lib/stores/permissions.svelte.js';
+  import AccessDeniedContent from '$lib/components/shell/AccessDeniedContent.svelte';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
   import { journalApi } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
@@ -26,6 +27,9 @@
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
   let accountsRequest = 0;
+  let loading = $state(true);
+  let loadFailed = $state(false);
+  const allowed = $derived(canVisitWorkspacePage(`${$page.url.pathname}${$page.url.search}`));
   let templateMode = $derived($page.url.searchParams.get('as_template') === '1');
   let templateId = $derived($page.url.searchParams.get('template_id'));
   let editingTemplate = $state<JournalTemplateDetail | null>(null);
@@ -37,7 +41,7 @@
   }
 
   afterNavigate(({ to }) => {
-    if (to?.url.pathname === '/journals/new') void refreshAccounts();
+    if (to?.url.pathname === '/journals/new' && allowed) void refreshAccounts().catch(captureError);
   });
 
   function captureError(e: unknown) {
@@ -66,10 +70,18 @@
         return;
       }
     }
-    const availableTemplates = can('template.read') ? await templateApi.list(50) : [];
-    await refreshAccounts();
-    templates = availableTemplates;
-    if (templateId) editingTemplate = await templateApi.show(templateId);
+    try {
+      if (!allowed) return;
+      const availableTemplates = can('template.read') ? await templateApi.list(50) : [];
+      await refreshAccounts();
+      templates = availableTemplates;
+      if (templateId) editingTemplate = await templateApi.show(templateId);
+    } catch (e) {
+      loadFailed = true;
+      captureError(e);
+    } finally {
+      loading = false;
+    }
   });
 
   async function uploadAttachments(
@@ -242,8 +254,14 @@
   }
 </script>
 
-{#if accounts.length === 0}
+{#if !allowed && auth.user}
+  <AccessDeniedContent
+    message="Anda tidak memiliki izin untuk membuka form ini pada workspace aktif."
+  />
+{:else if loading}
   <div class="flex min-h-screen items-center justify-center text-text-muted">Memuat akun…</div>
+{:else if loadFailed}
+  <p role="alert" class="p-6 text-danger">{serverMessage}</p>
 {:else}
   <JournalForm
     {accounts}

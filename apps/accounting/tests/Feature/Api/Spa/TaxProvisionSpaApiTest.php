@@ -81,7 +81,7 @@ beforeEach(function () {
     ]);
 
     $app = RbacApp::create([
-        'code' => 'tax-provision-test-'.uniqid(),
+        'code' => 'accounting',
         'name' => 'Accounting',
         'version' => '1',
         'enabled' => true,

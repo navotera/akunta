@@ -17,7 +17,7 @@ beforeEach(function () {
         'name' => 'RC', 'email' => 'rc-'.uniqid().'@x.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'rc-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'rc-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
     grantSpaPermissionsForTest($role, $app, ['recurring.read', 'recurring.create', 'recurring.update', 'recurring.delete', 'recurring.run']);
     $this->user->assignments()->create([
@@ -72,4 +72,18 @@ it('lists recurring schedules per tenant', function () {
         ->getJson('/api/v1/spa/recurring-journals')
         ->assertOk()
         ->assertJsonCount(1, 'data');
+});
+
+it('rejects a cross-workspace template when creating or updating a schedule', function () {
+    $other = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'Other workspace']);
+    $foreignTemplate = JournalTemplate::create(['entity_id' => $other->id, 'code' => 'FOREIGN', 'name' => 'Other template']);
+    $schedule = RecurringJournal::create([
+        'entity_id' => $this->entity->id, 'template_id' => $this->template->id, 'name' => 'Original',
+        'frequency' => 'monthly', 'start_date' => '2026-01-01', 'created_by' => $this->user->id,
+    ]);
+    $payload = ['template_id' => $foreignTemplate->id, 'name' => 'Changed', 'frequency' => 'monthly', 'start_date' => '2026-01-01'];
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/recurring-journals', $payload)->assertUnprocessable()->assertJsonValidationErrors('template_id');
+    $this->patchJson('/api/v1/spa/recurring-journals/'.$schedule->id, $payload)->assertUnprocessable()->assertJsonValidationErrors('template_id');
+    expect($schedule->fresh()->template_id)->toBe($this->template->id);
 });

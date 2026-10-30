@@ -52,6 +52,10 @@ class EnforceSpaPermissions
             app(InstallationOnboardingService::class)->assertIncomplete();
         }
         $entity = $this->resolveEntity($request);
+        if ($controller === 'SourceRefController' && $method === 'index'
+            && Gate::allows('accounting.permission', ['report.read', $entity])) {
+            return $next($request);
+        }
         if ($accountUpdate) {
             $account = Account::where('entity_id', $entity->id)->findOrFail($request->route('id'));
             Gate::authorize('accounting.permission', ['account.read', $entity]);

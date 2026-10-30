@@ -21,7 +21,7 @@ beforeEach(function () {
         'name' => 'WG', 'email' => 'wg-'.uniqid().'@x.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'wg-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'wg-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
     grantSpaPermissionsForTest($role, $app, ['dashboard.read', 'journal.read']);
     $this->user->assignments()->create([

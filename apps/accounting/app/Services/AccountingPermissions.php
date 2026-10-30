@@ -124,6 +124,9 @@ class AccountingPermissions
         }
 
         foreach ($this->assignments($user, $entity) as $assignment) {
+            if ($assignment->app?->code !== 'accounting') {
+                continue;
+            }
             $role = $assignment->role;
             if (! $role) {
                 continue;

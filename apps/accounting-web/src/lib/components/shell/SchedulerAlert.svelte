@@ -3,6 +3,7 @@
   import { schedulerApi, type SchedulerHealth } from '$lib/api/scheduler.js';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
 
   let schedulerHealth = $state<SchedulerHealth | null>(null);
   let schedulerLoading = $state(false);
@@ -10,10 +11,12 @@
   let poll: number | null = null;
 
   const canManageCron = $derived(
-    Boolean(
-      auth.user?.is_sso_admin ||
-      auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
-    ),
+    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
+      ? can('settings.cron.manage')
+      : Boolean(
+          auth.user?.is_sso_admin ||
+          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
+        ),
   );
 
   async function loadSchedulerHealth() {

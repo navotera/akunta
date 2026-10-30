@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { tick } from 'svelte';
+  import { can, canVisitWorkspacePage } from '$lib/stores/permissions.svelte.js';
   import { accountApi, type Account } from '$lib/api/account.js';
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { periodApi, type Period } from '$lib/api/period.js';
@@ -95,7 +96,11 @@
   }
 
   const filteredPages = $derived(
-    PAGES.filter((p) => fuzzy(p.label, query) || (p.sub ? fuzzy(p.sub, query) : false)),
+    PAGES.filter(
+      (p) =>
+        canVisitWorkspacePage(p.href) &&
+        (fuzzy(p.label, query) || (p.sub ? fuzzy(p.sub, query) : false)),
+    ),
   );
 
   $effect(() => {
@@ -111,9 +116,11 @@
     debounceTimer = setTimeout(async () => {
       try {
         const [accounts, templates, periods] = await Promise.all([
-          accountApi.list(q).catch(() => [] as Account[]),
-          templateApi.list(20).catch(() => [] as JournalTemplateSummary[]),
-          periodApi.list().catch(() => [] as Period[]),
+          can('account.read') ? accountApi.list(q).catch(() => [] as Account[]) : [],
+          can('template.read')
+            ? templateApi.list(20).catch(() => [] as JournalTemplateSummary[])
+            : [],
+          can('period.read') ? periodApi.list().catch(() => [] as Period[]) : [],
         ]);
         if (ticket !== inflight) return;
         const items: Item[] = [];
@@ -154,7 +161,10 @@
     }, 200);
   });
 
-  const all = $derived<Item[]>([...filteredPages, ...dynamic]);
+  const all = $derived<Item[]>([
+    ...filteredPages,
+    ...dynamic.filter((item) => canVisitWorkspacePage(item.href)),
+  ]);
 
   const grouped = $derived.by(() => {
     const map = new Map<string, Item[]>();
