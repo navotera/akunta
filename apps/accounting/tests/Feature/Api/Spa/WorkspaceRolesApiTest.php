@@ -7,10 +7,12 @@ use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
+use App\Models\Account;
 use App\Models\Journal;
 use App\Models\Period;
 use App\Models\User;
 use App\Services\AccountingPermissions;
+use Illuminate\Support\Facades\Gate;
 
 beforeEach(function () {
     $tenant = Tenant::create(['name' => 'Workspace roles', 'slug' => 'roles-'.uniqid()]);
@@ -38,6 +40,63 @@ function createWorkspaceRole($test, string $name = 'Accounting Assistant', ?stri
         'name' => $name, 'base_role' => $base, 'revision' => $snapshot['revision'],
     ])->assertCreated()->json('data');
 }
+
+it('applies every catalog grant and revoke to bootstrap and Gates within the assigned workspace', function (string $preset) {
+    $snapshot = workspaceRoleSnapshot($this);
+    $code = $preset;
+    $actor = $this->{$preset === 'custom' || $preset === 'inspector_copy' ? 'operator' : $preset};
+    if (in_array($preset, ['custom', 'inspector_copy'], true)) {
+        $snapshot = createWorkspaceRole($this, 'Matrix role', $preset === 'inspector_copy' ? 'inspector' : null);
+        $code = $snapshot['created_role'];
+        $definition = collect($snapshot['roles'])->firstWhere('code', $code);
+        $actor->assignments()->first()->update(['role_id' => $definition['id']]);
+    }
+    $roleId = $actor->assignments()->first()->role_id;
+    $actor->assignments()->create(['app_id' => $this->rbacApp->id, 'entity_id' => $this->otherEntity->id, 'role_id' => $roleId]);
+    $catalog = array_column(app(AccountingPermissions::class)->catalog(), 'code');
+    $grants = in_array($preset, ['inspector', 'inspector_copy'], true)
+        ? config('accounting_permissions.inspector_permissions') : $catalog;
+    $otherBefore = app(AccountingPermissions::class)->roleCodes($this->otherEntity, $code);
+    foreach ([$grants, []] as $permissions) {
+        $snapshot = $this->actingAs($this->admin)->withHeader('X-Tenant-Slug', $this->entity->id)
+            ->putJson('/api/v1/spa/permission-management/'.$code, [
+                'permissions' => $permissions, 'revision' => $snapshot['revision'],
+            ])->assertOk()->json('data');
+        $tenants = collect($this->actingAs($actor)->getJson('/api/v1/me')->assertOk()->json('data.tenants'))->keyBy('id');
+        expect($tenants[$this->entity->id]['permissions'])->toEqualCanonicalizing($permissions);
+        foreach ($catalog as $permission) {
+            expect(Gate::forUser($actor)->allows('accounting.permission', [$permission, $this->entity->fresh()]))
+                ->toBe(in_array($permission, $permissions, true));
+        }
+        expect(app(AccountingPermissions::class)->roleCodes($this->otherEntity->fresh(), $code))->toBe($otherBefore);
+    }
+    $account = Account::create([
+        'entity_id' => $this->entity->id, 'code' => 'MATRIX', 'name' => 'Matrix account',
+        'type' => 'asset', 'normal_balance' => 'debit', 'is_active' => true, 'is_postable' => true,
+    ]);
+    // A raw request must be denied across every configurable feature family after revocation.
+    foreach ([
+        ['GET', 'accounts'], ['POST', 'accounts'], ['PATCH', 'accounts/'.$account->id], ['DELETE', 'accounts/'.$account->id],
+        ['GET', 'journal-templates'], ['POST', 'journal-templates'], ['PATCH', 'journal-templates/'.$this->entity->id], ['DELETE', 'journal-templates/'.$this->entity->id], ['PATCH', 'journal-templates/'.$this->entity->id.'/bookmark'],
+        ['GET', 'journals'], ['POST', 'journals'], ['PATCH', 'journals/'.$this->entity->id], ['DELETE', 'journals/'.$this->entity->id],
+        ['GET', 'periods'], ['POST', 'periods'], ['PATCH', 'periods/'.$this->entity->id], ['DELETE', 'periods/'.$this->entity->id],
+        ['GET', 'recurring-journals'], ['POST', 'recurring-journals'], ['GET', 'auto-mapping'],
+        ['GET', 'reports/trial-balance'], ['GET', 'reports/balance-sheet'], ['GET', 'reports/income-statement'], ['GET', 'reports/general-ledger'], ['GET', 'reports/fiscal-reconciliation'],
+        ['GET', 'fiscal-adjustments'], ['POST', 'fiscal-adjustments'], ['GET', 'tax-provisions/current'], ['POST', 'tax-provisions/preview'], ['POST', 'tax-provisions'],
+        ['GET', 'attachments'], ['POST', 'attachments'], ['GET', 'scheduler/status'], ['GET', 'fake-data'], ['GET', 'widgets/financial-pulse'],
+    ] as [$method, $path]) {
+        $this->json($method, '/api/v1/spa/'.$path)->assertForbidden();
+    }
+    foreach ([
+        'journals' => ['restore', 'post', 'submit', 'cancel-review', 'reject', 'reverse', 'replicate'],
+        'periods' => ['close', 'reopen', 'deactivate'],
+        'recurring-journals' => ['pause', 'resume', 'run'],
+    ] as $resource => $actions) {
+        foreach ($actions as $action) {
+            $this->postJson('/api/v1/spa/'.$resource.'/'.$this->entity->id.'/'.$action)->assertForbidden();
+        }
+    }
+})->with(['supervisor', 'operator', 'inspector', 'custom', 'inspector_copy']);
 
 it('includes all three defaults and keeps Inspector Fiskal read-only', function () {
     $snapshot = workspaceRoleSnapshot($this);

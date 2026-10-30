@@ -218,12 +218,14 @@
     loading = true;
     error = null;
     try {
-      const provisionRequest = taxProvisionApi.current(periodStart, periodEnd).catch((caught) => {
-        if (caught instanceof ApiError && caught.status === 403) {
-          return { data: null, meta: { can_manage: false, can_read: false } };
-        }
-        throw caught;
-      });
+      const provisionRequest = can('fiscal.tax_provision.read')
+        ? taxProvisionApi.current(periodStart, periodEnd).catch((caught) => {
+            if (caught instanceof ApiError && caught.status === 403) {
+              return { data: null, meta: { can_manage: false, can_read: false } };
+            }
+            throw caught;
+          })
+        : Promise.resolve({ data: null, meta: { can_manage: false, can_read: false } });
       const [
         adjustmentResult,
         loadedAccounts,
@@ -234,7 +236,7 @@
       ] = await Promise.all([
         fiscalAdjustmentApi.list(periodStart, periodEnd),
         accountApi.list('', undefined, true, 'fiscal'),
-        accountApi.list('', undefined, true, 'internal'),
+        can('fiscal.tax_provision.read') ? accountApi.list('', undefined, true, 'internal') : [],
         reportingApi.fiscalReconciliation(periodStart, periodEnd).then((response) => response.data),
         journalApi.list({
           per_page: 100,

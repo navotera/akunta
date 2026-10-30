@@ -133,8 +133,8 @@
       const res = await recurringApi.run(r.id);
       closeForm();
       await load();
-      if (res.journal_id) goto(`/journals/${res.journal_id}`);
-      else alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
+      if (res.journal_id && can('journal.read')) goto(`/journals/${res.journal_id}`);
+      else if (!res.journal_id) alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -247,7 +247,10 @@
       role="dialog"
     >
       <h2 class="mb-4 text-lg font-bold">{editing ? `Edit ${editing.name}` : 'Schedule Baru'}</h2>
-      <div class="grid grid-cols-2 gap-3 text-sm">
+      <fieldset
+        disabled={!can(editing ? 'recurring.update' : 'recurring.create')}
+        class="grid grid-cols-2 gap-3 text-sm"
+      >
         <label class="col-span-2">
           <span class="block font-medium mb-1">Template <span class="text-danger">*</span></span>
           <Combobox
@@ -311,7 +314,7 @@
           <input type="checkbox" bind:checked={form.auto_post} disabled={!can('journal.post')} />
           <span>Auto-post setelah jalankan</span>
         </label>
-      </div>
+      </fieldset>
 
       <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap gap-2">
@@ -330,7 +333,7 @@
                 type="button"
                 class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white"
                 onclick={() => resume(editing!)}
-                disabled={!can('recurring.update')}
+                disabled={!can('recurring.update') || (editing.auto_post && !can('journal.post'))}
               >
                 Resume
               </button>

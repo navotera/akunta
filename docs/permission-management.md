@@ -160,6 +160,37 @@ entity. SPA memakai informasi itu untuk navigasi dan kontrol form.
 Middleware SPA serta Gate tetap menjadi boundary backend, sehingga request
 langsung dan sesi dengan UI lama tetap diperiksa.
 
+## Konsistensi navigasi dan aksi
+
+Form utama `/journals/new?as_template=1` memakai `template.create`; detail
+template dengan `template_id` memakai `template.read` dan menjadi read-only
+tanpa `template.update`. Keduanya tidak memerlukan `journal.create`. Membuat
+jurnal biasa tetap memerlukan `journal.create`. Riwayat tab dan pencarian cepat
+mengikuti permission workspace aktif yang sama. Kegagalan memuat form harus
+menampilkan pesan, dan daftar akun kosong tidak boleh membuat loading tanpa akhir.
+
+Pembaca koreksi Fiskal tidak meminta API provisi atau akun Intern bila tidak
+memiliki `fiscal.tax_provision.read`. Detail jadwal jurnal berulang read-only
+tanpa `recurring.update`; melanjutkan jadwal auto-post juga memerlukan
+`journal.post`, sesuai pemeriksaan backend. Hasil eksekusi hanya membuka detail
+jurnal bila pengguna memiliki `journal.read`. Template pada pembuatan maupun
+pengeditan jadwal wajib berasal dari workspace yang sama.
+
+Kelima halaman laporan mengenali Inspector melalui profil efektif workspace,
+termasuk salinan Inspector dan assignment multi-role; pilihan buku tetap Fiskal.
+Lookup sumber laporan menerima `report.read` atau `journal.read`, sedangkan
+membuka detail jurnal dari laporan tetap memerlukan `journal.read`.
+Polling scheduler juga mengikuti permission efektif; flag admin SSO tidak
+menggantikan pembatasan profil Inspector pada UI.
+
+Grant dari assignment aplikasi selain Accounting tidak memberikan permission
+Accounting, sekalipun kode permission-nya sama. Tidak ada permission baru atau
+perubahan default role dalam perbaikan ini. Regresi katalog menguji grant/revoke,
+bootstrap, Gate, request langsung, dan isolasi workspace untuk Supervisor,
+Operator, Inspector, custom role, serta salinan Inspector; regresi browser
+menguji alur form template hingga simpan, read-only, riwayat tab, pencarian,
+koreksi Fiskal, dan jadwal auto-post.
+
 Pengujian utama ada di WorkspaceRolesApiTest.php, PermissionManagementApiTest.php, dan
 tests/e2e/permission-management.spec.ts. Fixture regression memberi permission
 yang diperlukan secara eksplisit; middleware authorization tetap diaktifkan.

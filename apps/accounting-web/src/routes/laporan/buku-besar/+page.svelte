@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { can, isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import { reportingApi, type GeneralLedgerData } from '$lib/api/reporting.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { sourceRefApi, type SourceRefRegistryItem } from '$lib/api/source-ref.js';
@@ -26,9 +27,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let journalMode = $state<BookToggleValue>('internal');
-  let isInspector = $derived(
-    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
-  );
+  let isInspector = $derived(isFiscalInspector());
 
   // Source-ref filter — `source_app:ref_type` selector + ref autocomplete
   let sourcePair = $state(''); // e.g. "poso:customer"
@@ -350,8 +349,10 @@
         </tr>
         {#each comparisonLines(report, fiscal) as item (item.key)}
           <tr
-            class="cursor-pointer border-t border-border-soft hover:bg-page-bg"
-            onclick={() => goto(`/journals/${item.line.journal_id}`)}
+            class="border-t border-border-soft {can('journal.read')
+              ? 'cursor-pointer hover:bg-page-bg'
+              : ''}"
+            onclick={() => can('journal.read') && goto(`/journals/${item.line.journal_id}`)}
           >
             <td class="px-4 py-2">{formatDate(item.line.date)}</td>
             <td class="px-4 py-2 font-mono">{item.line.number}</td>
@@ -416,8 +417,10 @@
         </tr>
         {#each report.lines as l (l.line_id)}
           <tr
-            class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-            onclick={() => goto(`/journals/${l.journal_id}`)}
+            class="border-t border-border-soft {can('journal.read')
+              ? 'cursor-pointer hover:bg-page-bg'
+              : ''}"
+            onclick={() => can('journal.read') && goto(`/journals/${l.journal_id}`)}
           >
             <td class="px-4 py-2">{formatDate(l.date)}</td>
             <td class="px-4 py-2 font-mono">{l.number}</td>

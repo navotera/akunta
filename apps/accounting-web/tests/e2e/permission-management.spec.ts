@@ -49,6 +49,7 @@ const catalog = [
 // Every endpoint is mocked; configuration changes and edits stay in test fixtures.
 async function mockPermissions(page: Page) {
   let actor = 'admin';
+  let fiscalProfile = false;
   let revision = 'a'.repeat(64);
   const roles = ['supervisor', 'operator', 'inspector'].map((code) => ({
     id: 'role-' + code,
@@ -142,6 +143,7 @@ async function mockPermissions(page: Page) {
                 name: 'PT Permission Test',
                 is_active: true,
                 bookkeeping_mode: 'independent_books',
+                is_fiscal_inspector: fiscalProfile || actor === 'inspector',
                 can_manage_permissions: actor === 'admin',
                 permissions:
                   actor === 'admin'
@@ -241,6 +243,12 @@ async function mockPermissions(page: Page) {
     accountUpdates,
     setActor: (value: string) => {
       actor = value;
+    },
+    setFiscalProfile: () => {
+      fiscalProfile = true;
+    },
+    setRolePermissions: (roleCode: string, codes: string[]) => {
+      roles.find((role) => role.code === roleCode)!.permissions = codes;
     },
     setOperatorPermissions: (codes: string[]) => {
       roles.find((role) => role.code === 'operator')!.permissions = codes;
@@ -368,6 +376,10 @@ test('lets the operator rename an account and create templates while keeping str
   });
   await page.goto('/template-jurnal');
   await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '+ Template Baru', exact: true }).click();
+  await expect(page).toHaveURL('/journals/new?as_template=1');
+  await expect(page.getByTestId('template-name')).toBeEnabled();
+  await expect(page.getByTestId('save-as-template')).toBeVisible();
   await page.goto('/settings?section=permissions');
   await expect(page.getByTestId('permission-matrix')).toHaveCount(0);
   await expect(
@@ -568,6 +580,268 @@ test('keeps unsaved selections and explains a stale configuration conflict', asy
   await page.getByTestId('save-permissions-operator').click();
   await expect(page.getByRole('alert')).toContainText('Permission telah diubah.');
   await expect(checkbox).toBeChecked();
+});
+
+test('quick search follows workspace permissions and avoids forbidden lookup APIs', async ({
+  page,
+}) => {
+  const fixture = await mockPermissions(page);
+  fixture.setActor('operator');
+  fixture.setOperatorPermissions(['account.read', 'template.read']);
+  let periodCalls = 0;
+  await page.route('**/api/v1/spa/periods**', (route) => {
+    periodCalls++;
+    return route.fulfill({ status: 403, json: { message: 'Forbidden lookup' } });
+  });
+  await page.goto('/template-jurnal');
+  await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toBeVisible();
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('option', { name: /Template Jurnal/ })).toBeVisible();
+  await expect(
+    page.getByRole('option', { name: /Buat Jurnal|Dashboard|Periode|Neraca/ }),
+  ).toHaveCount(0);
+  await page.getByRole('textbox', { name: 'Pencarian', exact: true }).fill('zz');
+  await expect(page.getByText('Tidak ada hasil.', { exact: true })).toBeVisible();
+  expect(periodCalls).toBe(0);
+  await expect(page.getByTestId('access-denied-content')).toHaveCount(0);
+});
+
+for (const [editable, posting] of [
+  [false, false],
+  [true, false],
+  [true, true],
+]) {
+  test(`recurring detail respects update=${editable} and post=${posting} when resuming auto-post`, async ({
+    page,
+  }) => {
+    const fixture = await mockPermissions(page);
+    fixture.setActor('operator');
+    fixture.setOperatorPermissions([
+      'account.read',
+      'template.read',
+      'recurring.read',
+      ...(editable ? ['recurring.update'] : []),
+      ...(posting ? ['journal.post'] : []),
+    ]);
+    await page.route('**/api/v1/spa/recurring-journals', (route) =>
+      route.fulfill({
+        json: {
+          data: [
+            {
+              id: 'schedule',
+              name: 'Jadwal Auto Post',
+              template_id: 'template',
+              template_code: 'TPL',
+              frequency: 'monthly',
+              day: 1,
+              start_date: '2026-01-01',
+              next_run_at: '2026-11-01',
+              status: 'paused',
+              auto_post: true,
+            },
+          ],
+        },
+      }),
+    );
+    await page.goto('/jurnal-berulang');
+    await page.getByRole('cell', { name: 'Jadwal Auto Post', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    if (editable) await expect(dialog.getByRole('textbox').last()).toBeEnabled();
+    else await expect(dialog.getByRole('textbox').last()).toBeDisabled();
+    if (editable && posting)
+      await expect(dialog.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
+    else await expect(dialog.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+  });
+}
+
+test('Fiscal readers can load reconciliation without requesting unauthorized tax provisions', async ({
+  page,
+}) => {
+  const fixture = await mockPermissions(page);
+  fixture.setActor('inspector');
+  fixture.setRolePermissions('inspector', [
+    'account.read',
+    'period.read',
+    'journal.read',
+    'report.read',
+    'attachment.read',
+    'fiscal.adjustment.read',
+  ]);
+  let provisionCalls = 0;
+  await page.route('**/api/v1/spa/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.includes('tax-provisions')) {
+      provisionCalls++;
+      return route.fulfill({ status: 403, json: { message: 'Provisi tidak diizinkan' } });
+    }
+    if (path.endsWith('fiscal-adjustments'))
+      return route.fulfill({ json: { data: [], meta: { can_manage: false, can_approve: false } } });
+    if (path.endsWith('fiscal-reconciliation'))
+      return route.fulfill({
+        json: {
+          data: {
+            entity_id: ENTITY,
+            period_start: '2026-01-01',
+            period_end: '2026-12-31',
+            book_net_income: '0',
+            positive_adjustments: '0',
+            negative_adjustments: '0',
+            final_net_income: '0',
+            rows: [],
+          },
+        },
+      });
+    return route.fulfill({ json: { data: [] } });
+  });
+  await page.goto('/fiskal/koreksi');
+  await expect(
+    page.getByRole('heading', {
+      name: 'Koreksi Fiskal, Rekonsiliasi & Provisi Pajak',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Memuat…', { exact: true })).toHaveCount(0);
+  expect(provisionCalls).toBe(0);
+  await expect(page.getByTestId('access-denied-content')).toHaveCount(0);
+});
+
+for (const reportPage of ['neraca-saldo', 'neraca', 'laba-rugi', 'buku-besar', 'buku-pembantu']) {
+  test(`Inspector profile selects and locks Fiskal in ${reportPage} independently of the role name`, async ({
+    page,
+  }) => {
+    const fixture = await mockPermissions(page);
+    fixture.setActor('operator');
+    fixture.setFiscalProfile();
+    fixture.setOperatorPermissions([
+      'account.read',
+      'period.read',
+      'journal.read',
+      'report.read',
+      'attachment.read',
+      'fiscal.adjustment.read',
+    ]);
+    const modes: string[] = [];
+    const section = { lines: [], total: '0' };
+    await page.route('**/api/v1/spa/source-refs**', (route) =>
+      route.fulfill({
+        json: {
+          data: [
+            {
+              source_app: 'poso',
+              ref_type: 'customer',
+              ref_id: '1',
+              code: 'C1',
+              label: 'Customer',
+              entry_count: 1,
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/v1/spa/reports/**', (route) => {
+      const url = new URL(route.request().url());
+      modes.push(url.searchParams.get('journal_mode') ?? 'missing');
+      let data: unknown = {
+        rows: [],
+        total_debit: '0',
+        total_credit: '0',
+        entity_id: ENTITY,
+        as_of: '2026-10-30',
+        assets: section,
+        liabilities: section,
+        equity: section,
+        balanced: true,
+        revenue: section,
+        cogs: section,
+        expenses: section,
+        gross_profit: '0',
+        net_income: '0',
+        period_start: '2026-01-01',
+        period_end: '2026-12-31',
+        opening: '0',
+        ending: '0',
+        account: {
+          id: 'bank-bca',
+          code: '1101',
+          name: 'Bank BCA',
+          type: 'asset',
+          normal_balance: 'debit',
+        },
+        lines: [],
+      };
+      if (url.pathname.endsWith('by-source-ref')) data = [];
+      return route.fulfill({
+        json: {
+          data,
+          meta: {
+            entity_id: ENTITY,
+            entity_name: 'PT Permission Test',
+            generated_at: '2026-10-30',
+            total_debit: '0',
+            total_credit: '0',
+            net: '0',
+          },
+        },
+      });
+    });
+    await page.goto(`/laporan/${reportPage}`);
+    const toggle = page.getByRole('group', { name: 'Pilih buku laporan', exact: true });
+    await expect(toggle.getByRole('button', { name: 'Fiskal', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(toggle.getByRole('button', { name: 'Intern', exact: true })).toBeDisabled();
+    await expect.poll(() => modes.length).toBeGreaterThan(0);
+    expect(modes.every((mode) => mode === 'fiscal')).toBe(true);
+    await expect(page.getByTestId('access-denied-content')).toHaveCount(0);
+  });
+}
+
+test('Inspector effective permissions prevent scheduler polling even with the SSO admin flag', async ({
+  page,
+}) => {
+  await mockPermissions(page);
+  await page.route('**/api/v1/me', (route) =>
+    route.fulfill({
+      json: {
+        data: {
+          id: 'inspector-admin',
+          name: 'Inspector',
+          email: 'inspector@example.test',
+          roles: ['inspector'],
+          is_admin: true,
+          is_sso_admin: true,
+          is_impersonating: false,
+          tenants: [
+            {
+              id: ENTITY,
+              name: 'PT Permission Test',
+              is_active: true,
+              roles: ['inspector'],
+              is_fiscal_inspector: true,
+              permissions: [
+                'account.read',
+                'period.read',
+                'journal.read',
+                'report.read',
+                'attachment.read',
+                'fiscal.adjustment.read',
+              ],
+            },
+          ],
+        },
+      },
+    }),
+  );
+  let calls = 0;
+  await page.route('**/api/v1/spa/scheduler/**', (route) => {
+    calls++;
+    return route.fulfill({ status: 403, json: { message: 'Denied' } });
+  });
+  await page.goto('/periode');
+  await expect(page.getByRole('heading', { name: 'Periode Akuntansi', exact: true })).toBeVisible();
+  expect(calls).toBe(0);
+  await expect(page.getByTestId('access-denied-content')).toHaveCount(0);
 });
 
 test.describe('mobile permission management', () => {

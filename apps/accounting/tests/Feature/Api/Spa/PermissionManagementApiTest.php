@@ -213,6 +213,25 @@ it('does not inherit accounting role defaults from another app', function () {
     $this->postJson('/api/v1/spa/journal-templates', ['code' => 'NO', 'name' => 'No access', 'lines' => []])->assertForbidden();
 });
 
+it('does not use another apps identically named permission to authorize accounting requests', function () {
+    $otherApp = RbacApp::create(['code' => 'payroll', 'name' => 'Payroll', 'enabled' => true, 'version' => '1']);
+    $role = Role::create(['code' => 'payroll_editor', 'name' => 'Payroll editor']);
+    grantSpaPermissionsForTest($role, $otherApp, ['account.read', 'template.create']);
+    $this->operator->assignments()->first()->update(['app_id' => $otherApp->id, 'role_id' => $role->id]);
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/accounts')->assertForbidden();
+    $this->postJson('/api/v1/spa/journal-templates', ['code' => 'NO', 'name' => 'Other app', 'lines' => []])->assertForbidden();
+});
+
+it('allows report source lookups without granting journal access', function () {
+    saveOperatorPermissions($this, ['account.read', 'period.read', 'report.read']);
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/source-refs')->assertOk();
+    $this->getJson('/api/v1/spa/journals')->assertForbidden();
+    saveOperatorPermissions($this, ['account.read', 'period.read']);
+    $this->actingAs($this->operator)->getJson('/api/v1/spa/source-refs')->assertForbidden();
+});
+
 it('enforces overrides in action Gates even when the actor is loaded through the shared RBAC model', function () {
     $period = Period::create([
         'entity_id' => $this->entity->id, 'name' => 'Gate period',

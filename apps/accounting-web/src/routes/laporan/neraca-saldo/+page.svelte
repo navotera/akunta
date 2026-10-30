@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import { reportingApi, type TrialBalanceData } from '$lib/api/reporting.js';
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
@@ -14,9 +15,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let journalMode = $state<BookToggleValue>('internal');
-  let isInspector = $derived(
-    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
-  );
+  let isInspector = $derived(isFiscalInspector());
 
   async function load() {
     loading = true;
