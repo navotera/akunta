@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import { reportingApi, type BalanceSheetData } from '$lib/api/reporting.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
@@ -12,9 +13,7 @@
   let asOf = $state(new Date().toISOString().slice(0, 10));
   let report = $state<BalanceSheetData | null>(null);
   let journalMode = $state<BookToggleValue>('internal');
-  let isInspector = $derived(
-    auth.user?.roles.some((role) => role.toLowerCase() === 'inspector') ?? false,
-  );
+  let isInspector = $derived(isFiscalInspector());
   let loading = $state(false);
   let error = $state<string | null>(null);
 

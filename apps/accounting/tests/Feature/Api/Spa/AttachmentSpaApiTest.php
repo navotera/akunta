@@ -25,7 +25,7 @@ beforeEach(function () {
         'name' => 'AT', 'email' => 'at-'.uniqid().'@x.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'at-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'at-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
     $role->permissions()->attach(collect(['journal.read', 'journal.update'])->map(
         fn (string $code) => Permission::create(['app_id' => $app->id, 'code' => $code])->id,

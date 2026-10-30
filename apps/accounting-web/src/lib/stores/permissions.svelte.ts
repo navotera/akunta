@@ -14,9 +14,17 @@ export function canVisitWorkspacePage(href: string, entityId = tenant.id): boole
   const inspector =
     current?.is_fiscal_inspector ??
     (current?.roles ?? auth.user?.roles ?? []).some((role) => role.toLowerCase() === 'inspector');
-  const path = href.split('?')[0];
+  const url = new URL(href, 'http://workspace.local');
+  const path = url.pathname;
   if (path === '/dashboard') return !inspector && can('dashboard.read', entityId);
-  if (path === '/journals/new') return !inspector && can('journal.create', entityId);
+  if (path === '/journals/new') {
+    if (url.searchParams.get('as_template') === '1')
+      return (
+        !inspector &&
+        can(url.searchParams.get('template_id') ? 'template.read' : 'template.create', entityId)
+      );
+    return !inspector && can('journal.create', entityId);
+  }
   if (path.startsWith('/journals')) return can('journal.read', entityId);
   if (path.startsWith('/laporan')) return can('report.read', entityId);
   if (path === '/akun') return can('account.read', entityId);

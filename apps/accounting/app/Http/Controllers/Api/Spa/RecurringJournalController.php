@@ -12,6 +12,7 @@ use App\Models\RecurringJournal;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class RecurringJournalController extends Controller
 {
@@ -47,7 +48,7 @@ class RecurringJournalController extends Controller
     public function store(Request $request): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, $entity->id);
         $data['entity_id'] = $entity->id;
         $data['created_by'] = Auth::id();
         $data['next_run_at'] ??= $data['start_date'];
@@ -69,7 +70,7 @@ class RecurringJournalController extends Controller
         $entity = $this->resolveEntity($request);
         $rec = RecurringJournal::where('entity_id', $entity->id)->findOrFail($id);
 
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, $entity->id);
         $rec->fill($data)->save();
 
         return response()->json(['data' => $this->serialize($rec->fresh('template'))]);
@@ -119,10 +120,10 @@ class RecurringJournalController extends Controller
         ]);
     }
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, string $entityId): array
     {
         return $request->validate([
-            'template_id' => 'required|string|size:26|exists:journal_templates,id',
+            'template_id' => ['required', 'string', 'size:26', Rule::exists('journal_templates', 'id')->where('entity_id', $entityId)],
             'name' => 'required|string|max:160',
             'frequency' => 'required|in:daily,weekly,monthly,quarterly,yearly',
             'day' => 'nullable|integer|min:1|max:31',

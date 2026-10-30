@@ -30,7 +30,7 @@ beforeEach(function () {
         'email' => 'rpt-'.uniqid().'@example.test',
         'password_hash' => bcrypt('x'),
     ]);
-    $app = RbacApp::create(['code' => 'rpt-'.uniqid(), 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
+    $app = RbacApp::create(['code' => 'accounting', 'name' => 'A', 'version' => '0.1', 'enabled' => true]);
     $role = Role::create(['code' => 'rpt-r-'.uniqid(), 'name' => 'R', 'is_preset' => false]);
     grantSpaPermissionsForTest($role, $app, ['report.read']);
     $this->user->assignments()->create([
