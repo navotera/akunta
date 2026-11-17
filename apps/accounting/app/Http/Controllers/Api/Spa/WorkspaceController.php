@@ -72,6 +72,7 @@ class WorkspaceController extends Controller
             'transaction_number_start' => ['sometimes', 'integer', 'min:1', 'max:2147483647'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
             'date_format' => ['sometimes', 'in:DD MMM YYYY,DD/MM/YYYY,MM/DD/YYYY,YYYY-MM-DD,d F Y'],
+            'max_open_tabs' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
@@ -118,6 +119,7 @@ class WorkspaceController extends Controller
             'transaction_number_start' => ['sometimes', 'integer', 'min:1', 'max:2147483647'],
             'bookkeeping_mode' => ['sometimes', 'in:independent_books,internal_only'],
             'date_format' => ['sometimes', 'in:DD MMM YYYY,DD/MM/YYYY,MM/DD/YYYY,YYYY-MM-DD,d F Y'],
+            'max_open_tabs' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
         $data = $this->normalizeAddress($data);
@@ -333,6 +335,7 @@ class WorkspaceController extends Controller
             'transaction_number_start' => (int) data_get($entity->workspace_settings, 'transaction_number_start', 1),
             'bookkeeping_mode' => data_get($entity->workspace_settings, 'bookkeeping_mode', 'independent_books'),
             'date_format' => data_get($entity->workspace_settings, 'date_format', 'DD MMM YYYY'),
+            'max_open_tabs' => (int) data_get($entity->workspace_settings, 'max_open_tabs', 8),
             'issue_report_url' => data_get($entity->workspace_settings, 'issue_report_url'),
             'last_activity_at' => is_string($auditedActivity)
                 ? $auditedActivity
@@ -354,7 +357,7 @@ class WorkspaceController extends Controller
     private function normalizeNumberFormats(array $data): array
     {
         $formats = is_array($data['workspace_settings'] ?? null) ? $data['workspace_settings'] : [];
-        foreach (['journal_number_format', 'transaction_number_format', 'transaction_number_start', 'bookkeeping_mode', 'date_format', 'issue_report_url'] as $key) {
+        foreach (['journal_number_format', 'transaction_number_format', 'transaction_number_start', 'bookkeeping_mode', 'date_format', 'max_open_tabs', 'issue_report_url'] as $key) {
             if (array_key_exists($key, $data)) {
                 $formats[$key] = $data[$key] ?: null;
                 unset($data[$key]);

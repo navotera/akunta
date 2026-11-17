@@ -18,6 +18,8 @@ export interface JournalSummary {
   memo: string | null;
   total: string;
   deleted_at?: string | null;
+  attachment_count?: number;
+  attachment_thumbnail_url?: string | null;
 }
 
 export interface JournalEntry {
@@ -155,6 +157,15 @@ export interface JournalCreateResult extends JournalDetail {
 }
 
 export const journalApi = {
+  selectForApproval: (params: Record<string, string | number | undefined>) =>
+    api<{
+      data: JournalSelection[];
+      meta: { total: number; selected_count: number; skipped_count: number };
+    }>(journalListUrl({ ...params, for_bulk_approval: 1 }), { cache: 'no-store' }),
+  approveBatch: (journalIds: string[]) =>
+    api<{ data: { approved_count: number } }>('/api/v1/spa/journals/approve-batch', {
+      json: { journal_ids: journalIds },
+    }).then((response) => response.data),
   selectForAccountReplacement: (params: Record<string, string | number | undefined>) =>
     api<{
       data: JournalSelection[];

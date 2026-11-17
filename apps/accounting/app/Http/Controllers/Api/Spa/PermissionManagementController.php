@@ -32,7 +32,88 @@ class PermissionManagementController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->permissions->snapshot($this->entity($request))]);
+        return response()->json(['data' => $this->snapshot($this->entity($request), $request)]);
+    }
+
+    private function manageableWorkspaces(Entity $entity, Request $request)
+    {
+        return Entity::query()->where('tenant_id', $entity->tenant_id)
+            ->where('is_active', true)->whereNull('archived_at')->orderBy('name')->get()
+            ->filter(fn (Entity $workspace): bool => Gate::forUser($request->user())->allows('permissions.manage', $workspace));
+    }
+
+    private function snapshot(Entity $entity, Request $request): array
+    {
+        $snapshot = $this->permissions->snapshot($entity);
+        $workspaces = $this->manageableWorkspaces($entity, $request);
+        $snapshot['workspaces'] = $workspaces->map(fn (Entity $workspace): array => [
+            'id' => $workspace->id, 'name' => $workspace->name,
+        ])->values()->all();
+        $snapshot['roles'] = collect($snapshot['roles'])->map(function (array $role) use ($workspaces): array {
+            $role['workspace_ids'] = $workspaces->filter(
+                fn (Entity $workspace): bool => $this->permissions->roleAssignable($workspace, $role['code']),
+            )->pluck('id')->values()->all();
+
+            return $role;
+        })->all();
+
+        return $snapshot;
+    }
+
+    public function updateWorkspaces(Request $request, string $role): JsonResponse
+    {
+        $entity = $this->entity($request);
+        abort_unless($this->permissions->managedRole($entity, $role), 422, 'Role tidak tersedia di workspace ini.');
+        $data = $request->validate([
+            'workspace_ids' => ['present', 'array'],
+            'workspace_ids.*' => ['required', 'string', 'size:26', 'distinct'],
+            'revision' => ['required', 'string', 'size:64'],
+        ]);
+        $manageable = $this->manageableWorkspaces($entity, $request);
+        $ids = $manageable->pluck('id')->all();
+        if (array_diff($data['workspace_ids'], $ids)) {
+            throw ValidationException::withMessages(['workspace_ids' => 'Workspace pilihan harus berada pada tenant yang sama dan dapat dikelola.']);
+        }
+
+        DB::transaction(function () use ($entity, $role, $data, $ids): void {
+            $workspaces = Entity::query()->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get();
+            $current = $workspaces->firstWhere('id', $entity->id);
+            abort_unless($current, 409, 'Workspace aktif tidak tersedia.');
+            $this->assertRevision($current, $data['revision']);
+            $custom = $this->permissions->customRoles($current)[$role] ?? null;
+            foreach ($workspaces as $workspace) {
+                $wasEnabled = $this->permissions->roleAssignable($workspace, $role);
+                $enabled = in_array($workspace->id, $data['workspace_ids'], true);
+                if ($wasEnabled === $enabled) {
+                    continue;
+                }
+                if (! $enabled) {
+                    $activeMembers = UserAppAssignment::query()->whereNull('revoked_at')
+                        ->where(fn ($query) => $query->whereNull('valid_from')->orWhere('valid_from', '<=', now()))
+                        ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>', now()))
+                        ->where(fn ($query) => $query->where('entity_id', $workspace->id)->orWhereNull('entity_id'))
+                        ->whereHas('app', fn ($query) => $query->where('code', 'accounting'))
+                        ->whereHas('role', fn ($query) => $query->where('code', $role))
+                        ->exists();
+                    abort_if($activeMembers, 409, "Role masih memiliki anggota aktif di {$workspace->name}. Pindahkan anggotanya terlebih dahulu.");
+                }
+                $settings = $workspace->workspace_settings ?? [];
+                if ($enabled && $custom && ! isset($settings[AccountingPermissions::ROLES_KEY][$role])) {
+                    $this->uniqueName($workspace, $custom['name']);
+                    $settings[AccountingPermissions::ROLES_KEY][$role] = $custom;
+                }
+                $disabled = array_values(array_diff($settings[AccountingPermissions::DISABLED_ROLES_KEY] ?? [], [$role]));
+                if (! $enabled) {
+                    $disabled[] = $role;
+                }
+                $settings[AccountingPermissions::DISABLED_ROLES_KEY] = $disabled;
+                $workspace->forceFill(['workspace_settings' => $settings])->save();
+                $this->audit->record('permission.role_workspace_updated', Entity::class, $workspace->id,
+                    $workspace->id, ['role' => $role, 'enabled_before' => $wasEnabled, 'enabled_after' => $enabled]);
+            }
+        });
+
+        return response()->json(['data' => $this->snapshot($entity->refresh(), $request)]);
     }
 
     public function update(Request $request, string $role): JsonResponse
@@ -86,22 +167,32 @@ class PermissionManagementController extends Controller
             'name' => ['required', 'string', 'max:80'], 'description' => ['nullable', 'string', 'max:400'],
             'revision' => ['required', 'string', 'size:64'],
         ]);
-        $snapshot = DB::transaction(function () use ($entity, $role, $data): array {
+        $snapshot = DB::transaction(function () use ($entity, $role, $data, $request): array {
             $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
             $this->assertRevision($locked, $data['revision']);
             $definition = $this->permissions->customRoles($locked)[$role] ?? null;
             abort_unless($definition, 422, 'Nama role bawaan tidak dapat diubah.');
-            $name = $this->uniqueName($locked, $data['name'], $role);
+            $linked = Entity::query()->where('tenant_id', $locked->tenant_id)->orderBy('id')
+                ->lockForUpdate()->get()->filter(
+                    fn (Entity $workspace): bool => isset($this->permissions->customRoles($workspace)[$role]),
+                );
+            foreach ($linked as $workspace) {
+                Gate::forUser($request->user())->authorize('permissions.manage', $workspace);
+                $this->uniqueName($workspace, $data['name'], $role);
+            }
+            $name = trim($data['name']);
             $model = Role::where('tenant_id', $locked->tenant_id)->findOrFail($definition['id']);
             $model->update(['name' => $name, 'description' => $data['description'] ?? '']);
-            $settings = $locked->workspace_settings;
-            $settings[AccountingPermissions::ROLES_KEY][$role]['name'] = $name;
-            $settings[AccountingPermissions::ROLES_KEY][$role]['description'] = $data['description'] ?? '';
-            $locked->forceFill(['workspace_settings' => $settings])->save();
-            $this->audit->record('permission.role_renamed', Role::class, $model->id, $locked->id,
-                ['before' => $definition['name'], 'after' => $name]);
+            foreach ($linked as $workspace) {
+                $settings = $workspace->workspace_settings;
+                $settings[AccountingPermissions::ROLES_KEY][$role]['name'] = $name;
+                $settings[AccountingPermissions::ROLES_KEY][$role]['description'] = $data['description'] ?? '';
+                $workspace->forceFill(['workspace_settings' => $settings])->save();
+                $this->audit->record('permission.role_renamed', Role::class, $model->id, $workspace->id,
+                    ['before' => $definition['name'], 'after' => $name]);
+            }
 
-            return $this->permissions->snapshot($locked);
+            return $this->permissions->snapshot($locked->refresh());
         });
 
         return response()->json(['data' => $snapshot]);
@@ -111,20 +202,31 @@ class PermissionManagementController extends Controller
     {
         $entity = $this->entity($request);
         $data = $request->validate(['revision' => ['required', 'string', 'size:64']]);
-        $snapshot = DB::transaction(function () use ($entity, $role, $data): array {
+        $snapshot = DB::transaction(function () use ($entity, $role, $data, $request): array {
             $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
             $this->assertRevision($locked, $data['revision']);
             $definition = $this->permissions->customRoles($locked)[$role] ?? null;
             abort_unless($definition, 422, 'Role bawaan tidak dapat dihapus.');
             abort_if(UserAppAssignment::where('role_id', $definition['id'])->whereNull('revoked_at')->exists(),
                 409, 'Role masih dipakai user. Pindahkan seluruh anggotanya ke role lain sebelum menghapus.');
-            $settings = $locked->workspace_settings;
-            unset($settings[AccountingPermissions::ROLES_KEY][$role], $settings[AccountingPermissions::SETTINGS_KEY][$role]);
-            $locked->forceFill(['workspace_settings' => $settings])->save();
+            $linked = Entity::query()->where('tenant_id', $locked->tenant_id)->orderBy('id')
+                ->lockForUpdate()->get()->filter(
+                    fn (Entity $workspace): bool => isset($this->permissions->customRoles($workspace)[$role]),
+                );
+            foreach ($linked as $workspace) {
+                Gate::forUser($request->user())->authorize('permissions.manage', $workspace);
+                $settings = $workspace->workspace_settings;
+                unset($settings[AccountingPermissions::ROLES_KEY][$role], $settings[AccountingPermissions::SETTINGS_KEY][$role]);
+                $settings[AccountingPermissions::DISABLED_ROLES_KEY] = array_values(array_diff(
+                    $settings[AccountingPermissions::DISABLED_ROLES_KEY] ?? [], [$role],
+                ));
+                $workspace->forceFill(['workspace_settings' => $settings])->save();
+                $this->audit->record('permission.role_removed', Role::class, $definition['id'], $workspace->id,
+                    ['code' => $role, 'name' => $definition['name']]);
+            }
             // Keep the shared Role row so historical assignments retain their role name.
-            $this->audit->record('permission.role_removed', Role::class, $definition['id'], $locked->id, ['code' => $role, 'name' => $definition['name']]);
 
-            return $this->permissions->snapshot($locked);
+            return $this->permissions->snapshot($locked->refresh());
         });
 
         return response()->json(['data' => $snapshot]);

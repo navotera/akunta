@@ -18,11 +18,7 @@
 
   let detail = $state<JournalDetail | null>(null);
   const deletionAccountId = $derived($page.url.searchParams.get('delete_account_id'));
-  const journalListUrl = $derived(
-    deletionAccountId
-      ? `/journals?delete_account_id=${encodeURIComponent(deletionAccountId)}${$page.url.searchParams.get('period_status') === 'inactive' ? '&period_status=inactive' : ''}`
-      : '/journals',
-  );
+  const journalListUrl = $derived(`/journals${$page.url.search}`);
   const formDetail = $derived(
     detail
       ? {

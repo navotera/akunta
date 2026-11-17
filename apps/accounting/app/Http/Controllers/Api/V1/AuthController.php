@@ -164,6 +164,7 @@ class AuthController extends Controller
             'can_manage_cron' => $permissions->allows($user, 'settings.cron.manage', $e),
             'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
             'date_format' => data_get($e->workspace_settings, 'date_format', 'DD MMM YYYY'),
+            'max_open_tabs' => (int) data_get($e->workspace_settings, 'max_open_tabs', 8),
             'issue_report_url' => data_get($e->workspace_settings, 'issue_report_url'),
             'last_activity_at' => $lastActivities->get($e->id),
         ])

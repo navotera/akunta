@@ -19,6 +19,8 @@ export interface PermissionRole {
   permissions: string[];
   defaults: string[];
   customized: boolean;
+  assignable?: boolean;
+  workspace_ids?: string[];
 }
 
 export interface PermissionManagementData {
@@ -28,9 +30,15 @@ export interface PermissionManagementData {
   dependencies: Record<string, string[]>;
   roles: PermissionRole[];
   created_role?: string;
+  workspaces?: Array<{ id: string; name: string }>;
 }
 
 export const permissionsApi = {
+  updateWorkspaces: (entityId: string, role: string, workspaceIds: string[], revision: string) =>
+    api<{ data: PermissionManagementData }>(
+      '/api/v1/spa/permission-management/roles/' + role + '/workspaces',
+      { method: 'PUT', tenantSlug: entityId, json: { workspace_ids: workspaceIds, revision } },
+    ).then((r) => r.data),
   createRole: (
     entityId: string,
     name: string,

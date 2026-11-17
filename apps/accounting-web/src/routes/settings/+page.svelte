@@ -153,6 +153,7 @@
       null,
   );
   let dateFormat = $state(DEFAULT_DATE_FORMAT);
+  let maxOpenTabs = $state(8);
   let themeColor = $state<string>('blue');
   let savedMessage = $state<string | null>(null);
   let workspaceRecords = $state<WorkspaceRecord[]>([]);
@@ -496,6 +497,7 @@
         };
         bookkeepingMode = activeWorkspace.bookkeeping_mode ?? 'independent_books';
         dateFormat = activeWorkspace.date_format ?? DEFAULT_DATE_FORMAT;
+        maxOpenTabs = activeWorkspace.max_open_tabs ?? 8;
         setDateFormat(dateFormat, activeWorkspace.id);
         issueReportUrl = activeWorkspace.issue_report_url ?? '';
       }
@@ -511,11 +513,14 @@
     try {
       const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
       if (!isAdmin || !activeWorkspace) throw new Error('Workspace aktif tidak ditemukan.');
+      if (!Number.isInteger(maxOpenTabs) || maxOpenTabs < 1 || maxOpenTabs > 50)
+        throw new Error('Maksimal tab terbuka harus berupa angka 1 sampai 50.');
 
       await workspaceApi.update(activeWorkspace.id, {
         name: activeWorkspace.name,
         bookkeeping_mode: bookkeepingMode,
         date_format: dateFormat,
+        max_open_tabs: maxOpenTabs,
         issue_report_url: issueReportUrl.trim() || null,
       });
       setDateFormat(dateFormat, activeWorkspace.id);
@@ -1072,6 +1077,25 @@
                 <option value="d F Y">{formatDatePreview('d F Y')}</option>
               </select>
             </div>
+          </div>
+          <div class="flex items-center justify-between gap-4 py-4">
+            <div>
+              <h3 class="text-sm font-semibold">Maksimal tab terbuka</h3>
+              <p class="mt-1 text-xs text-text-muted">
+                Batas tab halaman untuk setiap pengguna pada workspace ini. Tab lain ditutup
+                otomatis saat batas terlampaui.
+              </p>
+            </div>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              step="1"
+              bind:value={maxOpenTabs}
+              disabled={!isAdmin || generalSaving}
+              aria-label="Maksimal tab terbuka"
+              class="w-24 rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
+            />
           </div>
           <div class="flex items-start justify-between gap-4 py-4">
             <div>

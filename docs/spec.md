@@ -697,11 +697,32 @@ reversal, dan saldo tetap independen. Sesudah create tidak ada sinkronisasi
 otomatis antarpasangan. Mode gabungan hanya menerima akun
 `availability=both`.
 
+Daftar jurnal menyediakan approval massal pada tab Di review. Pengguna dapat
+memilih jurnal pada satu halaman atau semua yang cocok dengan buku dan filter
+saat ini. Hanya ID jurnal yang dipilih yang dikirim ke backend. Setiap jurnal
+harus tetap berstatus `submitted`, berada pada periode terbuka, memiliki entry
+yang valid dan balance, serta lolos izin `journal.review` dan `journal.post`.
+Seluruh batch diproses atomik melalui aksi posting jurnal yang sama, dengan
+audit `journal.post` per jurnal. Jurnal pasangan Intern/Fiskal tidak otomatis
+ikut diposting jika ID-nya tidak dipilih.
+Saat jurnal dibuka dari daftar, filter periode, buku, status, dan halaman daftar
+tetap berlaku ketika pengguna kembali setelah review atau approval.
+
+Setting General menyediakan `max_open_tabs` per workspace (default 8, rentang
+1–50). Batas ini diterapkan pada tab halaman pengguna saat membuka halaman baru
+dan saat memulihkan riwayat tab; halaman aktif dipertahankan ketika batas turun.
+
 Lampiran yang dipilih pada input gabungan ditampilkan pada kedua jurnal melalui
 record attachment masing-masing, dengan file tersimpan yang sama. Saat jurnal
 tunggal yang sudah memiliki lampiran pertama kali diubah menjadi input gabungan,
 record attachment dipetakan ke pasangan yang baru dibuat; perubahan lampiran
 setelah pasangan terbentuk tetap independen.
+
+Kolom Keterangan pada daftar jurnal menampilkan ringkasan lampiran bila user
+memiliki izin `attachment.read`: satu gambar sebagai thumbnail, satu file lain
+sebagai ikon, dan lebih dari satu file sebagai ikon beserta jumlah lampiran.
+Ringkasan mengikuti jurnal dan buku yang sedang ditampilkan; URL thumbnail
+berlaku sementara dan data lampiran tidak dikirim tanpa izin baca lampiran.
 
 Template jurnal juga dapat memiliki scope `Intern`, `Fiskal`, atau `Intern &
 Fiskal`. Template scope `Intern & Fiskal` hanya menerima akun

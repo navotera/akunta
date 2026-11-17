@@ -53,6 +53,26 @@
   let batchBusy = $state(false);
   let batchError = $state<string | null>(null);
   let batchMessage = $state<string | null>(null);
+  let approvalSelection = $state<JournalSelection[]>([]);
+  let approvalSelecting = $state(false);
+  let approvalAllMatching = $state(false);
+  let approvalSkipped = $state(0);
+  let approvalBusy = $state(false);
+  let approvalError = $state<string | null>(null);
+  let approvalMessage = $state<string | null>(null);
+  let approvalRequest = 0;
+  const approvalIds = $derived(new Set(approvalSelection.map((journal) => journal.id)));
+  const approvalPage = $derived(
+    items.filter(
+      (journal) =>
+        journal.status === 'submitted' &&
+        !journal.deleted_at &&
+        periods.some((period) => period.id === journal.period_id && period.status === 'open'),
+    ),
+  );
+  const approvalPageSelected = $derived(
+    approvalPage.length > 0 && approvalPage.every((journal) => approvalIds.has(journal.id)),
+  );
   const selectedIds = $derived(new Set(selectedJournals.map((journal) => journal.id)));
   const isSupervisor = $derived(
     canManagePermissions() ||
@@ -121,6 +141,14 @@
   type JournalStatusTab = 'draft' | 'submitted' | 'posted' | 'rejected' | 'reversed';
   type JournalListTab = JournalStatusTab | 'trashed' | 'all';
   let statusTab = $state<JournalListTab>('draft');
+  const canApproveBatch = $derived(
+    !deletionAccountId &&
+      !isInspector &&
+      can('journal.read') &&
+      can('journal.review') &&
+      can('journal.post') &&
+      statusTab === 'submitted',
+  );
   const statusTabs = $derived<{ value: JournalListTab; label: string }[]>([
     ...(deletionAccountId ? [{ value: 'all' as const, label: 'Semua status' }] : []),
     { value: 'draft', label: 'Draft' },
@@ -157,8 +185,71 @@
     selectionError = null;
   }
 
+  function clearApprovalSelection() {
+    approvalRequest += 1;
+    approvalSelection = [];
+    approvalAllMatching = false;
+    approvalSkipped = 0;
+    approvalError = null;
+    approvalSelecting = false;
+  }
+
+  function selectApproval(journal: JournalSelection, checked: boolean) {
+    if (approvalSelecting || approvalBusy) return;
+    approvalAllMatching = false;
+    approvalSkipped = 0;
+    approvalMessage = null;
+    if (
+      checked &&
+      approvalPage.some((item) => item.id === journal.id) &&
+      !approvalIds.has(journal.id)
+    )
+      approvalSelection = [...approvalSelection, journal];
+    if (!checked) approvalSelection = approvalSelection.filter((item) => item.id !== journal.id);
+  }
+
+  async function selectAllForApproval() {
+    if (!canApproveBatch || approvalSelecting || approvalBusy || loading) return;
+    const requestId = ++approvalRequest;
+    approvalSelecting = true;
+    approvalError = null;
+    approvalMessage = null;
+    try {
+      const result = await journalApi.selectForApproval(listParams());
+      if (requestId !== approvalRequest) return;
+      approvalSelection = result.data;
+      approvalSkipped = result.meta.skipped_count;
+      approvalAllMatching = true;
+    } catch (error) {
+      if (requestId === approvalRequest)
+        approvalError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (requestId === approvalRequest) approvalSelecting = false;
+    }
+  }
+
+  async function approveSelected() {
+    if (!canApproveBatch || approvalBusy || approvalSelection.length === 0) return;
+    const ids = approvalSelection.map((journal) => journal.id);
+    if (!window.confirm(`Setujui dan posting ${ids.length} jurnal yang dipilih?`)) return;
+    approvalBusy = true;
+    approvalError = null;
+    try {
+      const result = await journalApi.approveBatch(ids);
+      approvalMessage = `${result.approved_count} jurnal berhasil disetujui dan diposting.`;
+      await load();
+    } catch (error) {
+      approvalError = error instanceof Error ? error.message : String(error);
+    } finally {
+      approvalBusy = false;
+    }
+  }
+
   async function load(pageNumber = 1, keepSelection = false) {
-    if (!keepSelection) clearSelection();
+    if (!keepSelection) {
+      clearSelection();
+      clearApprovalSelection();
+    }
     loading = true;
     error = null;
     try {
@@ -226,7 +317,30 @@
       appliedFilters.account_id = deletionAccountId;
       draftFilters.account_id = deletionAccountId;
     }
-    await Promise.all([load(), loadFilterOptions()]);
+    const params = $page.url.searchParams;
+    const requestedStatus = params.get('status');
+    if (!deletionAccountId && statusTabs.some((tab) => tab.value === requestedStatus)) {
+      statusTab = requestedStatus as JournalListTab;
+    }
+    const requestedMode = params.get('journal_mode');
+    if (
+      !deletionAccountId &&
+      !isInspector &&
+      ['internal', 'fiscal', 'all'].includes(requestedMode ?? '')
+    ) {
+      journalMode = requestedMode as typeof journalMode;
+    }
+    for (const key of Object.keys(appliedFilters) as (keyof JournalFilters)[]) {
+      if (key === 'account_id' && deletionAccountId) continue;
+      appliedFilters[key] = params.get(key) ?? '';
+    }
+    draftFilters = { ...appliedFilters };
+    const requestedPage = Number(params.get('page'));
+    await Promise.all([
+      load(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1),
+      loadFilterOptions(),
+    ]);
+    if (currentPage > lastPage && total > 0) await load(lastPage);
   });
 
   function statusColor(s: JournalSummary['status']): string {
@@ -259,7 +373,18 @@
   }
 
   function journalUrl(id: string): string {
-    return `/journals/${id}${deletionAccountId ? `?delete_account_id=${encodeURIComponent(deletionAccountId)}${periodStatus === 'inactive' ? '&period_status=inactive' : ''}` : ''}`;
+    const params = new URLSearchParams();
+    if (deletionAccountId) {
+      params.set('delete_account_id', deletionAccountId);
+      if (periodStatus === 'inactive') params.set('period_status', periodStatus);
+    }
+    params.set('status', statusTab);
+    params.set('journal_mode', journalMode);
+    for (const [key, value] of Object.entries(appliedFilters)) {
+      if (value) params.set(key, value);
+    }
+    if (currentPage > 1) params.set('page', String(currentPage));
+    return `/journals/${id}?${params.toString()}`;
   }
 
   function batchSelectionReason(journal: JournalSummary): string {
@@ -388,7 +513,7 @@
           role="group"
           aria-label="Mode jurnal"
         >
-          {#if deletionAccountId}
+          {#if !isInspector}
             <button
               type="button"
               class="rounded-full px-3 py-1 font-medium {journalMode === 'all'
@@ -594,6 +719,70 @@
     {/each}
   </nav>
 
+  {#if canApproveBatch}
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-default bg-card-bg p-3 text-sm"
+      data-testid="bulk-approval-toolbar"
+    >
+      <div>
+        <p class="font-semibold" aria-live="polite">
+          {#if approvalSelecting}Memeriksa jurnal lintas halaman…
+          {:else if approvalAllMatching}Semua {approvalSelection.length} jurnal yang dapat disetujui dipilih.
+          {:else}{approvalSelection.length} jurnal dipilih untuk approval.{/if}
+        </p>
+        <p class="mt-1 text-xs text-text-muted">
+          Pilihan mengikuti buku dan filter saat ini. Hanya jurnal Di review pada periode terbuka
+          yang dapat disetujui.
+        </p>
+        {#if approvalAllMatching && approvalSkipped > 0}
+          <p class="mt-1 text-xs text-text-muted">
+            {approvalSkipped} jurnal dilewati karena tidak memenuhi syarat.
+          </p>
+        {/if}
+        <div class="mt-2 flex gap-4">
+          <button
+            type="button"
+            class="font-semibold text-primary hover:underline disabled:opacity-50"
+            disabled={loading || approvalSelecting || approvalBusy || total === 0}
+            onclick={selectAllForApproval}
+            data-testid="bulk-approval-select-all">Pilih semua yang dapat disetujui</button
+          >
+          {#if approvalSelection.length > 0}
+            <button
+              type="button"
+              class="text-text-muted hover:underline"
+              disabled={approvalBusy}
+              onclick={clearApprovalSelection}>Batalkan pilihan</button
+            >
+          {/if}
+        </div>
+      </div>
+      <button
+        type="button"
+        class="rounded-md bg-primary px-3 py-2 font-semibold text-white disabled:opacity-50"
+        disabled={approvalSelection.length === 0 || approvalSelecting || approvalBusy || loading}
+        onclick={approveSelected}
+        data-testid="bulk-approval-submit"
+      >
+        {approvalBusy ? 'Memproses…' : `Setujui dan Posting (${approvalSelection.length})`}
+      </button>
+    </div>
+  {/if}
+  {#if approvalError}<p
+      class="mb-4 rounded-md border border-danger/30 bg-danger-light p-3 text-sm text-danger"
+      role="alert"
+      data-testid="bulk-approval-error"
+    >
+      {approvalError}
+    </p>{/if}
+  {#if approvalMessage}<p
+      class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm"
+      role="status"
+      data-testid="bulk-approval-result"
+    >
+      {approvalMessage}
+    </p>{/if}
+
   {#if canBatchReplace && accountDeletion && accountDeletion.journal_count > 0}
     <div
       class="mb-4 flex flex-col items-stretch gap-3 rounded-md border border-border-default bg-card-bg p-3 text-sm sm:flex-row sm:items-center sm:justify-between"
@@ -795,16 +984,25 @@
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
-            {#if canBatchReplace}
+            {#if canBatchReplace || canApproveBatch}
               <th class="w-12 px-3 py-3 text-left"
                 ><input
                   type="checkbox"
                   class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  checked={allPageSelected}
-                  disabled={selectablePage.length === 0 || selectingAll}
-                  onchange={(event) => selectPage(event.currentTarget.checked)}
-                  aria-label="Pilih semua jurnal yang dapat diedit di halaman ini"
-                  data-testid="batch-select-page"
+                  checked={canApproveBatch ? approvalPageSelected : allPageSelected}
+                  disabled={canApproveBatch
+                    ? approvalPage.length === 0 || approvalSelecting || approvalBusy
+                    : selectablePage.length === 0 || selectingAll}
+                  onchange={(event) =>
+                    canApproveBatch
+                      ? approvalPage.forEach((journal) =>
+                          selectApproval(journal, event.currentTarget.checked),
+                        )
+                      : selectPage(event.currentTarget.checked)}
+                  aria-label={canApproveBatch
+                    ? 'Pilih jurnal di halaman ini untuk approval'
+                    : 'Pilih semua jurnal yang dapat diedit di halaman ini'}
+                  data-testid={canApproveBatch ? 'bulk-approval-select-page' : 'batch-select-page'}
                 /></th
               >
             {/if}
@@ -827,19 +1025,30 @@
                 : 'cursor-pointer'}"
               onclick={() => !j.deleted_at && goto(journalUrl(j.id))}
             >
-              {#if canBatchReplace}
+              {#if canBatchReplace || canApproveBatch}
                 <td class="px-3 py-3">
                   <input
                     type="checkbox"
                     class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    checked={selectedIds.has(j.id)}
-                    disabled={Boolean(selectionReason) || selectingAll}
-                    title={selectionReason || 'Pilih jurnal untuk penggantian akun'}
+                    checked={canApproveBatch ? approvalIds.has(j.id) : selectedIds.has(j.id)}
+                    disabled={canApproveBatch
+                      ? !approvalPage.some((item) => item.id === j.id) ||
+                        approvalSelecting ||
+                        approvalBusy
+                      : Boolean(selectionReason) || selectingAll}
+                    title={canApproveBatch
+                      ? 'Pilih jurnal untuk approval'
+                      : selectionReason || 'Pilih jurnal untuk penggantian akun'}
                     aria-label={`Pilih jurnal ${j.number}`}
                     aria-describedby={selectionReason ? `batch-reason-${j.id}` : undefined}
                     onclick={(event) => event.stopPropagation()}
-                    onchange={(event) => selectJournal(j, event.currentTarget.checked)}
-                    data-testid={`batch-select-${j.id}`}
+                    onchange={(event) =>
+                      canApproveBatch
+                        ? selectApproval(j, event.currentTarget.checked)
+                        : selectJournal(j, event.currentTarget.checked)}
+                    data-testid={canApproveBatch
+                      ? `bulk-approval-select-${j.id}`
+                      : `batch-select-${j.id}`}
                   />
                 </td>
               {/if}
@@ -865,7 +1074,41 @@
                 </span>
               </td>
               <td class="px-4 py-3">{formatDate(j.date)}</td>
-              <td class="px-4 py-3">{j.memo ?? '—'}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="min-w-0">{j.memo ?? '—'}</span>
+                  {#if j.attachment_count === 1 && j.attachment_thumbnail_url}
+                    <img
+                      src={j.attachment_thumbnail_url}
+                      alt="Thumbnail lampiran jurnal {j.number}"
+                      class="h-9 w-9 shrink-0 rounded border border-border-soft object-cover"
+                      data-testid={`journal-attachment-thumbnail-${j.id}`}
+                    />
+                  {:else if (j.attachment_count ?? 0) > 0}
+                    <span
+                      class="inline-flex shrink-0 items-center gap-1 text-xs text-text-muted"
+                      title={`${j.attachment_count} lampiran`}
+                      aria-label={`${j.attachment_count} lampiran`}
+                      data-testid={`journal-attachment-indicator-${j.id}`}
+                    >
+                      <svg
+                        class="h-4 w-4"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                        ><path
+                          d="m7 10.5 5.2-5.2a3 3 0 0 1 4.2 4.2L9 16.9a4.5 4.5 0 0 1-6.4-6.4l7.5-7.5"
+                        /></svg
+                      >
+                      {#if (j.attachment_count ?? 0) > 1}{j.attachment_count} Lampiran{/if}
+                    </span>
+                  {/if}
+                </div>
+              </td>
               <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(j.total)}</td>
               <td class="px-4 py-3">
                 <span
@@ -903,7 +1146,9 @@
             </tr>
           {:else}
             <tr
-              ><td colspan={canBatchReplace ? 9 : 8} class="px-4 py-10 text-center text-text-muted"
+              ><td
+                colspan={canBatchReplace || canApproveBatch ? 9 : 8}
+                class="px-4 py-10 text-center text-text-muted"
                 >{statusTab === 'trashed'
                   ? 'Belum ada jurnal di Trashed.'
                   : 'Belum ada jurnal.'}</td

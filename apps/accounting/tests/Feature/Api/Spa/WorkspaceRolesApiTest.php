@@ -127,6 +127,76 @@ it('creates an entity-scoped named role from a default and makes it assignable w
     $this->patchJson('/api/v1/spa/role-management/'.$this->supervisor->assignments()->first()->id, ['role_id' => $role['id']])->assertUnprocessable();
 });
 
+it('selects the workspaces where a custom role can be assigned', function () {
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id, 'entity_id' => $this->otherEntity->id,
+        'role_id' => $this->admin->assignments()->first()->role_id,
+    ]);
+    $created = createWorkspaceRole($this, 'Regional Reviewer');
+    $code = $created['created_role'];
+    $role = collect($created['roles'])->firstWhere('code', $code);
+    $url = '/api/v1/spa/permission-management/roles/'.$code.'/workspaces';
+
+    $snapshot = workspaceRoleSnapshot($this);
+    expect(collect($snapshot['roles'])->firstWhere('code', $code)['workspace_ids'])->toBe([$this->entity->id]);
+    $this->putJson($url, [
+        'workspace_ids' => [$this->entity->id, $this->otherEntity->id],
+        'revision' => $snapshot['revision'],
+    ])->assertOk();
+
+    $this->withHeader('X-Tenant-Slug', $this->otherEntity->id)
+        ->getJson('/api/v1/spa/role-management')->assertOk()
+        ->assertJsonFragment(['id' => $role['id'], 'code' => $code]);
+    expect(app(AccountingPermissions::class)->roleAssignable($this->otherEntity->refresh(), $code))->toBeTrue();
+
+    $snapshot = workspaceRoleSnapshot($this);
+    $this->putJson($url, [
+        'workspace_ids' => [$this->entity->id], 'revision' => $snapshot['revision'],
+    ])->assertOk();
+    $this->withHeader('X-Tenant-Slug', $this->otherEntity->id)
+        ->getJson('/api/v1/spa/role-management')->assertOk()
+        ->assertJsonMissing(['code' => $code]);
+    $this->postJson('/api/v1/spa/role-management/assignments', [
+        'user_id' => $this->operator->id, 'role_id' => $role['id'],
+    ])->assertUnprocessable();
+    expect(app(AccountingPermissions::class)->roleAssignable($this->entity->refresh(), $code))->toBeTrue()
+        ->and(app(AccountingPermissions::class)->roleAssignable($this->otherEntity->refresh(), $code))->toBeFalse();
+});
+
+it('keeps preset roles active by default and rejects removal while members remain', function () {
+    $this->admin->assignments()->create([
+        'app_id' => $this->rbacApp->id, 'entity_id' => $this->otherEntity->id,
+        'role_id' => $this->admin->assignments()->first()->role_id,
+    ]);
+    $snapshot = workspaceRoleSnapshot($this);
+    $operator = collect($snapshot['roles'])->firstWhere('code', 'operator');
+    expect($operator['workspace_ids'])->toEqualCanonicalizing([$this->entity->id, $this->otherEntity->id]);
+    $url = '/api/v1/spa/permission-management/roles/operator/workspaces';
+
+    $this->putJson($url, [
+        'workspace_ids' => [$this->otherEntity->id], 'revision' => $snapshot['revision'],
+    ])->assertConflict();
+    expect(app(AccountingPermissions::class)->roleAssignable($this->entity->refresh(), 'operator'))->toBeTrue();
+
+    $this->putJson($url, [
+        'workspace_ids' => [$this->entity->id], 'revision' => $snapshot['revision'],
+    ])->assertOk();
+    expect(app(AccountingPermissions::class)->roleAssignable($this->entity->refresh(), 'operator'))->toBeTrue()
+        ->and(app(AccountingPermissions::class)->roleAssignable($this->otherEntity->refresh(), 'operator'))->toBeFalse();
+    $this->withHeader('X-Tenant-Slug', $this->otherEntity->id)
+        ->getJson('/api/v1/spa/role-management')->assertOk()
+        ->assertJsonMissing(['code' => 'operator']);
+});
+
+it('rejects a role workspace outside the actor management scope', function () {
+    $snapshot = workspaceRoleSnapshot($this);
+    $this->putJson('/api/v1/spa/permission-management/roles/supervisor/workspaces', [
+        'workspace_ids' => [$this->entity->id, $this->otherEntity->id],
+        'revision' => $snapshot['revision'],
+    ])->assertUnprocessable();
+    expect(app(AccountingPermissions::class)->roleAssignable($this->otherEntity->refresh(), 'supervisor'))->toBeTrue();
+});
+
 it('assigns a named role to multiple users and applies its effective permissions', function () {
     $result = createWorkspaceRole($this);
     $code = $result['created_role'];
