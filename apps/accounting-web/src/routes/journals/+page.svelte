@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
   import { journalAttachmentView } from '$lib/stores/journal-attachment-view.svelte.js';
@@ -328,6 +328,7 @@
       };
       trashedCount = res.meta.trashed_count ?? 0;
       saveListContext();
+      syncListUrl();
       if (scrollToHighlight && items.some((item) => item.id === highlightJournalId)) {
         scrollToHighlight = false;
         scrollAfterLoad = true;
@@ -496,7 +497,7 @@
     }
   }
 
-  function journalUrl(id: string): string {
+  function listSearchParams(): URLSearchParams {
     const params = new URLSearchParams();
     if (deletionAccountId) {
       params.set('delete_account_id', deletionAccountId);
@@ -509,6 +510,19 @@
     }
     if (currentPage > 1) params.set('page', String(currentPage));
     if (perPage !== 50) params.set('per_page', String(perPage));
+    return params;
+  }
+
+  function syncListUrl(): void {
+    const target = `/journals?${listSearchParams().toString()}`;
+    if (`${window.location.pathname}${window.location.search}` === target) return;
+    // Keep the mounted list and SvelteKit history state while its filters and
+    // page become the browser's Back destination.
+    replaceState(target, $page.state);
+  }
+
+  function journalUrl(id: string): string {
+    const params = listSearchParams();
     params.set('focus_journal', id);
     return `/journals/${id}?${params.toString()}`;
   }

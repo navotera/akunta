@@ -152,6 +152,24 @@ async function mockJournals(
       const journal = journals.find((item) => item.id === id);
       if (journal) journal.status = 'posted';
       await route.fulfill({ json: { data: { ...journal, status: 'posted' } } });
+    } else if (
+      url.pathname.startsWith('/api/v1/spa/journals/') &&
+      url.pathname.endsWith('/cancel-review')
+    ) {
+      const journal = journals.find((item) => item.id === url.pathname.split('/').at(-2));
+      if (journal) journal.status = 'draft';
+      await route.fulfill({
+        json: {
+          data: journal && {
+            ...journal,
+            transaction_code: 'TRX-REVIEW',
+            review_note: null,
+            audit_trail: [],
+            entries_debit: [{ account_id: 'bank', amount: '100', memo: null }],
+            entries_credit: [{ account_id: 'sales', amount: '100', memo: null }],
+          },
+        },
+      });
     } else if (url.pathname.startsWith('/api/v1/spa/journals/')) {
       const journal = journals.find((item) => item.id === url.pathname.split('/').at(-1));
       await route.fulfill({
@@ -264,6 +282,8 @@ test('opens a saved attachment at full size in the operator journal detail', asy
     'operator',
   );
   await page.goto(`/journals/${IDS[0]}`);
+  await expect(page.getByTestId('journal-attachments-review-lock')).toBeVisible();
+  await expect(page.getByTestId('journal-attachments-withdraw-link')).toHaveCount(0);
   await page.getByTestId(`saved-attachment-${ATTACHMENT_ID}`).click();
   await expect(page.getByTestId('saved-attachment-preview-image')).toBeVisible();
   await expect(page.getByTestId('saved-attachment-preview-image')).toHaveJSProperty(
@@ -271,6 +291,70 @@ test('opens a saved attachment at full size in the operator journal detail', asy
     80,
   );
   await expect(page.getByTestId('saved-attachments')).not.toContainText('Lampiran tersimpan');
+});
+
+test('explains the upload lock and lets an operator withdraw a journal from review', async ({
+  page,
+}) => {
+  await mockJournals(
+    page,
+    [
+      'journal.read',
+      'journal.update',
+      'journal.submit',
+      'attachment.read',
+      'attachment.upload',
+      'period.read',
+      'account.read',
+    ],
+    true,
+    'operator',
+  );
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.goto(`/journals/${IDS[0]}`);
+  await expect(page.getByTestId('journal-attachments-review-lock')).toContainText('In Review');
+  await expect(page.getByTestId('journal-attachments-picker')).toHaveCount(0);
+  await page.getByTestId('journal-attachments-withdraw-link').click();
+  await expect(page.getByTestId('journal-attachments-review-lock')).toHaveCount(0);
+  await expect(page.getByTestId('journal-attachments-picker')).toBeEnabled();
+});
+
+test('shows a helpful size limit error instead of silently ignoring an 11 MB attachment', async ({
+  page,
+}) => {
+  await mockJournals(
+    page,
+    [
+      'journal.read',
+      'journal.update',
+      'journal.submit',
+      'attachment.read',
+      'attachment.upload',
+      'period.read',
+      'account.read',
+    ],
+    true,
+    'operator',
+  );
+  page.on('dialog', (dialog) => dialog.accept());
+  await page.goto(`/journals/${IDS[0]}`);
+  await page.getByTestId('journal-attachments-withdraw-link').click();
+  await expect(page.getByTestId('journal-attachments-picker')).toBeEnabled();
+  await page.getByTestId('journal-attachments-input').setInputFiles({
+    name: 'bukti-besar.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.alloc(11 * 1024 * 1024),
+  });
+  await expect(page.getByTestId('error-attachments')).toContainText('bukti-besar.pdf');
+  await expect(page.getByTestId('error-attachments')).toContainText('maksimal 5 MB');
+  await expect(page.getByTestId('journal-attachment-preview-0')).toHaveCount(0);
+  await page.getByTestId('journal-attachments-input').setInputFiles({
+    name: 'bukti-kecil.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n'),
+  });
+  await expect(page.getByTestId('error-attachments')).toHaveCount(0);
+  await expect(page.getByTestId('journal-attachment-preview-0')).toContainText('bukti-kecil.pdf');
 });
 
 test('opens a gallery with multiple images and a PDF from the journal list', async ({ page }) => {
@@ -400,4 +484,42 @@ test('changes journal page size from the list footer', async ({ page }) => {
   await expect(page.getByTestId('journal-per-page')).toHaveValue('50');
   await page.getByTestId('journal-per-page').selectOption('25');
   await expect.poll(() => pageSizes.at(-1)).toBe('25');
+});
+
+test('keeps the selected year and period after opening and returning from a journal', async ({
+  page,
+}) => {
+  const requestedPeriods: string[] = [];
+  await mockJournals(page, ['journal.read', 'period.read', 'account.read'], true, 'operator');
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === '/api/v1/spa/journals')
+      requestedPeriods.push(url.searchParams.get('period_id') ?? '');
+  });
+
+  await page.goto('/journals');
+  await page.getByRole('button', { name: /In Review/ }).click();
+  await page.getByTestId('journal-filter-button').click();
+  await page.getByTestId('journal-filter-period').click();
+  await page.getByRole('option', { name: /Mei 2022/ }).click();
+  await page.getByTestId('journal-filter-apply').click();
+  await expect(page).toHaveURL(new RegExp(`/journals\\?.*period_id=${OLD_PERIOD}`));
+  await expect(page.getByTestId(`journal-row-${IDS[0]}`)).toBeVisible();
+  await expect(page.getByTestId(`journal-row-${THIRD_ID}`)).toHaveCount(0);
+
+  await page.getByTestId(`journal-row-${IDS[0]}`).click();
+  await expect(page).toHaveURL(new RegExp(`/journals/${IDS[0]}\\?.*period_id=${OLD_PERIOD}`));
+  await page.getByTestId('cancel').click();
+  await expect(page).toHaveURL(new RegExp(`/journals\\?.*period_id=${OLD_PERIOD}`));
+  await page.getByTestId('journal-filter-button').click();
+  await expect(page.getByTestId('journal-filter-period')).toContainText('Mei 2022');
+  await expect(page.getByTestId(`journal-row-${THIRD_ID}`)).toHaveCount(0);
+  expect(requestedPeriods.at(-1)).toBe(OLD_PERIOD);
+
+  await page.getByTestId(`journal-row-${IDS[1]}`).click();
+  await expect(page).toHaveURL(new RegExp(`/journals/${IDS[1]}\\?.*period_id=${OLD_PERIOD}`));
+  await page.goBack();
+  await expect(page.getByTestId(`journal-row-${IDS[1]}`)).toBeVisible();
+  await expect(page.getByTestId(`journal-row-${THIRD_ID}`)).toHaveCount(0);
+  expect(requestedPeriods.at(-1)).toBe(OLD_PERIOD);
 });

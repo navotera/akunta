@@ -128,6 +128,12 @@
     allowModeChange &&
       (reviewMode || !initial || ['draft', 'rejected'].includes(initial.status ?? '')),
   );
+  const submittedUploadLocked = $derived(
+    readOnly && initial?.status === 'submitted' && !reviewMode,
+  );
+  const canWithdrawReview = $derived(
+    submittedUploadLocked && Boolean(onCancelReview) && can('journal.submit'),
+  );
 
   const draftPath = $page.url.pathname;
   const draftScope = journalDraftScope();
@@ -168,6 +174,7 @@
   );
   let noAttachment = $state(restoredDraft?.attachments_not_available ?? false);
   let attachmentError = $state<string | null>(null);
+  let invalidAttachmentSelection = $state(false);
   let attachments = $state<File[]>([]);
   let attachmentInput = $state<HTMLInputElement>();
   let attachmentToRemove = $state<number | null>(null);
@@ -463,23 +470,43 @@
     if (!files) return;
 
     const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
-    const validFiles = Array.from(files).filter(
-      (file) => file.size <= 5 * 1024 * 1024 && allowedTypes.includes(file.type),
-    );
-    if (validFiles.length > 0) {
-      noAttachment = false;
-      attachmentError = null;
-      attachments = [...attachments, ...validFiles];
+    const selectedFiles = Array.from(files);
+    const oversized = selectedFiles.filter((file) => file.size > 5 * 1024 * 1024);
+    const unsupported = selectedFiles.filter((file) => !allowedTypes.includes(file.type));
+    const errors = [
+      ...(oversized.length
+        ? [
+            `File ${oversized.map((file) => `“${file.name}”`).join(', ')} terlalu besar. Kecilkan ukuran file dahulu (maksimal 5 MB per file).`,
+          ]
+        : []),
+      ...(unsupported.length
+        ? [
+            `Format file ${unsupported.map((file) => `“${file.name}”`).join(', ')} tidak didukung. Pilih PDF, JPG, atau PNG.`,
+          ]
+        : []),
+    ];
+    if (attachmentInput) attachmentInput.value = '';
+    if (errors.length > 0) {
+      attachmentError = errors.join(' ');
+      invalidAttachmentSelection = true;
+      return;
     }
+    if (selectedFiles.length === 0) return;
+    noAttachment = false;
+    attachmentError = null;
+    invalidAttachmentSelection = false;
+    attachments = [...attachments, ...selectedFiles];
   }
 
   function toggleNoAttachment(event: Event) {
     noAttachment = (event.currentTarget as HTMLInputElement).checked;
     attachmentError = null;
+    invalidAttachmentSelection = false;
     if (noAttachment) attachments = [];
   }
 
   function validateAttachments(): boolean {
+    if (invalidAttachmentSelection) return false;
     if (templateMode || initial || noAttachment || attachments.length > 0) {
       attachmentError = null;
       return true;
@@ -778,68 +805,94 @@
                 onPreviewAttachment={(attachment) => (savedAttachmentToPreview = attachment)}
               />
             {/if}
-            <input
-              bind:this={attachmentInput}
-              class="sr-only"
-              type="file"
-              accept="application/pdf,image/jpeg,image/png"
-              multiple
-              onchange={(event) => selectAttachments(event.currentTarget.files)}
-              data-testid="journal-attachments-input"
-              disabled={!can('attachment.upload')}
-            />
-            <button
-              type="button"
-              class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
-              onclick={() => attachmentInput?.click()}
-              data-testid="journal-attachments-picker"
-              disabled={!can('attachment.upload')}
-            >
-              Klik untuk pilih file
-              <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span>
-            </button>
-            {#if !templateMode && !initial}
-              <label class="mt-3 flex items-center gap-2 text-sm text-text-muted">
-                <input
-                  type="checkbox"
-                  checked={noAttachment}
-                  onchange={toggleNoAttachment}
-                  data-testid="journal-no-attachment"
-                />
-                <span>Lampiran tidak ada</span>
-              </label>
-            {/if}
-            {#if attachmentError}
-              <span class="mt-2 block text-xs text-danger" data-testid="error-attachments"
-                >{attachmentError}</span
+            {#if submittedUploadLocked}
+              <p
+                class="rounded-md border border-border-default bg-page-bg px-3 py-3 text-sm text-text-muted"
+                role="status"
+                data-testid="journal-attachments-review-lock"
               >
-            {/if}
-            {#if attachments.length > 0}
-              <ul class="mt-3 space-y-2">
-                {#each attachments as file, index (file.name + file.lastModified)}
-                  <li
-                    class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
+                Upload lampiran tidak aktif saat jurnal dalam tahap In Review.
+                {#if canWithdrawReview}
+                  <a
+                    href="#journal-cancel-review"
+                    class="font-semibold text-primary underline underline-offset-2 hover:text-primary-active"
+                    aria-disabled={saving}
+                    onclick={(event) => {
+                      event.preventDefault();
+                      if (!saving) void onCancelReview?.();
+                    }}
+                    data-testid="journal-attachments-withdraw-link">Cabut pengajuan review</a
                   >
-                    <button
-                      type="button"
-                      class="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary"
-                      onclick={() => openAttachmentPreview(file)}
-                      title="Klik untuk melihat lampiran"
-                      data-testid="journal-attachment-preview-{index}"
+                  terlebih dahulu agar jurnal dapat dimodifikasi lagi.
+                {:else}
+                  Hubungi pengguna yang berwenang untuk mencabut review sebelum mengubah lampiran.
+                {/if}
+              </p>
+            {:else}
+              <input
+                bind:this={attachmentInput}
+                class="sr-only"
+                type="file"
+                accept="application/pdf,image/jpeg,image/png"
+                multiple
+                onchange={(event) => selectAttachments(event.currentTarget.files)}
+                data-testid="journal-attachments-input"
+                disabled={!can('attachment.upload')}
+              />
+              <button
+                type="button"
+                class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
+                onclick={() => attachmentInput?.click()}
+                data-testid="journal-attachments-picker"
+                disabled={!can('attachment.upload')}
+              >
+                Klik untuk pilih file
+                <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span
+                >
+              </button>
+              {#if !templateMode && !initial}
+                <label class="mt-3 flex items-center gap-2 text-sm text-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={noAttachment}
+                    onchange={toggleNoAttachment}
+                    data-testid="journal-no-attachment"
+                  />
+                  <span>Lampiran tidak ada</span>
+                </label>
+              {/if}
+              {#if attachmentError}
+                <span class="mt-2 block text-xs text-danger" data-testid="error-attachments"
+                  >{attachmentError}</span
+                >
+              {/if}
+              {#if attachments.length > 0}
+                <ul class="mt-3 space-y-2">
+                  {#each attachments as file, index (file.name + file.lastModified)}
+                    <li
+                      class="flex items-center justify-between gap-2 rounded-md bg-page-bg px-3 py-2 text-sm"
                     >
-                      <span class="shrink-0 text-xs font-semibold uppercase text-text-muted">
-                        {file.type === 'application/pdf' ? 'PDF' : 'IMG'}
-                      </span>
-                      <span class="min-w-0 truncate">{file.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="shrink-0 text-xs font-medium text-danger hover:underline"
-                      onclick={() => (attachmentToRemove = index)}>Hapus</button
-                    >
-                  </li>
-                {/each}
-              </ul>
+                      <button
+                        type="button"
+                        class="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-primary"
+                        onclick={() => openAttachmentPreview(file)}
+                        title="Klik untuk melihat lampiran"
+                        data-testid="journal-attachment-preview-{index}"
+                      >
+                        <span class="shrink-0 text-xs font-semibold uppercase text-text-muted">
+                          {file.type === 'application/pdf' ? 'PDF' : 'IMG'}
+                        </span>
+                        <span class="min-w-0 truncate">{file.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="shrink-0 text-xs font-medium text-danger hover:underline"
+                        onclick={() => (attachmentToRemove = index)}>Hapus</button
+                      >
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
             {/if}
           </section>
         {/if}
@@ -1101,8 +1154,9 @@
           {!can('journal.post') && can('journal.submit') ? 'Ajukan Review' : 'Posting Jurnal'}
         </button>
       {/if}
-      {#if readOnly && initial?.status === 'submitted' && onCancelReview && can('journal.submit')}
+      {#if canWithdrawReview}
         <button
+          id="journal-cancel-review"
           type="button"
           onclick={() => void onCancelReview?.()}
           disabled={saving}
