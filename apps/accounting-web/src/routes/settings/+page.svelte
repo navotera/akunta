@@ -27,6 +27,7 @@
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { journalAttachmentView } from '$lib/stores/journal-attachment-view.svelte.js';
   import { workspaceApi, type WorkspaceRecord } from '$lib/api/workspace.js';
   import FormatTokenInput from '$lib/components/ui/FormatTokenInput.svelte';
   import {
@@ -48,6 +49,7 @@
 
   type SettingSection =
     | 'general'
+    | 'appearance'
     | 'workspace'
     | 'number-formats'
     | 'entity-profile'
@@ -61,6 +63,12 @@
   const sections: Array<{ id: SettingSection; label: string; description: string; icon: string }> =
     [
       { id: 'general', label: 'General', description: 'Preferensi dasar aplikasi', icon: '⚙' },
+      {
+        id: 'appearance',
+        label: 'Tampilan',
+        description: 'Preferensi tampilan pribadi',
+        icon: '◐',
+      },
       { id: 'notification', label: 'Notification', description: 'Atur pemberitahuan', icon: '♢' },
       { id: 'cron', label: 'Cron & Scheduler', description: 'Status job otomatis', icon: '⚡' },
       { id: 'users', label: 'User & Roles', description: 'Pengguna dan hak akses', icon: '♙' },
@@ -301,11 +309,13 @@
 
   async function initializeSettings() {
     await auth.refresh();
+    journalAttachmentView.hydrate(auth.user?.id ?? null);
     if (isFiscalInspector()) {
       await goto('/dashboard', { replaceState: true });
       return;
     }
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
+    if ($page.url.searchParams.get('section') === 'appearance') activeSection = 'appearance';
     if ($page.url.searchParams.get('section') === 'users') activeSection = 'users';
     if ($page.url.searchParams.get('section') === 'permissions') activeSection = 'permissions';
     if ($page.url.searchParams.get('section') === 'integration') activeSection = 'integration';
@@ -1143,6 +1153,45 @@
               </button>
             </div>
           {/if}
+        </div>
+      {:else if activeSection === 'appearance'}
+        <h2 class="text-lg font-bold">Tampilan</h2>
+        <p class="mt-1 text-sm text-text-muted">
+          Preferensi pribadi untuk tampilan daftar jurnal di perangkat ini.
+        </p>
+        <div
+          class="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-border-soft py-4"
+        >
+          <div>
+            <h3 class="text-sm font-semibold">Lampiran pada daftar jurnal</h3>
+            <p class="mt-1 text-xs text-text-muted">
+              Pilih gambar kecil atau ikon lampiran. Klik keduanya untuk membuka preview dan galeri.
+            </p>
+          </div>
+          <div
+            class="inline-flex rounded-md border border-border-default p-1"
+            role="group"
+            aria-label="Tampilan lampiran daftar jurnal"
+          >
+            <button
+              type="button"
+              class="rounded px-3 py-1.5 text-sm {journalAttachmentView.value === 'thumbnail'
+                ? 'bg-primary-light font-semibold text-primary'
+                : 'text-text-muted hover:text-text-default'}"
+              aria-pressed={journalAttachmentView.value === 'thumbnail'}
+              onclick={() => journalAttachmentView.set('thumbnail')}
+              data-testid="journal-attachment-view-thumbnail">Thumbnail</button
+            >
+            <button
+              type="button"
+              class="rounded px-3 py-1.5 text-sm {journalAttachmentView.value === 'icon'
+                ? 'bg-primary-light font-semibold text-primary'
+                : 'text-text-muted hover:text-text-default'}"
+              aria-pressed={journalAttachmentView.value === 'icon'}
+              onclick={() => journalAttachmentView.set('icon')}
+              data-testid="journal-attachment-view-icon">Ikon saja</button
+            >
+          </div>
         </div>
       {:else if activeSection === 'workspace'}
         <div class="flex items-start justify-between gap-4">

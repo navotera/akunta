@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -52,6 +54,7 @@
         return;
       }
     }
+    listReturn.restore();
     await load();
   });
 
@@ -69,6 +72,7 @@
   }
 
   function openEdit(r: RecurringJournal) {
+    listReturn.remember(r.id);
     creating = false;
     editing = r;
     form = {
@@ -86,6 +90,7 @@
   }
 
   function closeForm() {
+    listReturn.resume();
     editing = null;
     creating = false;
     formErrors = null;
@@ -133,8 +138,12 @@
       const res = await recurringApi.run(r.id);
       closeForm();
       await load();
-      if (res.journal_id && can('journal.read')) goto(`/journals/${res.journal_id}`);
-      else if (!res.journal_id) alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
+      if (res.journal_id && can('journal.read')) {
+        listReturn.remember(r.id);
+        void goto(
+          `/journals/${res.journal_id}?return_to=${encodeURIComponent('/jurnal-berulang')}`,
+        );
+      } else if (!res.journal_id) alert('Tidak ada jurnal yang dibuat (cek tanggal next_run).');
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e));
     }
@@ -161,6 +170,12 @@
   function fieldErr(name: string): string | null {
     return formErrors?.[name]?.[0] ?? null;
   }
+  const listReturn = createListReturn(
+    'recurring',
+    () => ({}),
+    () => {},
+    () => !loading && !(editing || creating),
+  );
 </script>
 
 <div class="px-6 py-6">
@@ -204,6 +219,7 @@
           {#each items as r (r.id)}
             <tr
               class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+              data-return-row={`recurring:${r.id}`}
               onclick={() => openEdit(r)}
             >
               <td class="px-4 py-2 font-medium">{r.name}</td>

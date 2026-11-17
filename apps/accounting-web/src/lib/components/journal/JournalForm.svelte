@@ -25,6 +25,7 @@
   import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import SavedAttachments from './SavedAttachments.svelte';
+  import AttachmentPreview from './AttachmentPreview.svelte';
   import { page } from '$app/stores';
   import {
     loadJournalDraft,
@@ -171,6 +172,7 @@
   let attachmentInput = $state<HTMLInputElement>();
   let attachmentToRemove = $state<number | null>(null);
   let attachmentToPreview = $state<File | null>(null);
+  let savedAttachmentToPreview = $state<Attachment | null>(null);
   let attachmentPreviewUrl = $state<string | null>(null);
   let handledAttachmentResetToken = $state(0);
   let pendingJournalMode = $state<JournalMode | null>(null);
@@ -769,13 +771,12 @@
                 <span class="text-danger">*</span>{/if}
             </h2>
             {#if savedAttachments.length > 0}
-              <div class="mb-4">
-                <SavedAttachments
-                  attachments={savedAttachments}
-                  canDelete={canManageAttachments && can('attachment.delete')}
-                  {onDeleteAttachment}
-                />
-              </div>
+              <SavedAttachments
+                attachments={savedAttachments}
+                canDelete={canManageAttachments && can('attachment.delete')}
+                {onDeleteAttachment}
+                onPreviewAttachment={(attachment) => (savedAttachmentToPreview = attachment)}
+              />
             {/if}
             <input
               bind:this={attachmentInput}
@@ -1029,6 +1030,13 @@
       </aside>
     </div>
   </fieldset>
+
+  {#if savedAttachmentToPreview}
+    <AttachmentPreview
+      attachment={savedAttachmentToPreview}
+      onClose={() => (savedAttachmentToPreview = null)}
+    />
+  {/if}
 
   <!-- Sticky footer -->
   <div

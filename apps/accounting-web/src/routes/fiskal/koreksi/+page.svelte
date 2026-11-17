@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { formatRupiah } from '@akunta/ui';
@@ -164,6 +166,7 @@
   }
 
   function openQuickAdjustment(accountId: string, direction: 'positive' | 'negative'): void {
+    listReturn.remember(`account-${accountId}`);
     editing = null;
     resetForm();
     form.account_id = accountId;
@@ -180,6 +183,7 @@
   }
 
   async function openEdit(item: FiscalAdjustment): Promise<void> {
+    listReturn.remember(item.id);
     editing = item;
     accountLocked = true;
     form = {
@@ -210,6 +214,7 @@
   function closeForm(): void {
     if (saving) return;
     formOpen = false;
+    listReturn.resume();
     editing = null;
     resetForm();
   }
@@ -277,6 +282,7 @@
         return;
       }
     }
+    listReturn.restore();
     await period.refresh();
     activePeriodId = period.active?.id ?? null;
     await load();
@@ -321,6 +327,7 @@
         evidence = evidence.filter((candidate) => candidate !== file);
       }
       formOpen = false;
+      listReturn.resume();
       editing = null;
       resetForm();
       await load();
@@ -380,6 +387,14 @@
       formError = errorMessage(caught, 'Bukti pendukung gagal dihapus.');
     }
   }
+  const listReturn = createListReturn(
+    'fiscal-adjustments',
+    () => ({ activeTab, selectedAccountId, periodStart, periodEnd }),
+    (saved) => {
+      ({ activeTab, selectedAccountId, periodStart, periodEnd } = saved);
+    },
+    () => !loading && !formOpen,
+  );
 </script>
 
 <div class="px-6 py-6">
@@ -546,7 +561,10 @@
           </thead>
           <tbody>
             {#each report.rows as row (row.account_id)}
-              <tr class="border-t border-border-soft">
+              <tr
+                data-return-row={`fiscal-adjustments:account-${row.account_id}`}
+                class="border-t border-border-soft"
+              >
                 <td class="px-4 py-3">
                   <button
                     type="button"
@@ -651,7 +669,9 @@
           ></thead
         ><tbody>
           {#each filteredItems as item (item.id)}
-            <tr class="border-t border-border-soft"
+            <tr
+              data-return-row={`fiscal-adjustments:${item.id}`}
+              class="border-t border-border-soft"
               ><td class="px-4 py-3">{formatDate(item.date)}</td><td class="px-4 py-3"
                 ><strong
                   >{item.account_code} <span class="text-text-muted opacity-20">|</span>

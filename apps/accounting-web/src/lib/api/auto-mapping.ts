@@ -52,9 +52,41 @@ export interface AutoMappingRaw {
   pattern_count?: number;
   rule?: AutoMappingRule | null;
   variants?: AutoMappingRule[];
+  source_app_id?: string | null;
+  source_entity_id?: string | null;
+  external_idempotency_key?: string | null;
+}
+
+export interface AutoMappingEntityLink {
+  id: string;
+  source_entity_id: string;
+  entity_id: string;
+  app: { id: string; code: string; name: string };
+}
+
+export interface AutoMappingAppOption {
+  id: string;
+  code: string;
+  name: string;
 }
 
 export const autoMappingApi = {
+  entityLinks: (tenantSlug?: string | null) =>
+    api<{ data: AutoMappingEntityLink[]; apps: AutoMappingAppOption[] }>(
+      '/api/v1/spa/auto-mapping/entity-links',
+      { tenantSlug },
+    ),
+  createEntityLink: (appCode: string, sourceEntityId: string, tenantSlug?: string | null) =>
+    api<{ data: AutoMappingEntityLink }>('/api/v1/spa/auto-mapping/entity-links', {
+      method: 'POST',
+      json: { app_code: appCode, source_entity_id: sourceEntityId },
+      tenantSlug,
+    }),
+  deleteEntityLink: (id: string, tenantSlug?: string | null) =>
+    api<{ deleted: true }>(`/api/v1/spa/auto-mapping/entity-links/${id}`, {
+      method: 'DELETE',
+      tenantSlug,
+    }),
   list: (tenantSlug?: string | null) =>
     api<{ data: AutoMappingRaw[]; meta: Record<string, number> }>('/api/v1/spa/auto-mapping', {
       tenantSlug,

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -107,6 +109,7 @@
   let loadedTenantId = $state<string | null>(null);
 
   async function load(tenantId: string) {
+    listReturn.restore();
     loading = true;
     error = null;
     try {
@@ -146,6 +149,7 @@
   }
 
   async function openEdit(s: JournalTemplateSummary) {
+    listReturn.remember(s.id);
     goto(`/journals/new?as_template=1&template_id=${encodeURIComponent(s.id)}`);
   }
 
@@ -229,6 +233,14 @@
   function fieldErr(name: string): string | null {
     return formErrors?.[name]?.[0] ?? null;
   }
+  const listReturn = createListReturn(
+    'templates',
+    () => ({ activeTab, searchQuery }),
+    (saved) => {
+      ({ activeTab, searchQuery } = saved);
+    },
+    () => !loading,
+  );
 </script>
 
 <div class="px-6 py-6">
@@ -308,6 +320,7 @@
           {#each visibleItems as t, i (t.id)}
             <tr
               class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
+              data-return-row={`templates:${t.id}`}
               onclick={() => openEdit(t)}
             >
               <td class="px-4 py-2 text-center text-text-muted">{i + 1}</td>
