@@ -69,6 +69,7 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
     ->group(function () {
         Route::get('permission-management', [PermissionManagementController::class, 'index']);
         Route::post('permission-management/roles', [PermissionManagementController::class, 'createRole']);
+        Route::put('permission-management/roles/{role}/workspaces', [PermissionManagementController::class, 'updateWorkspaces']);
         Route::patch('permission-management/roles/{role}', [PermissionManagementController::class, 'renameRole']);
         Route::delete('permission-management/roles/{role}', [PermissionManagementController::class, 'removeRole']);
         Route::put('permission-management/{role}', [PermissionManagementController::class, 'update']);
@@ -113,6 +114,7 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::get('journals/next-transaction-code', [App\Http\Controllers\Api\Spa\JournalController::class, 'nextTransactionCode']);
         Route::post('journals/replace-account/preview', [App\Http\Controllers\Api\Spa\JournalController::class, 'previewAccountReplacement']);
         Route::post('journals/replace-account', [App\Http\Controllers\Api\Spa\JournalController::class, 'replaceAccountsBatch']);
+        Route::post('journals/approve-batch', [App\Http\Controllers\Api\Spa\JournalController::class, 'approveBatch']);
         Route::get('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'show']);
         Route::post('journals', [App\Http\Controllers\Api\Spa\JournalController::class, 'store']);
         Route::patch('journals/{id}', [App\Http\Controllers\Api\Spa\JournalController::class, 'update']);

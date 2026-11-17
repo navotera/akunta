@@ -154,12 +154,26 @@ interface WorkspaceHistory {
 
 export const workspace = $state({
   tabs: [] as WorkspaceTab[],
+  maxTabs: 8,
   initialized: false,
   emptyAt: null as string | null,
   activeHref: null as string | null,
   scope: null as WorkspaceScope | null,
   switching: false,
 });
+
+export function setWorkspaceTabLimit(limit: number): void {
+  workspace.maxTabs = Number.isInteger(limit) && limit >= 1 && limit <= 50 ? limit : 8;
+  if (workspace.tabs.length <= workspace.maxTabs) return;
+  const active = workspace.tabs.find((tab) => tab.href === workspace.activeHref);
+  workspace.tabs = [
+    ...(active ? [active] : []),
+    ...workspace.tabs
+      .filter((tab) => tab !== active)
+      .slice(0, workspace.maxTabs - (active ? 1 : 0)),
+  ];
+  persistWorkspace();
+}
 
 function historyKey(scope: WorkspaceScope): string {
   return `${WORKSPACE_STORAGE_KEY}:${encodeURIComponent(scope.userId)}:${encodeURIComponent(scope.entityId ?? 'no-entity')}`;
@@ -250,7 +264,17 @@ export function ensureWorkspaceTab(href: string): void {
   const resolved = resolveWorkspaceTab(href);
   const existingIndex = workspace.tabs.findIndex((tab) => tab.href === href);
   if (existingIndex < 0) {
-    workspace.tabs = [...workspace.tabs, resolved];
+    const active =
+      workspace.maxTabs > 1
+        ? workspace.tabs.find((tab) => tab.href === workspace.activeHref)
+        : undefined;
+    workspace.tabs = [
+      ...(active ? [active] : []),
+      ...workspace.tabs
+        .filter((tab) => tab !== active)
+        .slice(0, workspace.maxTabs - 1 - (active ? 1 : 0)),
+      resolved,
+    ];
     return;
   }
 
@@ -273,6 +297,7 @@ export function initializeWorkspace(
   href: string,
   scope: WorkspaceScope,
   canRestore: (href: string) => boolean = () => true,
+  maxTabs = 8,
 ): void {
   if (
     workspace.initialized &&
@@ -281,6 +306,7 @@ export function initializeWorkspace(
   )
     return;
   if (workspace.initialized) persistWorkspace();
+  workspace.maxTabs = Number.isInteger(maxTabs) && maxTabs >= 1 && maxTabs <= 50 ? maxTabs : 8;
   const history = readHistory(scope);
   // Old global tabs cannot establish which entity owns a record URL.
   if (typeof localStorage !== 'undefined') {
@@ -292,7 +318,8 @@ export function initializeWorkspace(
   workspace.scope = { ...scope };
   workspace.tabs = history.tabs
     .filter((tab) => canRestore(tab.href))
-    .map((tab) => resolveWorkspaceTab(tab.href));
+    .map((tab) => resolveWorkspaceTab(tab.href))
+    .slice(0, workspace.maxTabs);
   workspace.emptyAt = history.emptyAt && canRestore(history.emptyAt) ? history.emptyAt : null;
   workspace.activeHref = href;
   ensureWorkspaceTab(href);

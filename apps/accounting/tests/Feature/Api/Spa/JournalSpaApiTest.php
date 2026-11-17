@@ -16,6 +16,7 @@ use App\Models\JournalEntry;
 use App\Models\Period;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     Gate::define('journal.post', fn (?Authenticatable $u = null) => true);
@@ -98,6 +99,158 @@ beforeEach(function () {
 
 it('rejects unauthenticated /api/v1/spa/journals', function () {
     $this->getJson('/api/v1/spa/journals')->assertStatus(401);
+});
+
+it('approves only selected submitted journals atomically with per-journal audit', function () {
+    $make = function (string $number, string $mode = Journal::MODE_INTERNAL): Journal {
+        $journal = Journal::create([
+            'entity_id' => $this->entity->id,
+            'period_id' => $this->period->id,
+            'type' => Journal::TYPE_GENERAL,
+            'journal_mode' => $mode,
+            'number' => $number,
+            'date' => '2026-05-04',
+            'status' => Journal::STATUS_SUBMITTED,
+        ]);
+        JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 1, 'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0]);
+        JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100]);
+
+        return $journal;
+    };
+    $intern = $make('JU-BULK-INTERN');
+    $fiscal = $make('JU-BULK-FISKAL', Journal::MODE_FISCAL);
+    $untouched = $make('JU-BULK-UNTOUCHED');
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals?status=submitted&for_bulk_approval=1')
+        ->assertOk()
+        ->assertJsonPath('meta.selected_count', 3);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals/approve-batch', ['journal_ids' => [$intern->id, $fiscal->id]])
+        ->assertOk()
+        ->assertJsonPath('data.approved_count', 2);
+
+    expect($intern->refresh()->status)->toBe(Journal::STATUS_POSTED)
+        ->and($fiscal->refresh()->status)->toBe(Journal::STATUS_POSTED)
+        ->and($untouched->refresh()->status)->toBe(Journal::STATUS_SUBMITTED)
+        ->and(AuditLog::query()->where('action', 'journal.post')->whereIn('resource_id', [$intern->id, $fiscal->id])->count())->toBe(2);
+});
+
+it('rejects an invalid approval batch without posting valid journals', function () {
+    $valid = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL, 'number' => 'JU-BULK-VALID',
+        'date' => '2026-05-04', 'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    $invalid = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL, 'number' => 'JU-BULK-INVALID',
+        'date' => '2026-05-04', 'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    foreach ([$valid, $invalid] as $journal) {
+        JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 1, 'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0]);
+        JournalEntry::create(['journal_id' => $journal->id, 'line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => $journal->id === $valid->id ? 100 : 90]);
+    }
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals/approve-batch', ['journal_ids' => [$valid->id, $invalid->id]])
+        ->assertUnprocessable();
+
+    expect($valid->refresh()->status)->toBe(Journal::STATUS_SUBMITTED)
+        ->and($invalid->refresh()->status)->toBe(Journal::STATUS_SUBMITTED)
+        ->and(AuditLog::query()->where('action', 'journal.post')->whereIn('resource_id', [$valid->id, $invalid->id])->count())->toBe(0);
+});
+
+it('enforces review and post permissions and rejects cross-workspace approval', function () {
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL, 'number' => 'JU-BULK-PERM',
+        'date' => '2026-05-04', 'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    $other = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'Other workspace']);
+    $otherPeriod = Period::create([
+        'entity_id' => $other->id, 'name' => 'May 2026',
+        'start_date' => '2026-05-01', 'end_date' => '2026-05-31',
+    ]);
+    $foreign = Journal::create([
+        'entity_id' => $other->id, 'period_id' => $otherPeriod->id, 'type' => Journal::TYPE_GENERAL,
+        'number' => 'JU-BULK-FOREIGN', 'date' => '2026-05-04',
+        'status' => Journal::STATUS_SUBMITTED,
+    ]);
+    $url = '/api/v1/spa/journals/approve-batch';
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson($url, ['journal_ids' => [$journal->id, $foreign->id]])->assertUnprocessable();
+
+    $role = $this->user->assignments()->first()->role;
+    $role->update(['code' => 'journal-reviewer']);
+    $reviewPermission = Permission::query()->where('code', 'journal.review')->firstOrFail();
+    $role->permissions()->detach($reviewPermission->id);
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson($url, ['journal_ids' => [$journal->id]])->assertForbidden();
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals?status=submitted&for_bulk_approval=1')->assertForbidden();
+
+    expect($journal->refresh()->status)->toBe(Journal::STATUS_SUBMITTED);
+});
+
+it('denies bulk approval to a fiscal inspector even with legacy post grants', function () {
+    $this->user->assignments()->first()->role->update(['code' => 'inspector']);
+    $journal = Journal::create([
+        'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+        'type' => Journal::TYPE_GENERAL, 'journal_mode' => Journal::MODE_FISCAL,
+        'number' => 'JU-BULK-INSPECTOR', 'date' => '2026-05-04',
+        'status' => Journal::STATUS_SUBMITTED,
+    ]);
+
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals?journal_mode=fiscal&status=submitted&for_bulk_approval=1')
+        ->assertForbidden();
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->postJson('/api/v1/spa/journals/approve-batch', ['journal_ids' => [$journal->id]])
+        ->assertForbidden();
+});
+
+it('summarizes one image, one document, and multiple journal attachments without exposing them to unauthorized roles', function () {
+    Storage::fake('local');
+    Storage::disk('local')->put('attachments/receipt.webp', 'image');
+    Storage::disk('local')->put('attachments/thumb.webp', 'thumbnail');
+    $journals = collect(['IMAGE', 'DOCUMENT', 'MULTIPLE'])->mapWithKeys(function (string $suffix): array {
+        $journal = Journal::create([
+            'entity_id' => $this->entity->id, 'period_id' => $this->period->id,
+            'type' => Journal::TYPE_GENERAL, 'number' => 'JU-ATTACH-'.$suffix,
+            'date' => '2026-05-04', 'status' => Journal::STATUS_DRAFT,
+        ]);
+
+        return [$suffix => $journal];
+    });
+    foreach ([['IMAGE', 'receipt.webp', 'image/webp', 'attachments/receipt.webp'], ['DOCUMENT', 'invoice.pdf', 'application/pdf', 'attachments/invoice.pdf'], ['MULTIPLE', 'first.pdf', 'application/pdf', 'attachments/first.pdf'], ['MULTIPLE', 'second.pdf', 'application/pdf', 'attachments/second.pdf']] as [$key, $filename, $mime, $path]) {
+        Attachment::create([
+            'entity_id' => $this->entity->id, 'attachable_type' => Journal::class,
+            'attachable_id' => $journals[$key]->id, 'filename' => $filename,
+            'mime_type' => $mime, 'size_bytes' => 10, 'disk' => 'local', 'path' => $path,
+            'metadata' => $key === 'IMAGE' ? ['thumbnail' => ['path' => 'attachments/thumb.webp']] : null,
+        ]);
+    }
+
+    $result = $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals')->assertOk()->json('data');
+    $byId = collect($result)->keyBy('id');
+    expect($byId[$journals['IMAGE']->id]['attachment_count'])->toBe(1)
+        ->and($byId[$journals['IMAGE']->id]['attachment_thumbnail_url'])->toBeString()
+        ->and($byId[$journals['DOCUMENT']->id]['attachment_count'])->toBe(1)
+        ->and($byId[$journals['DOCUMENT']->id]['attachment_thumbnail_url'])->toBeNull()
+        ->and($byId[$journals['MULTIPLE']->id]['attachment_count'])->toBe(2)
+        ->and($byId[$journals['MULTIPLE']->id]['attachment_thumbnail_url'])->toBeNull();
+
+    $this->user->assignments()->first()->role->update(['code' => 'journal-reader']);
+    $restricted = $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/journals')->assertOk()->json('data');
+    expect(collect($restricted)->pluck('attachment_count')->unique()->all())->toBe([0]);
 });
 
 it('lists journals scoped to the tenant', function () {

@@ -14,6 +14,7 @@
     initializeWorkspace,
     isWorkspaceHref,
     persistWorkspace,
+    setWorkspaceTabLimit,
     workspace,
     type WorkspaceScope,
   } from '$lib/stores/workspace.svelte.js';
@@ -50,6 +51,8 @@
     const request = ++restoration;
     restoringWorkspace = true;
     const href = currentHref();
+    const maxTabs =
+      tenant.available.find((entity) => entity.id === scope.entityId)?.max_open_tabs ?? 8;
     const changedScope =
       workspace.scope &&
       (workspace.scope.userId !== scope.userId || workspace.scope.entityId !== scope.entityId);
@@ -61,7 +64,7 @@
           ? persistedHref
           : workspaceHome()
         : href;
-    initializeWorkspace(target, scope, canVisitWorkspacePage);
+    initializeWorkspace(target, scope, canVisitWorkspacePage, maxTabs);
     try {
       if (target !== href) await goto(target, { replaceState: true });
     } finally {
@@ -80,6 +83,13 @@
     if (requestedScope === scopeKey) return;
     requestedScope = scopeKey;
     untrack(() => void restoreWorkspace({ userId, entityId }));
+  });
+
+  $effect(() => {
+    if (!workspace.initialized || workspace.scope?.entityId !== tenant.id) return;
+    setWorkspaceTabLimit(
+      tenant.available.find((entity) => entity.id === tenant.id)?.max_open_tabs ?? 8,
+    );
   });
 
   $effect(() => {

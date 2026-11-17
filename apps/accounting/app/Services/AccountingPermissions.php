@@ -17,6 +17,8 @@ class AccountingPermissions
 
     public const ROLES_KEY = 'accounting_workspace_roles';
 
+    public const DISABLED_ROLES_KEY = 'accounting_disabled_roles';
+
     public function customRoles(Entity $entity): array
     {
         return $entity->workspace_settings[self::ROLES_KEY] ?? [];
@@ -26,6 +28,12 @@ class AccountingPermissions
     {
         return array_key_exists($code, config('accounting_permissions.roles'))
             || array_key_exists($code, $this->customRoles($entity));
+    }
+
+    public function roleAssignable(Entity $entity, string $code): bool
+    {
+        return $this->managedRole($entity, $code)
+            && ! in_array($code, $entity->workspace_settings[self::DISABLED_ROLES_KEY] ?? [], true);
     }
 
     public function profile(Entity $entity, string $code): string
@@ -133,7 +141,8 @@ class AccountingPermissions
             }
             if ($assignment->app?->code === 'accounting') {
                 if ($this->managedRole($entity, $role->code)) {
-                    if (in_array($code, $this->roleCodes($entity, $role->code), true)) {
+                    if ($this->roleAssignable($entity, $role->code)
+                        && in_array($code, $this->roleCodes($entity, $role->code), true)) {
                         return true;
                     }
 
@@ -169,6 +178,7 @@ class AccountingPermissions
     {
         return hash('sha256', json_encode([
             $entity->workspace_settings[self::SETTINGS_KEY] ?? [], $this->customRoles($entity),
+            $entity->workspace_settings[self::DISABLED_ROLES_KEY] ?? [],
         ]));
     }
 
@@ -210,6 +220,7 @@ class AccountingPermissions
                 'allowed_permissions' => $this->profile($entity, $code) === 'inspector'
                     ? config('accounting_permissions.inspector_permissions') : array_column($this->catalog(), 'code'),
                 'customized' => array_key_exists($code, $entity->workspace_settings[self::SETTINGS_KEY] ?? []),
+                'assignable' => $this->roleAssignable($entity, $code),
             ])->values()->all(),
         ];
     }

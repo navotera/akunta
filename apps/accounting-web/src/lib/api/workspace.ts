@@ -26,6 +26,7 @@ export interface WorkspaceRecord {
   transaction_number_start: number;
   bookkeeping_mode: 'independent_books' | 'internal_only';
   date_format: string;
+  max_open_tabs: number;
   issue_report_url: string | null;
   last_activity_at: string | null;
 }
@@ -86,5 +87,6 @@ export interface WorkspaceInput {
   transaction_number_start?: number;
   bookkeeping_mode?: 'independent_books' | 'internal_only';
   date_format?: string;
+  max_open_tabs?: number;
   issue_report_url?: string | null;
 }

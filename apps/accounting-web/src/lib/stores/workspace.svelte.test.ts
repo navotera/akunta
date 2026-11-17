@@ -5,6 +5,7 @@ import {
   getPersistedWorkspaceHref,
   initializeWorkspace,
   persistWorkspace,
+  setWorkspaceTabLimit,
   resolveWorkspaceTab,
   workspace,
 } from './workspace.svelte.js';
@@ -34,6 +35,7 @@ function resetWorkspace() {
   workspace.activeHref = null;
   workspace.scope = null;
   workspace.switching = false;
+  workspace.maxTabs = 8;
 }
 
 beforeEach(() => {
@@ -167,5 +169,53 @@ describe('active workspace tab', () => {
     expect(getWorkspaceTab('/periode')?.label).toBe('Periode');
     expect(getWorkspaceTab('/journals')?.label).toBe('Jurnal');
     expect(getWorkspaceTab('/dashboard')).toBeNull();
+  });
+});
+
+describe('workspace tab limit', () => {
+  const scope = { userId: 'user-1', entityId: 'entity-a' };
+
+  it('defaults to eight and closes an inactive tab when a ninth page opens', () => {
+    initializeWorkspace('/dashboard', scope);
+    for (const href of [
+      '/journals',
+      '/periode',
+      '/akun',
+      '/settings',
+      '/integrasi',
+      '/template-jurnal',
+      '/auto-mapping',
+    ]) {
+      ensureWorkspaceTab(href);
+    }
+    expect(workspace.tabs).toHaveLength(8);
+    ensureWorkspaceTab('/documentation');
+    expect(workspace.tabs).toHaveLength(8);
+    expect(getWorkspaceTab('/documentation')).not.toBeNull();
+    expect(getWorkspaceTab('/dashboard')).not.toBeNull();
+  });
+
+  it('applies a lower limit to restored history while retaining the active page', () => {
+    initializeWorkspace('/dashboard', scope);
+    ensureWorkspaceTab('/journals');
+    ensureWorkspaceTab('/periode');
+    persistWorkspace('/periode');
+    setWorkspaceTabLimit(2);
+    expect(workspace.tabs.map((tab) => tab.href)).toEqual(['/periode', '/dashboard']);
+    resetWorkspace();
+    setWorkspaceTabLimit(2);
+    initializeWorkspace('/periode', scope);
+    expect(workspace.tabs.map((tab) => tab.href)).toEqual(['/periode', '/dashboard']);
+  });
+
+  it('keeps the previous workspace history when switching to a smaller limit', () => {
+    initializeWorkspace('/dashboard', scope, () => true, 8);
+    ensureWorkspaceTab('/journals');
+    ensureWorkspaceTab('/periode');
+    persistWorkspace('/periode');
+    initializeWorkspace('/akun', { userId: 'user-1', entityId: 'entity-b' }, () => true, 1);
+    expect(workspace.tabs.map((tab) => tab.href)).toEqual(['/akun']);
+    initializeWorkspace('/periode', scope, () => true, 8);
+    expect(workspace.tabs.map((tab) => tab.href)).toEqual(['/dashboard', '/journals', '/periode']);
   });
 });

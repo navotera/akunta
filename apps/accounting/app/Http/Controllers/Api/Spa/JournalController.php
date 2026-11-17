@@ -27,6 +27,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -196,6 +197,35 @@ class JournalController extends Controller
             ]);
         }
 
+        if ($request->boolean('for_bulk_approval')) {
+            $this->requirePermission('journal.review', $entity);
+            $this->requirePermission('journal.post', $entity);
+            abort_if($this->isInspector($request), 403, 'Inspector hanya dapat membaca jurnal Fiskal.');
+            $total = (clone $query)->count();
+            $selection = (clone $query)->whereNull('journals.deleted_at')->where('status', Journal::STATUS_SUBMITTED)
+                ->whereHas('period', fn ($period) => $period->where('entity_id', $entity->id)
+                    ->where('status', Period::STATUS_OPEN))
+                ->orderBy('id')->get(['id', 'number', 'journal_mode', 'status', 'period_id', 'date']);
+
+            return response()->json([
+                'data' => $selection->map(fn (Journal $journal): array => [
+                    'id' => $journal->id,
+                    'number' => $journal->number,
+                    'journal_mode' => $journal->journal_mode,
+                    'status' => $journal->status,
+                    'period_id' => $journal->period_id,
+                    'date' => $journal->date->toDateString(),
+                    'deleted_at' => null,
+                ])->all(),
+                'meta' => ['total' => $total, 'selected_count' => $selection->count(), 'skipped_count' => $total - $selection->count()],
+            ]);
+        }
+
+        $canReadAttachments = Auth::user()?->hasPermission('attachment.read', $entity->id)
+            && app(AccountingPermissions::class)->allows(Auth::user(), 'attachment.read', $entity);
+        if ($canReadAttachments) {
+            $query->withCount('attachments')->with('attachments');
+        }
         $page = $query
             ->withSum('entries as total_debit', 'debit')
             ->latest('date')
@@ -203,7 +233,7 @@ class JournalController extends Controller
             ->paginate($perPage);
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (Journal $j) => $this->summary($j))->all(),
+            'data' => collect($page->items())->map(fn (Journal $j) => $this->summary($j, $canReadAttachments))->all(),
             'meta' => [
                 'current_page' => $page->currentPage(),
                 'last_page' => $page->lastPage(),
@@ -656,6 +686,45 @@ class JournalController extends Controller
         return response()->json(['data' => $this->detail($journal->fresh('entries.account'))]);
     }
 
+    public function approveBatch(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->requirePermission('journal.review', $entity);
+        $this->requirePermission('journal.post', $entity);
+        abort_if($this->isInspector($request), 403, 'Inspector hanya dapat membaca jurnal Fiskal.');
+        $data = $request->validate([
+            'journal_ids' => ['required', 'array', 'min:1'],
+            'journal_ids.*' => ['required', 'string', 'size:26', 'distinct'],
+        ]);
+
+        try {
+            $count = DB::transaction(function () use ($data, $entity): int {
+                $journals = Journal::query()->where('entity_id', $entity->id)
+                    ->whereIn('id', $data['journal_ids'])->orderBy('id')->lockForUpdate()->get();
+                if ($journals->count() !== count($data['journal_ids'])) {
+                    throw ValidationException::withMessages(['journal_ids' => 'Ada jurnal pilihan yang tidak tersedia pada workspace ini.']);
+                }
+                foreach ($journals as $journal) {
+                    if ($journal->status !== Journal::STATUS_SUBMITTED) {
+                        throw ValidationException::withMessages(['journal_ids' => "Jurnal {$journal->number} tidak lagi berstatus Di review."]);
+                    }
+                    $this->postJournal->validate($journal);
+                }
+                foreach ($journals as $journal) {
+                    $this->postJournal->execute($journal, Auth::user());
+                }
+
+                return $journals->count();
+            });
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw ValidationException::withMessages(['journal_ids' => $e->getMessage()]);
+        }
+
+        return response()->json(['data' => ['approved_count' => $count]]);
+    }
+
     public function submit(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
@@ -970,8 +1039,23 @@ class JournalController extends Controller
 
     }
 
-    private function summary(Journal $j): array
+    private function summary(Journal $j, bool $canReadAttachments = false): array
     {
+        $attachmentCount = $canReadAttachments ? (int) ($j->attachments_count ?? 0) : 0;
+        $attachment = $attachmentCount === 1 ? $j->attachments->first() : null;
+        $thumbnailUrl = null;
+        if ($attachment && str_starts_with((string) $attachment->mime_type, 'image/')) {
+            $path = (string) (data_get($attachment->metadata, 'thumbnail.path') ?: $attachment->path);
+            try {
+                $disk = Storage::disk($attachment->disk);
+                if ($disk->exists($path)) {
+                    $thumbnailUrl = $disk->temporaryUrl($path, now()->addMinutes(5));
+                }
+            } catch (Throwable) {
+                // An unavailable file still leaves the attachment indicator visible.
+            }
+        }
+
         return [
             'id' => $j->id,
             'number' => $j->number,
@@ -987,6 +1071,8 @@ class JournalController extends Controller
             'memo' => $j->memo,
             'total' => (string) ($j->total_debit ?? 0),
             'deleted_at' => optional($j->deleted_at)?->toIso8601String(),
+            'attachment_count' => $attachmentCount,
+            'attachment_thumbnail_url' => $thumbnailUrl,
         ];
     }
 

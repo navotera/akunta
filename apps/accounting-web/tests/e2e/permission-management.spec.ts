@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const ENTITY = '01J00000000000000000001101';
+const OTHER_ENTITY = '01J00000000000000000001102';
 const catalog = [
   {
     code: 'account.read',
@@ -64,6 +65,7 @@ async function mockPermissions(page: Page) {
     defaults: catalog.filter((item) => item.defaults.includes(code)).map((item) => item.code),
     permissions: catalog.filter((item) => item.defaults.includes(code)).map((item) => item.code),
     customized: false,
+    workspace_ids: [ENTITY, OTHER_ENTITY],
   }));
   const updates: Array<{ role: string; permissions: string[]; revision: string }> = [];
   const accountUpdates: Record<string, unknown>[] = [];
@@ -84,6 +86,7 @@ async function mockPermissions(page: Page) {
     scope: 'entity',
   }));
   const bulkUpdates: Array<{ role_code: string; assignment_ids: string[] }> = [];
+  const workspaceUpdates: Array<{ role: string; workspace_ids: string[] }> = [];
   const account = {
     id: 'bank-bca',
     code: '1101',
@@ -112,6 +115,10 @@ async function mockPermissions(page: Page) {
     entity_id: ENTITY,
     revision,
     catalog,
+    workspaces: [
+      { id: ENTITY, name: 'PT Permission Test' },
+      { id: OTHER_ENTITY, name: 'PT Cabang' },
+    ],
     roles: roles.map((role) => ({
       ...role,
       member_count: users.filter((user) => user.role_code === role.code).length,
@@ -176,12 +183,22 @@ async function mockPermissions(page: Page) {
         defaults: [...(source?.permissions ?? [])],
         permissions: [...(source?.permissions ?? [])],
         customized: false,
+        workspace_ids: [ENTITY],
       });
       revision = 'b'.repeat(64);
       await route.fulfill({ status: 201, json: { data: { ...snapshot(), created_role: code } } });
       return;
     }
     if (path.startsWith('/api/v1/spa/permission-management/roles/')) {
+      if (path.endsWith('/workspaces')) {
+        const code = path.split('/').at(-2)!;
+        const payload = request.postDataJSON();
+        roles.find((item) => item.code === code)!.workspace_ids = payload.workspace_ids;
+        workspaceUpdates.push({ role: code, workspace_ids: payload.workspace_ids });
+        revision = 'd'.repeat(64);
+        await route.fulfill({ json: { data: snapshot() } });
+        return;
+      }
       const code = path.split('/').at(-1)!;
       const role = roles.find((item) => item.code === code)!;
       if (request.method() === 'PATCH') Object.assign(role, request.postDataJSON());
@@ -239,6 +256,7 @@ async function mockPermissions(page: Page) {
   });
   return {
     bulkUpdates,
+    workspaceUpdates,
     updates,
     accountUpdates,
     setActor: (value: string) => {
@@ -263,6 +281,23 @@ async function expandCategories(page: Page) {
   await page.getByRole('button', { name: 'Bagan Akun', exact: true }).click();
   await page.getByRole('button', { name: 'Template Jurnal', exact: true }).click();
 }
+
+test('sets the workspaces where a role group can be assigned', async ({ page }) => {
+  const fixture = await mockPermissions(page);
+  await page.goto('/settings?section=permissions');
+  await page.getByTestId('select-role-operator').click();
+  await page
+    .getByRole('group', { name: 'Detail role' })
+    .getByRole('button', { name: 'Workspace' })
+    .click();
+  const other = page.getByTestId(`role-workspace-operator-${OTHER_ENTITY}`);
+  await expect(other).toBeChecked();
+  await other.uncheck();
+  await page.getByTestId('save-role-workspaces').click();
+  await expect(page.getByText('Workspace untuk role berhasil disimpan.')).toBeVisible();
+  expect(fixture.workspaceUpdates).toEqual([{ role: 'operator', workspace_ids: [ENTITY] }]);
+  await expect(other).not.toBeChecked();
+});
 
 test('summarizes active permissions per category and preserves changes when collapsed', async ({
   page,

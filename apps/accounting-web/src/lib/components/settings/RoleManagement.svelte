@@ -7,6 +7,7 @@
 
   let data = $state<PermissionManagementData | null>(null);
   let drafts = $state<Record<string, string[]>>({});
+  let workspaceDrafts = $state<Record<string, string[]>>({});
   let loadedEntity = $state<string | null>(null);
   let loading = $state(false);
   let busy = $state(false);
@@ -15,7 +16,7 @@
   let search = $state('');
   let selectedCode = $state('');
   let expandedGroups = $state<string[]>([]);
-  let activeTab = $state<'permissions' | 'members'>('permissions');
+  let activeTab = $state<'permissions' | 'members' | 'workspaces'>('permissions');
   let creating = $state(false);
   let editing = $state(false);
   let roleName = $state('');
@@ -63,6 +64,14 @@
         role.code === replaceRole || !drafts[role.code] ? [...role.permissions] : drafts[role.code],
       ]),
     );
+    workspaceDrafts = Object.fromEntries(
+      result.roles.map((role) => [
+        role.code,
+        role.code === replaceRole || !workspaceDrafts[role.code]
+          ? [...(role.workspace_ids ?? [result.entity_id])]
+          : workspaceDrafts[role.code],
+      ]),
+    );
   }
 
   async function load(entityId: string) {
@@ -71,6 +80,7 @@
     loading = true;
     data = null;
     drafts = {};
+    workspaceDrafts = {};
     members = null;
     membersLoading = false;
     creating = false;
@@ -101,6 +111,16 @@
   function changed(code: string): boolean {
     const saved = data?.roles.find((role) => role.code === code)?.permissions ?? [];
     return JSON.stringify([...saved].sort()) !== JSON.stringify([...(drafts[code] ?? [])].sort());
+  }
+
+  function workspaceChanged(code: string): boolean {
+    const saved = data?.roles.find((role) => role.code === code)?.workspace_ids ?? [
+      data?.entity_id,
+    ];
+    return (
+      JSON.stringify([...saved].sort()) !==
+      JSON.stringify([...(workspaceDrafts[code] ?? [])].sort())
+    );
   }
 
   function chooseRole(code: string) {
@@ -144,7 +164,9 @@
     try {
       const result = await operation(entityId, data.revision);
       if (entityId !== tenant.id) return false;
-      receive(result, code);
+      const refreshed = await permissionsApi.list(entityId);
+      if (entityId !== tenant.id) return false;
+      receive(refreshed, code);
       if (result.created_role) {
         selectedCode = result.created_role;
         search = '';
@@ -183,6 +205,17 @@
       reset
         ? 'Permission dikembalikan ke bawaan.'
         : 'Permission berhasil disimpan dan langsung berlaku.',
+    );
+  }
+
+  async function saveWorkspaces() {
+    if (!selected) return;
+    const code = selected.code;
+    await mutate(
+      (id, revision) =>
+        permissionsApi.updateWorkspaces(id, code, workspaceDrafts[code] ?? [], revision),
+      code,
+      'Workspace untuk role berhasil disimpan.',
     );
   }
 
@@ -259,7 +292,7 @@
 <h2 class="text-lg font-bold">Role Management</h2>
 <p class="mt-1 text-sm text-text-muted">
   Role adalah grup akses untuk banyak user di {tenant.name ?? 'workspace aktif'}. Pilih role untuk
-  mengatur izin dan anggotanya.
+  mengatur izin, workspace, dan anggotanya.
 </p>
 
 {#if !canManagePermissions()}
@@ -335,7 +368,8 @@
               >
               <span class="mt-1 block text-xs text-text-muted"
                 >{role.is_preset === false ? 'Custom' : 'Bawaan'} · {(drafts[role.code] ?? [])
-                  .length} izin · {role.member_count ?? 0} user</span
+                  .length} izin · {(role.workspace_ids ?? [data.entity_id]).length} workspace · {role.member_count ??
+                  0} user</span
               >
             </button>
           {:else}
@@ -381,7 +415,8 @@
                 ></label
               >
               <p class="mt-2 text-xs text-text-muted">
-                Izin disalin sekali dan dapat diatur sendiri. Salinan Inspector Fiskal tetap hanya
+                Izin disalin sekali dan dapat diatur sendiri. Setelah role dibuat, simpan izinnya
+                pada tab Izin lalu pilih user pada tab Anggota. Salinan Inspector Fiskal tetap hanya
                 baca Fiskal.
               </p>
             {/if}
@@ -450,6 +485,14 @@
                 : 'border-transparent text-text-muted'}"
               aria-pressed={activeTab === 'permissions'}
               onclick={() => (activeTab = 'permissions')}>Izin</button
+            >
+            <button
+              type="button"
+              class="border-b-2 px-1 py-2 text-sm font-semibold {activeTab === 'workspaces'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-text-muted'}"
+              aria-pressed={activeTab === 'workspaces'}
+              onclick={() => (activeTab = 'workspaces')}>Workspace</button
             >
             <button
               type="button"
@@ -601,6 +644,45 @@
                 data-testid={'save-permissions-' + selected.code}
                 >{busy ? 'Menyimpan…' : 'Simpan ' + selected.name}</button
               >
+            </div>
+          {:else if activeTab === 'workspaces'}
+            <div class="mt-4 space-y-3">
+              <p class="text-sm text-text-muted">
+                Pilih workspace tempat role {selected.name} dapat ditetapkan kepada user. Izin tetap diatur
+                terpisah pada masing-masing workspace.
+              </p>
+              {#each data.workspaces ?? [] as workspace (workspace.id)}
+                <label
+                  class="flex items-center gap-3 rounded-md border border-border-default px-3 py-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-primary"
+                    checked={(workspaceDrafts[selected.code] ?? []).includes(workspace.id)}
+                    disabled={busy}
+                    onchange={(event) => {
+                      const ids = new Set(workspaceDrafts[selected.code] ?? []);
+                      if (event.currentTarget.checked) ids.add(workspace.id);
+                      else ids.delete(workspace.id);
+                      workspaceDrafts = { ...workspaceDrafts, [selected.code]: [...ids] };
+                    }}
+                    data-testid={'role-workspace-' + selected.code + '-' + workspace.id}
+                  />
+                  <span>{workspace.name}{workspace.id === tenant.id ? ' (aktif)' : ''}</span>
+                </label>
+              {/each}
+              {#if workspaceChanged(selected.code)}<p class="text-xs text-warning" role="status">
+                  Perubahan workspace belum disimpan.
+                </p>{/if}
+              <div class="flex justify-end">
+                <button
+                  type="button"
+                  class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  disabled={busy || !workspaceChanged(selected.code)}
+                  onclick={saveWorkspaces}
+                  data-testid="save-role-workspaces">Simpan Workspace</button
+                >
+              </div>
             </div>
           {:else if membersLoading}<p class="mt-4 text-sm text-text-muted" role="status">
               Memuat anggota…

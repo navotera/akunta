@@ -2,7 +2,7 @@
 
 Admin membuka **Settings → Role Management** pada workspace aktif.
 Daftar role memiliki pencarian nama/deskripsi, tombol **Role Baru**, serta
-detail dengan tab **Izin** dan **Anggota**. Tiga role bawaan adalah Supervisor,
+detail dengan tab **Izin**, **Workspace**, dan **Anggota**. Tiga role bawaan adalah Supervisor,
 Operator, dan Inspector Fiskal. Pengaturan satu workspace tidak mengubah preset
 global atau hak role yang sama pada workspace lain.
 
@@ -25,6 +25,18 @@ salinan. **Kembalikan bawaan** pada custom role kembali ke snapshot izin awalnya
 Nama/deskripsi custom role dapat diubah; tiga nama bawaan tetap dilindungi.
 Role yang masih memiliki assignment belum dicabut tidak dapat dihapus.
 Penghapusan role custom mempertahankan baris role untuk histori assignment.
+
+Tab **Workspace** pada tiap role menentukan workspace satu tenant tempat role
+itu dapat ditetapkan kepada user. Role bawaan aktif pada seluruh workspace
+secara awal; role custom mulai aktif hanya pada workspace pembuatnya. Admin
+yang berwenang pada workspace tujuan dapat menambah atau melepasnya. Izin role
+tetap dikonfigurasi terpisah per workspace. Pelepasan ditolak bila masih ada
+anggota aktif pada workspace tersebut, termasuk assignment seluruh workspace.
+Backend menolak assignment langsung maupun massal ke role yang tidak aktif
+pada workspace tujuan. Penambahan role custom ke workspace lain memakai role
+yang sama tetapi menyimpan izin workspace secara independen. Perubahan nama
+dan penghapusan role custom yang dipakai beberapa workspace memerlukan hak
+pengelolaan pada seluruh workspace terkait dan diaudit per workspace.
 
 Penetapan massal mengganti role pada assignment yang dipilih secara atomik,
 bukan menambah role lain. Hanya assignment user aktif di workspace yang sama
@@ -99,6 +111,15 @@ tersebut. Pemilihan disaring oleh backend berdasarkan status yang boleh diedit,
 buku/workspace, dan periode terbuka. Inspector tidak dapat memakai aksi ini.
 Preview dan simpan tetap memeriksa ulang semua jurnal pilihan; tidak ada kode
 permission baru, perubahan default role, atau grant otomatis pada custom role.
+
+Approval massal jurnal memakai `journal.read` untuk daftar serta
+`journal.review` dan `journal.post` untuk memilih semua dan memproses batch.
+Backend memeriksa ulang ID terpilih pada workspace aktif, status `submitted`,
+periode, akun, dan keseimbangan melalui aksi posting yang sama. Inspector tetap
+ditolak. Tidak ada kode permission atau default role baru; custom role hanya
+dapat menggunakan aksi ini bila seluruh izin tersebut diberikan.
+Pengaturan maksimal tab berada di Setting General dan memakai otorisasi admin
+workspace yang sama dengan pengaturan General lainnya.
 
 Memilih aksi pada UI ikut mengaktifkan akses baca yang diperlukan.
 Mencabut dependency ikut mencabut aksi yang memerlukannya. Backend menolak
