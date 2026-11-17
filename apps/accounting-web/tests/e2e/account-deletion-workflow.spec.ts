@@ -377,7 +377,11 @@ for (const viewport of [
 
       for (const [index, id] of JOURNAL_IDS.entries()) {
         await page.getByRole('link', { name: 'Buka jurnal', exact: true }).click();
-        await expect(page).toHaveURL(`/journals/${id}?delete_account_id=${OLD_ID}`);
+        await expect(page).toHaveURL(
+          (url) =>
+            url.pathname === `/journals/${id}` &&
+            url.searchParams.get('delete_account_id') === OLD_ID,
+        );
         await expect(page.locator('.ak-journal-shell')).toHaveCount(1);
         await expect(page.getByRole('dialog')).toHaveCount(0);
         await expect(page.getByTestId('journal-account-replacement-guide')).toContainText(
@@ -390,7 +394,10 @@ for (const viewport of [
         await page.getByTestId('entry-account-debit-0').click();
         await page.getByRole('option', { name: /Kas Pengganti/ }).click();
         await page.getByTestId('save-draft').click();
-        await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+        await expect(page).toHaveURL(
+          (url) =>
+            url.pathname === '/journals' && url.searchParams.get('delete_account_id') === OLD_ID,
+        );
         await expect(guidance).toContainText(
           index === 0 ? 'Terdapat 1 jurnal' : 'Tidak ada lagi jurnal',
         );

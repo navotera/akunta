@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { goto } from '$app/navigation';
-  import { autoMappingApi, type AutoMappingRaw } from '$lib/api/auto-mapping.js';
+  import {
+    autoMappingApi,
+    type AutoMappingRaw,
+    type AutoMappingEntityLink,
+    type AutoMappingAppOption,
+  } from '$lib/api/auto-mapping.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
+  import { can } from '$lib/stores/permissions.svelte.js';
   import { formatDateTime } from '$lib/utils/date.js';
 
   let rows = $state<AutoMappingRaw[]>([]);
@@ -13,16 +20,52 @@
   let dateFilter = $state('');
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let entityLinks = $state<AutoMappingEntityLink[]>([]);
+  let appOptions = $state<AutoMappingAppOption[]>([]);
+  let linkAppCode = $state('');
+  let sourceEntityId = $state('');
+  let linkBusy = $state(false);
+  let linkError = $state<string | null>(null);
+  let loadRequest = 0;
 
-  onMount(async () => {
+  $effect(() => {
+    const entityId = tenant.id;
+    const requestId = ++loadRequest;
+    rows = [];
+    entityLinks = [];
+    appOptions = [];
+    linkAppCode = '';
+    sourceEntityId = '';
+    clearFilters();
+    listReturn.restore();
+    loading = true;
+    error = null;
+    linkError = null;
+    if (!entityId) {
+      loading = false;
+      return;
+    }
+    void loadForEntity(entityId, requestId);
+  });
+
+  async function loadForEntity(entityId: string, requestId: number) {
     try {
-      rows = (await autoMappingApi.list(tenant.id)).data;
+      const [rawResponse, linkResponse] = await Promise.all([
+        autoMappingApi.list(entityId),
+        autoMappingApi.entityLinks(entityId),
+      ]);
+      if (requestId !== loadRequest) return;
+      rows = rawResponse.data;
+      entityLinks = linkResponse.data;
+      appOptions = linkResponse.apps;
+      linkAppCode = appOptions[0]?.code ?? '';
     } catch (e) {
+      if (requestId !== loadRequest) return;
       error = e instanceof Error ? e.message : 'Gagal memuat Auto Mapping.';
     } finally {
-      loading = false;
+      if (requestId === loadRequest) loading = false;
     }
-  });
+  }
 
   const sources = $derived([...new Set(rows.map((row) => row.source_type))]);
   const tabRows = $derived(
@@ -67,16 +110,68 @@
   }
 
   async function syncRows() {
+    const entityId = tenant.id;
+    if (!entityId) return;
     loading = true;
     error = null;
     try {
-      rows = (await autoMappingApi.list(tenant.id)).data;
+      const result = await autoMappingApi.list(entityId);
+      if (tenant.id === entityId) rows = result.data;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Gagal menyinkronkan Auto Mapping.';
+      if (tenant.id === entityId)
+        error = e instanceof Error ? e.message : 'Gagal menyinkronkan Auto Mapping.';
     } finally {
-      loading = false;
+      if (tenant.id === entityId) loading = false;
     }
   }
+
+  async function addEntityLink(event: SubmitEvent) {
+    event.preventDefault();
+    if (!can('automapping.entity_link.manage') || !linkAppCode || !sourceEntityId.trim()) return;
+    const entityId = tenant.id;
+    if (!entityId) return;
+    linkBusy = true;
+    linkError = null;
+    try {
+      await autoMappingApi.createEntityLink(linkAppCode, sourceEntityId.trim(), entityId);
+      const links = (await autoMappingApi.entityLinks(entityId)).data;
+      if (tenant.id === entityId) {
+        entityLinks = links;
+        sourceEntityId = '';
+      }
+    } catch (e) {
+      if (tenant.id === entityId)
+        linkError = e instanceof Error ? e.message : 'Gagal menyimpan pemetaan entitas.';
+    } finally {
+      linkBusy = false;
+    }
+  }
+
+  async function removeEntityLink(link: AutoMappingEntityLink) {
+    if (!can('automapping.entity_link.manage')) return;
+    if (!confirm(`Hapus pemetaan ${link.app.code} / ${link.source_entity_id}?`)) return;
+    const entityId = tenant.id;
+    if (!entityId) return;
+    linkBusy = true;
+    linkError = null;
+    try {
+      await autoMappingApi.deleteEntityLink(link.id, entityId);
+      if (tenant.id === entityId) entityLinks = entityLinks.filter((item) => item.id !== link.id);
+    } catch (e) {
+      if (tenant.id === entityId)
+        linkError = e instanceof Error ? e.message : 'Gagal menghapus pemetaan entitas.';
+    } finally {
+      linkBusy = false;
+    }
+  }
+  const listReturn = createListReturn(
+    'automapping',
+    () => ({ activeTab, search, sourceFilter, statusFilter, dateFilter }),
+    (saved) => {
+      ({ activeTab, search, sourceFilter, statusFilter, dateFilter } = saved);
+    },
+    () => !loading,
+  );
 </script>
 
 <div class="min-h-full bg-[#fafbfc] px-5 py-6 text-[#252f4a] lg:px-8">
@@ -109,6 +204,81 @@
         </button>
       </div>
     </div>
+
+    <section class="mt-7 rounded-lg border border-[#dbdfe9] bg-white p-5 shadow-sm">
+      <h2 class="text-[15px] font-semibold text-[#071437]">Pemetaan Entitas Sumber</h2>
+      <p class="mt-1 text-[13px] text-[#78829d]">
+        Hubungkan ID entitas dari aplikasi pengirim ke {tenant.name ?? 'entitas Akunta ini'}.
+        Aplikasi cukup mengirim <code>source_entity_id</code>; ID entitas Akunta tidak perlu
+        disimpan di aplikasi pengirim.
+      </p>
+      {#if entityLinks.length > 0}
+        <div class="mt-4 overflow-x-auto">
+          <table class="w-full min-w-[560px] text-left text-[13px]">
+            <thead class="border-b border-[#e5e7eb] text-[#78829d]"
+              ><tr>
+                <th class="py-2">Aplikasi</th><th class="py-2">ID Entitas Sumber</th><th
+                  class="py-2">Entitas Akunta</th
+                ><th class="py-2 text-right">Aksi</th>
+              </tr></thead
+            >
+            <tbody>
+              {#each entityLinks as link (link.id)}
+                <tr class="border-b border-[#f1f1f4]">
+                  <td class="py-2">{link.app.name} ({link.app.code})</td>
+                  <td class="py-2 font-mono text-[12px]">{link.source_entity_id}</td>
+                  <td class="py-2">{tenant.name}</td>
+                  <td class="py-2 text-right">
+                    {#if can('automapping.entity_link.manage')}
+                      <button
+                        type="button"
+                        class="text-[#d61f52] hover:underline"
+                        disabled={linkBusy}
+                        onclick={() => removeEntityLink(link)}>Hapus</button
+                      >
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+      {#if can('automapping.entity_link.manage')}
+        <form class="mt-4 flex flex-wrap items-end gap-3" onsubmit={addEntityLink}>
+          <label class="flex min-w-[180px] flex-col gap-1 text-[12px] font-medium text-[#4b5675]">
+            Aplikasi sumber
+            <select
+              class="h-10 rounded-md border border-[#dbdfe9] bg-white px-3"
+              bind:value={linkAppCode}
+              required
+            >
+              {#each appOptions as app (app.id)}<option value={app.code}
+                  >{app.name} ({app.code})</option
+                >{/each}
+            </select>
+          </label>
+          <label
+            class="flex min-w-[260px] flex-1 flex-col gap-1 text-[12px] font-medium text-[#4b5675]"
+          >
+            ID entitas di aplikasi sumber
+            <input
+              class="h-10 rounded-md border border-[#dbdfe9] px-3 font-mono"
+              bind:value={sourceEntityId}
+              maxlength="160"
+              placeholder="UUID dari Asseto, POSO, atau aplikasi lain"
+              required
+            />
+          </label>
+          <button
+            type="submit"
+            class="h-10 rounded-md bg-[#1b84ff] px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+            disabled={linkBusy || !linkAppCode}>Simpan Pemetaan</button
+          >
+        </form>
+      {/if}
+      {#if linkError}<p class="mt-3 text-[13px] text-[#d61f52]">{linkError}</p>{/if}
+    </section>
 
     <div class="mt-7 border-b border-[#dbdfe9]">
       <div class="flex gap-7">
@@ -215,7 +385,11 @@
               {#each visibleRows as row, index (row.id)}
                 <tr
                   class="cursor-pointer border-t border-[#e5e7eb] transition-colors hover:bg-[#fafafb]"
-                  onclick={() => goto(`/auto-mapping/${row.id}`)}
+                  data-return-row={`automapping:${row.id}`}
+                  onclick={() => {
+                    listReturn.remember(row.id);
+                    void goto(`/auto-mapping/${row.id}`);
+                  }}
                 >
                   <td class="px-4 py-3.5 text-center text-[#78829d]">{index + 1}</td>
                   <td class="whitespace-nowrap px-4 py-3.5 text-[#4b5675]"

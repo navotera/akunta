@@ -4,23 +4,90 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
+use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
+use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessAutoMappingRawData;
+use App\Models\AutoMappingEntityLink;
 use App\Models\AutoMappingRawData;
 use App\Models\AutoMappingRule;
 use App\Services\AutoMappingEngine;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class AutoMappingController extends Controller
 {
     use ResolvesTenant;
 
-    public function __construct(private readonly AutoMappingEngine $engine) {}
+    public function __construct(
+        private readonly AutoMappingEngine $engine,
+        private readonly AuditLoggerContract $auditLogger,
+    ) {}
+
+    public function entityLinks(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->authorizeMapping($entity->id, 'automapping.read');
+
+        return response()->json([
+            'data' => AutoMappingEntityLink::query()->where('entity_id', $entity->id)
+                ->with('app:id,code,name')->latest()->get(),
+            'apps' => RbacApp::query()->where('enabled', true)->orderBy('name')
+                ->get(['id', 'code', 'name']),
+        ]);
+    }
+
+    public function createEntityLink(Request $request): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->authorizeMapping($entity->id, 'automapping.entity_link.manage');
+        $data = $request->validate([
+            'app_code' => ['required', 'string', Rule::exists('apps', 'code')->where('enabled', true)],
+            'source_entity_id' => 'required|string|max:160',
+        ]);
+        $app = RbacApp::where('code', $data['app_code'])->firstOrFail();
+
+        try {
+            $link = DB::transaction(function () use ($entity, $app, $data): AutoMappingEntityLink {
+                $link = AutoMappingEntityLink::create([
+                    'tenant_id' => $entity->tenant_id,
+                    'app_id' => $app->id,
+                    'source_entity_id' => $data['source_entity_id'],
+                    'entity_id' => $entity->id,
+                    'created_by' => Auth::id(),
+                ]);
+                $this->auditLogger->record('auto_mapping.entity_link_created', AutoMappingEntityLink::class,
+                    $link->id, $entity->id, ['app_code' => $app->code, 'source_entity_id' => $link->source_entity_id]);
+
+                return $link;
+            });
+        } catch (UniqueConstraintViolationException) {
+            return response()->json(['error' => 'source_entity_already_mapped'], 409);
+        }
+
+        return response()->json(['data' => $link->load('app:id,code,name')], 201);
+    }
+
+    public function deleteEntityLink(Request $request, string $linkId): JsonResponse
+    {
+        $entity = $this->resolveEntity($request);
+        $this->authorizeMapping($entity->id, 'automapping.entity_link.manage');
+        $link = AutoMappingEntityLink::query()->where('entity_id', $entity->id)->findOrFail($linkId);
+        DB::transaction(function () use ($link, $entity): void {
+            $this->auditLogger->record('auto_mapping.entity_link_deleted', AutoMappingEntityLink::class,
+                $link->id, $entity->id, ['app_id' => $link->app_id, 'source_entity_id' => $link->source_entity_id]);
+            $link->delete();
+        });
+
+        return response()->json(['deleted' => true]);
+    }
 
     public function index(Request $request): JsonResponse
     {

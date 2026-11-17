@@ -146,6 +146,9 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::delete('fake-data/{group}', [FakeDataController::class, 'destroy']);
 
         Route::get('auto-mapping', [AutoMappingController::class, 'index']);
+        Route::get('auto-mapping/entity-links', [AutoMappingController::class, 'entityLinks']);
+        Route::post('auto-mapping/entity-links', [AutoMappingController::class, 'createEntityLink']);
+        Route::delete('auto-mapping/entity-links/{linkId}', [AutoMappingController::class, 'deleteEntityLink']);
         Route::get('auto-mapping/{id}', [AutoMappingController::class, 'show']);
         Route::post('auto-mapping/{id}/mapping', [AutoMappingController::class, 'saveRule']);
         Route::post('auto-mapping/rules/{ruleId}/reprocess', [AutoMappingController::class, 'reprocess']);

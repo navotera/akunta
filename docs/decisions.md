@@ -1397,6 +1397,20 @@ mandatory after a grant. Inspector dashboard requests are rejected even when
 other roles provide a dashboard grant; the regression expectation now follows
 the already-locked Inspector boundary. See docs/permission-management.md.
 
+### Amendment 2026-11-04 — Auto Mapping source entity routing
+
+Auto Mapping accepts either the legacy Akunta `entity_id` or a stable
+`source_entity_id` from the sending app, never both. A unique app ID and source
+entity ID pair resolves to one Akunta entity before raw data is saved. The app
+identity comes from the Bearer token; the sender does not need to store Akunta
+entity IDs. Missing mappings fail closed. Both paths check the token user's
+effective create and post permissions on the target entity before ingest.
+The external identifier and idempotency key remain on raw data; source-entity
+ingest scopes deduplication by app and source entity. Mapping management uses
+the existing Auto Mapping page with separate `automapping.entity_link.manage`
+permission, workspace scoping, and transactional audit. Deleting a mapping
+does not move or delete historical raw data or journals.
+
 ### Amendment — named roles and user groups
 
 A role itself is a named access group containing many users, as explicitly

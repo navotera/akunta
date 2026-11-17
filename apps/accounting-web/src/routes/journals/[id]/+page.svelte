@@ -18,7 +18,16 @@
 
   let detail = $state<JournalDetail | null>(null);
   const deletionAccountId = $derived($page.url.searchParams.get('delete_account_id'));
-  const journalListUrl = $derived(`/journals${$page.url.search}`);
+  const journalListUrl = $derived.by(() => {
+    const returnTo = $page.url.searchParams.get('return_to');
+    if (
+      returnTo &&
+      !returnTo.includes('\\') &&
+      /^\/(?:laporan\/buku-besar|jurnal-berulang)(?:\?|$)/.test(returnTo)
+    )
+      return returnTo;
+    return `/journals${$page.url.search}`;
+  });
   const formDetail = $derived(
     detail
       ? {

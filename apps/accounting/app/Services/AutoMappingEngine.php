@@ -37,7 +37,7 @@ class AutoMappingEngine
         return hash('sha256', json_encode(array_values(array_unique($keys)), JSON_THROW_ON_ERROR));
     }
 
-    public function ingest(Entity $entity, string $sourceType, array $payload, ?string $idempotencyKey, ?string $userId, ?string $sourceUrl = null): AutoMappingRawData
+    public function ingest(Entity $entity, string $sourceType, array $payload, ?string $idempotencyKey, ?string $userId, ?string $sourceUrl = null, ?string $sourceAppId = null, ?string $sourceEntityId = null, ?string $externalIdempotencyKey = null): AutoMappingRawData
     {
         if ($sourceUrl !== null) {
             $payload = ['source' => $sourceUrl] + $payload;
@@ -49,6 +49,9 @@ class AutoMappingEngine
                 'structure_hash' => $this->structureHash($payload),
                 'payload' => $payload,
                 'source_payload' => $payload,
+                'source_app_id' => $sourceAppId,
+                'source_entity_id' => $sourceEntityId,
+                'external_idempotency_key' => $externalIdempotencyKey,
                 'status' => AutoMappingRawData::STATUS_PENDING,
                 'received_by' => $userId,
             ],
@@ -144,7 +147,9 @@ class AutoMappingEngine
                 default => (string) $actual === $expected,
             };
 
-            if (! $matched) return false;
+            if (! $matched) {
+                return false;
+            }
         }
 
         return true;

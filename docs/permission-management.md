@@ -59,10 +59,17 @@ centang, termasuk perubahan dependency, dan tetap terlihat saat kategori ditutup
 | Lampiran | Melihat/mengunduh, menambah, menghapus |
 | Periode | Melihat/memilih, membuat, mengedit, menghapus, menutup, membuka kembali |
 | Jurnal Berulang | Melihat, membuat, mengedit/jeda/lanjutkan, menghapus, menjalankan manual |
-| Auto Mapping | Melihat data/hasil, mengelola rule/memproses ulang |
+| Auto Mapping | Melihat data/hasil, mengelola rule/memproses ulang, memetakan entitas aplikasi sumber |
 | Dashboard dan laporan | Dashboard manajemen, laporan keuangan dan rincian sumber |
 | Fiskal | Melihat koreksi/rekonsiliasi, mengelola koreksi draft, menyetujui koreksi, melihat/membuat provisi pajak |
 | Pengaturan | Menerapkan template COA, melihat scheduler, mengelola data simulasi bertanda fake |
+
+`automapping.entity_link.manage` mengizinkan pembuatan/penghapusan pasangan ID
+entitas aplikasi sumber dengan workspace Akunta aktif. Izin ini terpisah dari
+`automapping.manage` untuk rule jurnal, bergantung pada `automapping.read`,
+dan diberikan bawaan kepada Supervisor saja. Operator dapat membaca pemetaan;
+Inspector Fiskal tidak mengakses Auto Mapping. Role custom dapat diberi atau
+dicabut izin ini lewat matriks Role Management, tanpa grant otomatis.
 
 **account.rename**, **account.update**, **account.activate**, dan **account.delete**
 terpisah. Izin mengganti nama tidak mengizinkan perubahan kode, struktur,

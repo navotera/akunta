@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
@@ -32,7 +34,7 @@
   const tabItems = $derived(
     items.filter((p) => p.status === tab || (tab === 'inactive' && p.status === 'closing')),
   );
-  const pageSize = 10;
+  let pageSize = $state(50);
   let currentPage = $state(1);
   let totalPages = $derived(Math.max(1, Math.ceil(tabItems.length / pageSize)));
   let visibleItems = $derived(tabItems.slice((currentPage - 1) * pageSize, currentPage * pageSize));
@@ -64,6 +66,7 @@
         return;
       }
     }
+    listReturn.restore();
     await load();
     const requested = items.find((p) => p.id === $page.url.searchParams.get('activate_period_id'));
     if (requested) {
@@ -85,6 +88,7 @@
   }
 
   function openEdit(p: Period) {
+    listReturn.remember(p.id);
     creating = false;
     editing = p;
     form = { name: p.name, start_date: p.start_date, end_date: p.end_date };
@@ -94,6 +98,7 @@
   }
 
   function closeForm() {
+    listReturn.resume();
     editing = null;
     creating = false;
     formErrors = null;
@@ -202,6 +207,14 @@
   function fieldErr(name: string): string | null {
     return formErrors?.[name]?.[0] ?? null;
   }
+  const listReturn = createListReturn(
+    'periods',
+    () => ({ tab, currentPage, pageSize }),
+    (saved) => {
+      ({ tab, currentPage, pageSize } = saved);
+    },
+    () => !loading && !(editing || creating),
+  );
 </script>
 
 <div class="px-6 py-6">
@@ -279,6 +292,7 @@
         <tbody>
           {#each visibleItems as p, index (p.id)}
             <tr
+              data-return-row={`periods:${p.id}`}
               class="border-t border-border-soft cursor-pointer hover:bg-page-bg"
               onclick={() => openEdit(p)}
             >
@@ -325,44 +339,63 @@
           {/each}
         </tbody>
       </table>
-      {#if totalPages > 1}
-        <nav
-          class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm"
-          aria-label="Navigasi halaman periode"
-        >
-          <span class="text-text-muted">Halaman {currentPage} dari {totalPages}</span>
-          <div class="flex items-center gap-1">
-            <button
-              type="button"
-              class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
-              onclick={() => (currentPage = Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              Sebelumnya
-            </button>
-            {#each Array(totalPages) as _, index}
+      <nav
+        class="flex flex-wrap items-center justify-between gap-3 border-t border-border-default px-4 py-3 text-sm"
+        aria-label="Navigasi halaman periode"
+      >
+        <label class="flex items-center gap-2 text-text-muted">
+          Per Page
+          <select
+            class="rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-text-default"
+            value={String(pageSize)}
+            onchange={(event) => {
+              pageSize = Number(event.currentTarget.value);
+              currentPage = 1;
+            }}
+            data-testid="period-per-page"
+          >
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+        {#if totalPages > 1}
+          <div class="flex items-center gap-3">
+            <span class="text-text-muted">Halaman {currentPage} dari {totalPages}</span>
+            <div class="flex items-center gap-1">
               <button
                 type="button"
-                class="rounded-md px-3 py-1.5 {currentPage === index + 1
-                  ? 'bg-primary text-white'
-                  : 'text-text-muted hover:bg-page-bg'}"
-                aria-current={currentPage === index + 1 ? 'page' : undefined}
-                onclick={() => (currentPage = index + 1)}
+                class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
+                onclick={() => (currentPage = Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
               >
-                {index + 1}
+                Sebelumnya
               </button>
-            {/each}
-            <button
-              type="button"
-              class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
-              onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Berikutnya
-            </button>
+              {#each Array(totalPages) as _, index}
+                <button
+                  type="button"
+                  class="rounded-md px-3 py-1.5 {currentPage === index + 1
+                    ? 'bg-primary text-white'
+                    : 'text-text-muted hover:bg-page-bg'}"
+                  aria-current={currentPage === index + 1 ? 'page' : undefined}
+                  onclick={() => (currentPage = index + 1)}
+                >
+                  {index + 1}
+                </button>
+              {/each}
+              <button
+                type="button"
+                class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
+                onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Berikutnya
+              </button>
+            </div>
           </div>
-        </nav>
-      {/if}
+        {/if}
+      </nav>
     </div>
   {/if}
 </div>
