@@ -21,7 +21,7 @@ Ringkasan keputusan yang sudah di-lock — acuan untuk keputusan teknis ke depan
 | **Target Region** | Indonesia |
 | **Target Segmen** | UKM (Usaha Kecil Menengah) |
 | **Platform** | Web only (v1). Mobile app tidak di v1. |
-| **Multi-tenancy (SaaS mode)** | **Database-per-tenant** |
+| **Multi-tenancy (SaaS mode)** | **Shared database (pooled) + `tenant_id` + Row-Level Security**; database khusus hanya opsi premium (lihat §11) |
 | **Tax Scope v1** | PPN 11% + PPh (21/23/22/26/4-ayat-2). e-Faktur ditunda ke v2. |
 | **Bank Integration** | Tidak di v1, akan di-add nanti via module |
 | **Hook System** | Laravel Events + Listeners dengan naming convention WP-style (lihat 4.5) |
@@ -212,7 +212,7 @@ Mengisi dua bullet kosong di original "Spesifikasi". Keputusan engineering untuk
 
 **B. Caching**
 - **Redis** untuk session + cache + queue
-- Cache keys **scoped per tenant** (`tenant:{id}:key`) — penting karena multi-tenant DB-per-tenant
+- Cache keys **scoped per tenant** (`tenant:{id}:key`) — penting karena semua tenant berbagi satu database dan Redis (lihat §11)
 - Cache aggressive untuk: COA, permissions, company settings
 - Cache invalidation via event listener (nyambung ke hook system 4.5)
 
@@ -227,7 +227,7 @@ Mengisi dua bullet kosong di original "Spesifikasi". Keputusan engineering untuk
 - **Stack versi:**
   - PHP 8.3+
   - Laravel 11 / Filament v3
-  - MySQL 8 **atau** PostgreSQL 15 (PostgreSQL preferred untuk DB-per-tenant karena lebih ringan per-DB)
+  - PostgreSQL 15+ (wajib untuk SaaS multi-tenant karena isolasi memakai Row-Level Security, lihat §11). MySQL 8 hanya untuk instalasi self-hosted satu tenant.
   - Nginx + PHP-FPM
   - Redis 7
 - **Self-hosted minimum requirement:** 2 vCPU, 4 GB RAM, 40 GB disk (target UKM)
@@ -1186,21 +1186,44 @@ atau menggabungkan saldo Intern dengan Fiskal.
 
 ## 11. Multi-Tenancy (SaaS Mode) ✅ [CONFIRMED]
 
-**Keputusan: Database-per-tenant.**
+**Keputusan (direvisi 2026-11-19): shared database (pooled) per aplikasi, dengan
+isolasi berlapis. Database khusus per tenant hanya opsi.** Rincian, konteks, dan
+urutan implementasi: `docs/decisions.md` → "shared database multi-tenant".
+Keputusan sebelumnya (database-per-tenant) dibatalkan.
+
+**Model:**
+- Satu tenant = satu organisasi Ecopa (mode standalone: satu tenant default).
+  Tenant memiliki satu atau lebih entity/workspace.
+- Semua tenant suatu aplikasi berada di satu database PostgreSQL aplikasi itu.
+  Setiap aplikasi (Accounting, Payroll, Cash-mgmt, POSO, Ecopa) tetap memiliki
+  database sendiri.
+- Database khusus (silo) hanya untuk tenant enterprise yang mewajibkannya secara
+  kontrak atau tenant besar yang mengganggu tenant lain; kode dan skema sama.
+
+**Isolasi wajib:**
+- `tenant_id NOT NULL` di setiap tabel milik tenant, termasuk tabel anak.
+- Foreign key berpasangan `(tenant_id, …)` agar record tidak dapat menunjuk
+  record tenant lain.
+- Konteks tenant dari identitas terautentikasi, bukan dari header klien saja;
+  global scope di aplikasi; tanpa fallback ke "tenant pertama".
+- PostgreSQL Row-Level Security (fail-closed) dengan role database aplikasi
+  non-owner.
+- Namespace tenant pada cache, penyimpanan file, job, webhook, dan log.
 
 **Alasan:**
-- Data akuntansi sensitif — isolasi kuat adalah best practice
-- Per-client backup/restore straightforward
-- Compliance/audit lebih mudah (data benar-benar terpisah secara fisik)
-- Performance isolation — satu client besar tidak impact client lain
+- Segmen UKM berarti ribuan tenant kecil; satu database jauh lebih murah dan
+  sederhana dioperasikan (satu migration, satu backup, pooling koneksi wajar).
+- Kepatuhan (UU PDP, audit) dipenuhi dengan kontrol akses, enkripsi, audit
+  trail, serta export/penghapusan per tenant — tidak mensyaratkan database fisik
+  terpisah.
+- RLS menjaga isolasi di tingkat database meskipun ada query yang lupa filter.
 
 **Trade-off:**
-- Lebih berat di ops (butuh automation untuk provisioning DB baru)
-- Migration harus di-run across semua tenant DBs
-
-**Alternatif (kalau ops capacity terbatas):**
-- Shared DB dengan `tenant_id` column di semua table + row-level security
-- Lebih mudah maintained, tapi lebih rentan bug isolation
+- Isolasi bergantung pada disiplin skema dan RLS; wajib ada test isolasi dua
+  tenant pada setiap jalur (UI, API, webhook, queue).
+- Backup/restore per tenant dilakukan secara logis berdasarkan `tenant_id`.
+- Tenant besar dapat memengaruhi tenant lain; mitigasi lewat index, partisi
+  `tenant_id`, read replica, lalu pindah ke silo.
 
 ---
 
@@ -1251,7 +1274,7 @@ accounting-ecosystem/
 - [x] Target segmen: **UKM**
 - [x] Platform: **Web only** (v1)
 - [x] Bank integration: deferred, akan di-add nanti sebagai module
-- [x] Multi-tenancy: **Database-per-tenant**
+- [x] Multi-tenancy: **Shared database (pooled) + `tenant_id` + RLS** (direvisi 2026-11-19, sebelumnya database-per-tenant)
 - [x] Tax scope v1: PPN + PPh, **tanpa e-Faktur** (deferred ke v2)
 - [x] Hook system: **Laravel Events + Listeners** dengan naming convention WP-style (dipilih oleh Claude atas permintaan user)
 - [x] Roadmap: Double-Entry → Payroll → Cash Management
