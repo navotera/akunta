@@ -11,23 +11,30 @@
   interface Props {
     node: TreeNode;
     depth?: number;
+    collapsedAccounts?: string[];
+    onToggle?: (id: string) => void;
     onSelect?: (a: Account) => void;
   }
 
-  let { node, depth = 0, onSelect }: Props = $props();
+  let { node, depth = 0, onSelect, collapsedAccounts = [], onToggle }: Props = $props();
 
   const padLeft = $derived(`${0.5 + depth * 1.25}rem`);
   const isParent = $derived(node.children.length > 0);
-  let expanded = $state(true);
+  let locallyExpanded = $state(true);
+  const expanded = $derived(
+    onToggle ? !collapsedAccounts.includes(node.account.id) : locallyExpanded,
+  );
 
   function toggle(e: Event) {
     e.stopPropagation();
-    expanded = !expanded;
+    if (onToggle) onToggle(node.account.id);
+    else locallyExpanded = !locallyExpanded;
   }
 </script>
 
 <button
   type="button"
+  data-return-row={`accounts:${node.account.id}`}
   class="group/account grid w-full grid-cols-[1fr_8rem_5rem_3.5rem_3.5rem_6rem] items-center gap-2 border-t border-border-soft py-1.5 text-left text-sm hover:bg-page-bg"
   style:padding-left={padLeft}
   onclick={() => onSelect?.(node.account)}
@@ -115,6 +122,6 @@
 
 {#if expanded && isParent}
   {#each node.children as child (child.account.id)}
-    <Self node={child} depth={depth + 1} {onSelect} />
+    <Self node={child} depth={depth + 1} {onSelect} {collapsedAccounts} {onToggle} />
   {/each}
 {/if}

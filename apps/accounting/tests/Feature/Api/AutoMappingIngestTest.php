@@ -15,10 +15,17 @@ beforeEach(function () {
     $this->entity = Entity::create(['tenant_id' => $tenant->id, 'name' => 'Auto Mapping Entity']);
     $this->user = User::create(['name' => 'Integration User', 'email' => 'am-'.uniqid().'@example.test', 'password_hash' => bcrypt('secret')]);
     $app = RbacApp::create(['code' => 'poso-'.uniqid(), 'name' => 'POSO', 'version' => '1.0', 'enabled' => true]);
+    $accountingApp = RbacApp::firstOrCreate(['code' => 'accounting'], ['name' => 'Accounting', 'version' => '1.0', 'enabled' => true]);
     $role = Role::create(['code' => 'integration-'.uniqid(), 'name' => 'Integration', 'is_preset' => false]);
+    grantSpaPermissionsForTest($role, $accountingApp, ['journal.create', 'journal.post']);
     $this->user->assignments()->create([
         'entity_id' => $this->entity->id,
         'app_id' => $app->id,
+        'role_id' => $role->id,
+    ]);
+    $this->user->assignments()->create([
+        'entity_id' => $this->entity->id,
+        'app_id' => $accountingApp->id,
         'role_id' => $role->id,
     ]);
     [$this->token, $this->plain] = ApiToken::issue([

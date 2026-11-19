@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -38,9 +40,18 @@
         return;
       }
     }
+    listReturn.restore();
     if (isInspector) journalMode = 'fiscal';
     await load();
   });
+  const listReturn = createListReturn(
+    'trial-balance',
+    () => ({ asOf, journalMode }),
+    (saved) => {
+      ({ asOf, journalMode } = saved);
+    },
+    () => !loading && Boolean(report),
+  );
 </script>
 
 <ReportShell
@@ -130,7 +141,11 @@
           {@const row = internal ?? fiscal}
           <tr
             class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-            onclick={() => goto(`/laporan/buku-besar?account_id=${id}`)}
+            data-return-row={`trial-balance:${id}`}
+            onclick={() => {
+              listReturn.remember(id);
+              void goto(`/laporan/buku-besar?account_id=${id}`);
+            }}
           >
             <td class="px-4 py-2 font-mono">{row?.code}</td>
             <td class="px-4 py-2">{row?.name}</td>
@@ -171,7 +186,11 @@
         {#each report.rows as r (r.id)}
           <tr
             class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-            onclick={() => goto(`/laporan/buku-besar?account_id=${r.id}`)}
+            data-return-row={`trial-balance:${r.id}`}
+            onclick={() => {
+              listReturn.remember(r.id);
+              void goto(`/laporan/buku-besar?account_id=${r.id}`);
+            }}
           >
             <td class="px-4 py-2 font-mono">{r.code}</td>
             <td class="px-4 py-2">{r.name}</td>

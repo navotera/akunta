@@ -356,7 +356,7 @@ class RoleManagementController extends Controller
         DB::transaction(function () use ($request, $entity, $data): void {
             $locked = Entity::query()->lockForUpdate()->findOrFail($entity->id);
             $permissions = app(AccountingPermissions::class);
-            abort_unless($permissions->managedRole($locked, $data['role_code']), 422, 'Role tidak tersedia di workspace ini.');
+            abort_unless($permissions->roleAssignable($locked, $data['role_code']), 422, 'Role tidak tersedia di workspace ini.');
             $custom = $permissions->customRoles($locked)[$data['role_code']] ?? null;
             $role = $custom
                 ? Role::where('tenant_id', $locked->tenant_id)->findOrFail($custom['id'])
@@ -460,6 +460,7 @@ class RoleManagementController extends Controller
     {
         $managed = app(AccountingPermissions::class);
         $customIds = array_column($managed->customRoles($entity), 'id');
+        $query->whereNotIn('code', $entity->workspace_settings[AccountingPermissions::DISABLED_ROLES_KEY] ?? []);
         $query->where(function ($choices) use ($entity, $customIds): void {
             $choices->where(function ($legacy) use ($entity): void {
                 $legacy

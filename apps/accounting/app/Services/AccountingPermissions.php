@@ -10,12 +10,15 @@ use Akunta\Rbac\Models\User;
 use Akunta\Rbac\Models\UserAppAssignment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class AccountingPermissions
 {
     public const SETTINGS_KEY = 'role_permission_overrides';
 
     public const ROLES_KEY = 'accounting_workspace_roles';
+
+    public const DISABLED_ROLES_KEY = 'accounting_disabled_roles';
 
     public function customRoles(Entity $entity): array
     {
@@ -26,6 +29,12 @@ class AccountingPermissions
     {
         return array_key_exists($code, config('accounting_permissions.roles'))
             || array_key_exists($code, $this->customRoles($entity));
+    }
+
+    public function roleAssignable(Entity $entity, string $code): bool
+    {
+        return $this->managedRole($entity, $code)
+            && ! in_array($code, $entity->workspace_settings[self::DISABLED_ROLES_KEY] ?? [], true);
     }
 
     public function profile(Entity $entity, string $code): string
@@ -41,7 +50,32 @@ class AccountingPermissions
 
     public function roleDefaults(Entity $entity, string $code): array
     {
-        return $this->customRoles($entity)[$code]['defaults'] ?? $this->defaults($code);
+        if (isset($this->customRoles($entity)[$code])) {
+            return $this->customRoles($entity)[$code]['defaults'];
+        }
+        if ($code === 'accountant') {
+            return $this->defaults('operator');
+        }
+
+        $codes = $this->defaults($code);
+        if (! in_array($code, config('accounting_permissions.read_roles'), true)) {
+            return $codes;
+        }
+
+        $legacy = DB::table('role_permissions')
+            ->join('roles', 'roles.id', '=', 'role_permissions.role_id')
+            ->join('permissions', 'permissions.id', '=', 'role_permissions.permission_id')
+            ->join('apps', 'apps.id', '=', 'permissions.app_id')
+            ->where('roles.code', $code)
+            ->where(fn ($query) => $query->whereNull('roles.tenant_id')->orWhere('roles.tenant_id', $entity->tenant_id))
+            ->where('apps.code', 'accounting')
+            ->pluck('permissions.code')->all();
+        $codes = array_merge($codes, $legacy, ['account.read', 'period.read', 'journal.read', 'template.read', 'recurring.read', 'report.read', 'dashboard.read', 'attachment.read', 'automapping.read']);
+        if (in_array($code, ['accountant_assistant', 'tax_officer'], true)) {
+            $codes = array_merge($codes, ['attachment.upload', 'attachment.delete']);
+        }
+
+        return array_values(array_intersect(array_column($this->catalog(), 'code'), array_unique($codes)));
     }
 
     private function assignments(User $user, Entity $entity): Collection
@@ -133,7 +167,8 @@ class AccountingPermissions
             }
             if ($assignment->app?->code === 'accounting') {
                 if ($this->managedRole($entity, $role->code)) {
-                    if (in_array($code, $this->roleCodes($entity, $role->code), true)) {
+                    if ($this->roleAssignable($entity, $role->code)
+                        && in_array($code, $this->roleCodes($entity, $role->code), true)) {
                         return true;
                     }
 
@@ -169,6 +204,7 @@ class AccountingPermissions
     {
         return hash('sha256', json_encode([
             $entity->workspace_settings[self::SETTINGS_KEY] ?? [], $this->customRoles($entity),
+            $entity->workspace_settings[self::DISABLED_ROLES_KEY] ?? [],
         ]));
     }
 
@@ -178,7 +214,9 @@ class AccountingPermissions
             'name' => $name, 'description' => match ($code) {
                 'supervisor' => 'Review, persetujuan, dan pengawasan akuntansi.',
                 'operator' => 'Input dan pengajuan jurnal untuk direview.',
-                default => 'Pemeriksaan data Fiskal dengan akses baca saja.',
+                'inspector' => 'Pemeriksaan data Fiskal dengan akses baca saja.',
+                'accountant' => 'Input dan pengajuan jurnal seperti Operator.',
+                default => 'Role Accounting dengan izin yang dapat diatur per workspace.',
             },
         ])->all();
         $definitions = array_merge($definitions, $this->customRoles($entity));
@@ -210,6 +248,7 @@ class AccountingPermissions
                 'allowed_permissions' => $this->profile($entity, $code) === 'inspector'
                     ? config('accounting_permissions.inspector_permissions') : array_column($this->catalog(), 'code'),
                 'customized' => array_key_exists($code, $entity->workspace_settings[self::SETTINGS_KEY] ?? []),
+                'assignable' => $this->roleAssignable($entity, $code),
             ])->values()->all(),
         ];
     }

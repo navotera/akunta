@@ -40,6 +40,7 @@ $rows = [
     ['recurring.run', 'Jurnal Berulang', 'Menjalankan jadwal secara manual', true, false],
     ['automapping.read', 'Auto Mapping', 'Melihat data dan hasil Auto Mapping', true, true],
     ['automapping.manage', 'Auto Mapping', 'Mengubah rule dan memproses ulang Auto Mapping', true, false],
+    ['automapping.entity_link.manage', 'Auto Mapping', 'Memetakan entitas aplikasi sumber ke entitas Akunta', true, false],
     ['report.read', 'Dashboard dan Laporan', 'Melihat laporan keuangan dan rincian sumber', true, false],
     ['dashboard.read', 'Dashboard dan Laporan', 'Melihat dashboard manajemen', true, true],
     ['fiscal.adjustment.read', 'Fiskal', 'Melihat koreksi Fiskal dan rekonsiliasi', true, false],
@@ -53,7 +54,13 @@ $rows = [
 ];
 
 return [
-    'roles' => ['supervisor' => 'Supervisor', 'operator' => 'Operator', 'inspector' => 'Inspector Fiskal'],
+    'roles' => [
+        'supervisor' => 'Supervisor', 'operator' => 'Operator', 'accountant' => 'Accountant',
+        'accountant_assistant' => 'Accountant Assistant', 'approver' => 'Approver',
+        'tax_officer' => 'Tax Officer', 'internal_auditor' => 'Internal Auditor',
+        'auditor_external' => 'Auditor (External)', 'viewer' => 'Viewer',
+        'inspector' => 'Inspector Fiskal',
+    ],
     'inspector_permissions' => ['journal.read', 'account.read', 'period.read', 'report.read', 'attachment.read', 'fiscal.adjustment.read'],
     'catalog' => array_map(fn (array $row): array => [
         'code' => $row[0], 'group' => $row[1], 'label' => $row[2],
@@ -97,6 +104,7 @@ return [
         'recurring.delete' => ['recurring.read'],
         'recurring.run' => ['recurring.read'],
         'automapping.manage' => ['automapping.read', 'account.read'],
+        'automapping.entity_link.manage' => ['automapping.read'],
         'fiscal.adjustment.manage' => ['fiscal.adjustment.read'],
         'fiscal.adjustment.read' => ['account.read', 'period.read', 'attachment.read', 'journal.read', 'report.read'],
         'fiscal.tax_provision.read' => ['fiscal.adjustment.read'],

@@ -67,6 +67,40 @@ it('prefills supervisor and operator with their defaults', function () {
     }
 });
 
+it('gives Accountant the Operator default and manages it independently per workspace', function () {
+    $accountantRole = Role::firstOrCreate(
+        ['code' => 'accountant', 'tenant_id' => null],
+        ['name' => 'Accountant', 'is_preset' => true],
+    );
+    $accountant = User::create([
+        'name' => 'Accountant', 'email' => 'accountant-'.uniqid().'@test.local',
+        'password_hash' => bcrypt('secret'),
+    ]);
+    $accountant->assignments()->create([
+        'app_id' => $this->permissionApp->id, 'entity_id' => $this->entity->id,
+        'role_id' => $accountantRole->id,
+    ]);
+    $accountant->assignments()->create([
+        'app_id' => $this->permissionApp->id, 'entity_id' => $this->otherEntity->id,
+        'role_id' => $accountantRole->id,
+    ]);
+
+    $snapshot = $this->actingAs($this->admin)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/permission-management')->assertOk()->json('data');
+    $roles = collect($snapshot['roles'])->keyBy('code');
+    expect($roles['accountant']['permissions'])->toEqualCanonicalizing($roles['operator']['permissions']);
+    $this->getJson('/api/v1/spa/role-management')->assertOk()
+        ->assertJsonFragment(['id' => $accountantRole->id, 'code' => 'accountant']);
+
+    $this->putJson('/api/v1/spa/permission-management/accountant', [
+        'permissions' => [], 'revision' => $snapshot['revision'],
+    ])->assertOk();
+    expect(Gate::forUser($accountant)->allows('accounting.permission', ['journal.create', $this->entity->fresh()]))->toBeFalse()
+        ->and(Gate::forUser($accountant)->allows('accounting.permission', ['journal.create', $this->otherEntity->fresh()]))->toBeTrue()
+        ->and(app(AccountingPermissions::class)->roleCodes($this->otherEntity->fresh(), 'accountant'))
+        ->toEqualCanonicalizing(app(AccountingPermissions::class)->defaults('operator'));
+});
+
 it('only allows admins of the target workspace to configure permissions', function () {
     $this->getJson('/api/v1/spa/permission-management')->assertUnauthorized();
     $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)

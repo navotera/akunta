@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
@@ -10,6 +12,8 @@
   import { ApiError } from '$lib/api/client.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { formatDate } from '$lib/utils/date.js';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import { readOnlyNotice } from '$lib/utils/permission-feedback.js';
 
   let items = $state<Period[]>([]);
   let loading = $state(true);
@@ -32,12 +36,13 @@
   const tabItems = $derived(
     items.filter((p) => p.status === tab || (tab === 'inactive' && p.status === 'closing')),
   );
-  const pageSize = 10;
+  let pageSize = $state(50);
   let currentPage = $state(1);
   let totalPages = $derived(Math.max(1, Math.ceil(tabItems.length / pageSize)));
   let visibleItems = $derived(tabItems.slice((currentPage - 1) * pageSize, currentPage * pageSize));
   const canReopenPeriod = $derived(can('period.reopen'));
   const canClosePeriod = $derived(can('period.close'));
+  const canSavePeriod = $derived(can(editing ? 'period.update' : 'period.create'));
   const isNativeFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
@@ -64,6 +69,7 @@
         return;
       }
     }
+    listReturn.restore();
     await load();
     const requested = items.find((p) => p.id === $page.url.searchParams.get('activate_period_id'));
     if (requested) {
@@ -85,6 +91,7 @@
   }
 
   function openEdit(p: Period) {
+    listReturn.remember(p.id);
     creating = false;
     editing = p;
     form = { name: p.name, start_date: p.start_date, end_date: p.end_date };
@@ -94,6 +101,7 @@
   }
 
   function closeForm() {
+    listReturn.resume();
     editing = null;
     creating = false;
     formErrors = null;
@@ -202,6 +210,14 @@
   function fieldErr(name: string): string | null {
     return formErrors?.[name]?.[0] ?? null;
   }
+  const listReturn = createListReturn(
+    'periods',
+    () => ({ tab, currentPage, pageSize }),
+    (saved) => {
+      ({ tab, currentPage, pageSize } = saved);
+    },
+    () => !loading && !(editing || creating),
+  );
 </script>
 
 <div class="px-6 py-6">
@@ -209,14 +225,15 @@
     <div>
       <h1 class="text-2xl font-bold">Periode Akuntansi</h1>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-      onclick={openCreate}
-      disabled={!can('period.create')}
-    >
-      + Periode Baru
-    </button>
+    {#if can('period.create')}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={openCreate}
+      >
+        + Periode Baru
+      </button>
+    {/if}
   </header>
 
   <nav
@@ -279,6 +296,7 @@
         <tbody>
           {#each visibleItems as p, index (p.id)}
             <tr
+              data-return-row={`periods:${p.id}`}
               class="border-t border-border-soft cursor-pointer hover:bg-page-bg"
               onclick={() => openEdit(p)}
             >
@@ -325,44 +343,63 @@
           {/each}
         </tbody>
       </table>
-      {#if totalPages > 1}
-        <nav
-          class="flex items-center justify-between border-t border-border-default px-4 py-3 text-sm"
-          aria-label="Navigasi halaman periode"
-        >
-          <span class="text-text-muted">Halaman {currentPage} dari {totalPages}</span>
-          <div class="flex items-center gap-1">
-            <button
-              type="button"
-              class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
-              onclick={() => (currentPage = Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              Sebelumnya
-            </button>
-            {#each Array(totalPages) as _, index}
+      <nav
+        class="flex flex-wrap items-center justify-between gap-3 border-t border-border-default px-4 py-3 text-sm"
+        aria-label="Navigasi halaman periode"
+      >
+        <label class="flex items-center gap-2 text-text-muted">
+          Per Page
+          <select
+            class="rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-text-default"
+            value={String(pageSize)}
+            onchange={(event) => {
+              pageSize = Number(event.currentTarget.value);
+              currentPage = 1;
+            }}
+            data-testid="period-per-page"
+          >
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+        {#if totalPages > 1}
+          <div class="flex items-center gap-3">
+            <span class="text-text-muted">Halaman {currentPage} dari {totalPages}</span>
+            <div class="flex items-center gap-1">
               <button
                 type="button"
-                class="rounded-md px-3 py-1.5 {currentPage === index + 1
-                  ? 'bg-primary text-white'
-                  : 'text-text-muted hover:bg-page-bg'}"
-                aria-current={currentPage === index + 1 ? 'page' : undefined}
-                onclick={() => (currentPage = index + 1)}
+                class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
+                onclick={() => (currentPage = Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
               >
-                {index + 1}
+                Sebelumnya
               </button>
-            {/each}
-            <button
-              type="button"
-              class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
-              onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Berikutnya
-            </button>
+              {#each Array(totalPages) as _, index}
+                <button
+                  type="button"
+                  class="rounded-md px-3 py-1.5 {currentPage === index + 1
+                    ? 'bg-primary text-white'
+                    : 'text-text-muted hover:bg-page-bg'}"
+                  aria-current={currentPage === index + 1 ? 'page' : undefined}
+                  onclick={() => (currentPage = index + 1)}
+                >
+                  {index + 1}
+                </button>
+              {/each}
+              <button
+                type="button"
+                class="rounded-md border border-border-default px-3 py-1.5 text-text-muted hover:bg-page-bg disabled:cursor-not-allowed disabled:opacity-40"
+                onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Berikutnya
+              </button>
+            </div>
           </div>
-        </nav>
-      {/if}
+        {/if}
+      </nav>
     </div>
   {/if}
 </div>
@@ -379,6 +416,13 @@
     >
       <h2 class="mb-4 text-lg font-bold">{editing ? `Periode ${editing.name}` : 'Periode Baru'}</h2>
       {#if fieldErr('_')}<p role="alert" class="mb-3 text-sm text-danger">{fieldErr('_')}</p>{/if}
+      {#if editing?.status === 'open' && !canSavePeriod}
+        <PermissionNotice
+          class="mb-3"
+          testId="period-read-only-notice"
+          message={readOnlyNotice('mengedit periode')}
+        />
+      {/if}
       <fieldset disabled={Boolean(editing && (editing.status !== 'open' || !can('period.update')))}>
         <div class="space-y-3 text-sm">
           <label class="block">
@@ -439,49 +483,53 @@
         <div class="flex flex-wrap gap-2">
           {#if editing}
             {#if editing.status === 'open'}
-              <button
-                type="button"
-                class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                onclick={() => deactivate(editing!)}
-                disabled={!can('period.deactivate')}>Nonaktifkan</button
-              >
-              <button
-                type="button"
-                class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
-                onclick={() => close(editing!)}
-                disabled={!canClosePeriod}
-              >
-                Tutup
-              </button>
-              <button
-                type="button"
-                class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
-                onclick={() => destroy(editing!)}
-                disabled={!can('period.delete')}
-              >
-                Hapus
-              </button>
-            {:else}
-              {#if editing.status === 'inactive'}
+              {#if can('period.deactivate')}
                 <button
                   type="button"
-                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                  onclick={() => close(editing!)}
-                  disabled={!canClosePeriod}>Tutup Periode</button
+                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold"
+                  onclick={() => deactivate(editing!)}>Nonaktifkan</button
                 >
               {/if}
-              <button
-                type="button"
-                class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-                onclick={() => reopen(editing!)}
-                disabled={saving ||
-                  !canReopenPeriod ||
-                  !activationReason.trim() ||
-                  !activationConfirmed}
-                data-testid="period-activate"
-              >
-                Aktifkan Kembali
-              </button>
+              {#if canClosePeriod}
+                <button
+                  type="button"
+                  class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
+                  onclick={() => close(editing!)}
+                >
+                  Tutup Periode
+                </button>
+              {/if}
+              {#if can('period.delete')}
+                <button
+                  type="button"
+                  class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+                  onclick={() => destroy(editing!)}
+                >
+                  Hapus
+                </button>
+              {/if}
+            {:else}
+              {#if editing.status === 'inactive' && canClosePeriod}
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold"
+                  onclick={() => close(editing!)}>Tutup Periode</button
+                >
+              {/if}
+              {#if canReopenPeriod}
+                <button
+                  type="button"
+                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+                  onclick={() => reopen(editing!)}
+                  disabled={saving || !activationReason.trim() || !activationConfirmed}
+                  title={!activationReason.trim() || !activationConfirmed
+                    ? 'Isi alasan aktivasi dan centang konfirmasi terlebih dahulu'
+                    : undefined}
+                  data-testid="period-activate"
+                >
+                  Aktifkan Kembali
+                </button>
+              {/if}
             {/if}
           {/if}
         </div>
@@ -489,14 +537,17 @@
           <button
             type="button"
             class="text-sm text-text-muted hover:text-text-default"
-            onclick={closeForm}>Batal</button
+            onclick={closeForm}
+            >{(!editing || editing.status === 'open' ? canSavePeriod : canReopenPeriod)
+              ? 'Batal'
+              : 'Tutup'}</button
           >
-          {#if !editing || editing.status === 'open'}
+          {#if (!editing || editing.status === 'open') && canSavePeriod}
             <button
               type="button"
               class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
               onclick={save}
-              disabled={saving || !can(editing ? 'period.update' : 'period.create')}
+              disabled={saving}
             >
               {saving ? 'Menyimpan…' : 'Simpan'}
             </button>

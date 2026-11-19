@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
@@ -150,10 +152,11 @@
         return;
       }
     }
+    listReturn.restore();
     if (isInspector) journalMode = 'fiscal';
     accounts = await loadAccounts(journalMode);
     const queryAccount = $page.url.searchParams.get('account_id');
-    accountId = queryAccount ?? accounts[0]?.id ?? '';
+    accountId = queryAccount ?? (accountId || accounts[0]?.id || '');
     await deriveKnownPairs();
 
     // Deep-link from Buku Pembantu: pre-apply source filter when present
@@ -178,6 +181,23 @@
     if (line.source_ref_id) return `${line.source_ref_type}:${line.source_ref_id}`;
     return '—';
   }
+  const listReturn = createListReturn(
+    'general-ledger',
+    () => ({
+      accountId,
+      periodStart,
+      periodEnd,
+      journalMode,
+      sourcePair,
+      sourceRefId,
+      sourceRefQuery,
+    }),
+    (saved) => {
+      ({ accountId, periodStart, periodEnd, journalMode, sourcePair, sourceRefId, sourceRefQuery } =
+        saved);
+    },
+    () => !loading && Boolean(report),
+  );
 </script>
 
 <ReportShell
@@ -352,7 +372,15 @@
             class="border-t border-border-soft {can('journal.read')
               ? 'cursor-pointer hover:bg-page-bg'
               : ''}"
-            onclick={() => can('journal.read') && goto(`/journals/${item.line.journal_id}`)}
+            data-return-row={`general-ledger:${item.key}`}
+            onclick={() => {
+              if (can('journal.read')) {
+                listReturn.remember(item.key);
+                void goto(
+                  `/journals/${item.line.journal_id}?return_to=${encodeURIComponent($page.url.pathname + $page.url.search)}`,
+                );
+              }
+            }}
           >
             <td class="px-4 py-2">{formatDate(item.line.date)}</td>
             <td class="px-4 py-2 font-mono">{item.line.number}</td>
@@ -420,7 +448,15 @@
             class="border-t border-border-soft {can('journal.read')
               ? 'cursor-pointer hover:bg-page-bg'
               : ''}"
-            onclick={() => can('journal.read') && goto(`/journals/${l.journal_id}`)}
+            data-return-row={`general-ledger:${l.line_id}`}
+            onclick={() => {
+              if (can('journal.read')) {
+                listReturn.remember(l.line_id);
+                void goto(
+                  `/journals/${l.journal_id}?return_to=${encodeURIComponent($page.url.pathname + $page.url.search)}`,
+                );
+              }
+            }}
           >
             <td class="px-4 py-2">{formatDate(l.date)}</td>
             <td class="px-4 py-2 font-mono">{l.number}</td>

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const ENTITY = '01J00000000000000000001101';
+const OTHER_ENTITY = '01J00000000000000000001102';
 const catalog = [
   {
     code: 'account.read',
@@ -64,6 +65,7 @@ async function mockPermissions(page: Page) {
     defaults: catalog.filter((item) => item.defaults.includes(code)).map((item) => item.code),
     permissions: catalog.filter((item) => item.defaults.includes(code)).map((item) => item.code),
     customized: false,
+    workspace_ids: [ENTITY, OTHER_ENTITY],
   }));
   const updates: Array<{ role: string; permissions: string[]; revision: string }> = [];
   const accountUpdates: Record<string, unknown>[] = [];
@@ -84,6 +86,7 @@ async function mockPermissions(page: Page) {
     scope: 'entity',
   }));
   const bulkUpdates: Array<{ role_code: string; assignment_ids: string[] }> = [];
+  const workspaceUpdates: Array<{ role: string; workspace_ids: string[] }> = [];
   const account = {
     id: 'bank-bca',
     code: '1101',
@@ -112,6 +115,10 @@ async function mockPermissions(page: Page) {
     entity_id: ENTITY,
     revision,
     catalog,
+    workspaces: [
+      { id: ENTITY, name: 'PT Permission Test' },
+      { id: OTHER_ENTITY, name: 'PT Cabang' },
+    ],
     roles: roles.map((role) => ({
       ...role,
       member_count: users.filter((user) => user.role_code === role.code).length,
@@ -176,12 +183,22 @@ async function mockPermissions(page: Page) {
         defaults: [...(source?.permissions ?? [])],
         permissions: [...(source?.permissions ?? [])],
         customized: false,
+        workspace_ids: [ENTITY],
       });
       revision = 'b'.repeat(64);
       await route.fulfill({ status: 201, json: { data: { ...snapshot(), created_role: code } } });
       return;
     }
     if (path.startsWith('/api/v1/spa/permission-management/roles/')) {
+      if (path.endsWith('/workspaces')) {
+        const code = path.split('/').at(-2)!;
+        const payload = request.postDataJSON();
+        roles.find((item) => item.code === code)!.workspace_ids = payload.workspace_ids;
+        workspaceUpdates.push({ role: code, workspace_ids: payload.workspace_ids });
+        revision = 'd'.repeat(64);
+        await route.fulfill({ json: { data: snapshot() } });
+        return;
+      }
       const code = path.split('/').at(-1)!;
       const role = roles.find((item) => item.code === code)!;
       if (request.method() === 'PATCH') Object.assign(role, request.postDataJSON());
@@ -239,6 +256,7 @@ async function mockPermissions(page: Page) {
   });
   return {
     bulkUpdates,
+    workspaceUpdates,
     updates,
     accountUpdates,
     setActor: (value: string) => {
@@ -263,6 +281,23 @@ async function expandCategories(page: Page) {
   await page.getByRole('button', { name: 'Bagan Akun', exact: true }).click();
   await page.getByRole('button', { name: 'Template Jurnal', exact: true }).click();
 }
+
+test('sets the workspaces where a role group can be assigned', async ({ page }) => {
+  const fixture = await mockPermissions(page);
+  await page.goto('/settings?section=permissions');
+  await page.getByTestId('select-role-operator').click();
+  await page
+    .getByRole('group', { name: 'Detail role' })
+    .getByRole('button', { name: 'Workspace' })
+    .click();
+  const other = page.getByTestId(`role-workspace-operator-${OTHER_ENTITY}`);
+  await expect(other).toBeChecked();
+  await other.uncheck();
+  await page.getByTestId('save-role-workspaces').click();
+  await expect(page.getByText('Workspace untuk role berhasil disimpan.')).toBeVisible();
+  expect(fixture.workspaceUpdates).toEqual([{ role: 'operator', workspace_ids: [ENTITY] }]);
+  await expect(other).not.toBeChecked();
+});
 
 test('summarizes active permissions per category and preserves changes when collapsed', async ({
   page,
@@ -358,11 +393,14 @@ test('lets the operator rename an account and create templates while keeping str
 
   fixture.setActor('operator');
   await page.goto('/akun');
-  await expect(page.getByTestId('account-create')).toBeDisabled();
+  await expect(page.getByTestId('account-create')).toHaveCount(0);
   await page.getByRole('row', { name: /1101 Bank BCA/ }).click();
   const editor = page.getByRole('dialog');
   const name = editor.getByRole('textbox', { name: /Nama/ });
   await expect(name).toBeEnabled();
+  await expect(page.getByTestId('account-partial-edit-notice')).toContainText(
+    'Sebagian isian terkunci',
+  );
   await expect(page.locator('#account-code-input')).toBeDisabled();
   await expect(editor.getByRole('switch', { name: 'Aktif', exact: true })).toBeDisabled();
   await expect(editor.getByRole('button', { name: 'Hapus', exact: true })).toHaveCount(0);
@@ -448,7 +486,7 @@ test('can post an existing draft without granting permission to edit it', async 
   await expect(page.getByTestId('save-draft')).toHaveCount(0);
   await expect(page.getByTestId('entry-account-debit-0')).toBeDisabled();
   await page.getByTestId('posting-jurnal').click();
-  await expect(page).toHaveURL(/\/journals$/);
+  await expect(page).toHaveURL(/\/journals(?:\?|$)/);
   expect(posted).toBe(true);
   expect(edited).toBe(false);
 });
@@ -594,7 +632,8 @@ test('quick search follows workspace permissions and avoids forbidden lookup API
     return route.fulfill({ status: 403, json: { message: 'Forbidden lookup' } });
   });
   await page.goto('/template-jurnal');
-  await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Template Jurnal', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toHaveCount(0);
   await page.keyboard.press('Control+k');
   await expect(page.getByRole('option', { name: /Template Jurnal/ })).toBeVisible();
   await expect(
@@ -648,11 +687,136 @@ for (const [editable, posting] of [
     const dialog = page.getByRole('dialog');
     if (editable) await expect(dialog.getByRole('textbox').last()).toBeEnabled();
     else await expect(dialog.getByRole('textbox').last()).toBeDisabled();
-    if (editable && posting)
-      await expect(dialog.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
-    else await expect(dialog.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+    const resume = dialog.getByRole('button', { name: 'Resume', exact: true });
+    const notice = page.getByTestId('recurring-read-only-notice');
+    if (!editable) {
+      // Actions the user can never run are hidden; the detail explains why it is read-only.
+      await expect(resume).toHaveCount(0);
+      await expect(dialog.getByRole('button', { name: 'Simpan', exact: true })).toHaveCount(0);
+      await expect(notice).toContainText('Mode baca saja');
+      return;
+    }
+    await expect(notice).toHaveCount(0);
+    await expect(resume).toHaveAttribute('aria-disabled', String(!posting));
+    if (posting) {
+      await expect(resume).toBeEnabled();
+      return;
+    }
+    // The schedule itself needs journal.post, so the click is answered with the reason.
+    // Playwright refuses to click aria-disabled controls; a person still can.
+    let resumeCalls = 0;
+    await page.route('**/api/v1/spa/recurring-journals/schedule/resume', (route) => {
+      resumeCalls++;
+      return route.fulfill({ json: { data: {} } });
+    });
+    await resume.click({ force: true });
+    await expect(page.getByText('Akses dibatasi', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Jadwal ini memakai posting otomatis/)).toBeVisible();
+    expect(resumeCalls).toBe(0);
   });
 }
+
+test('a reviewer without posting permission gets an explanation instead of a silent button', async ({
+  page,
+}, testInfo) => {
+  const fixture = await mockPermissions(page);
+  fixture.setActor('operator');
+  fixture.setOperatorPermissions(['journal.read', 'journal.review', 'account.read', 'period.read']);
+  let posted = false;
+  await page.route('**/api/v1/spa/periods**', (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          {
+            id: 'period-2026',
+            name: '2026',
+            start_date: '2026-01-01',
+            end_date: '2026-12-31',
+            status: 'open',
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/v1/spa/journals**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/post')) {
+      posted = true;
+      await route.fulfill({ json: { data: { status: 'posted' } } });
+    } else if (path.endsWith('/review-only')) {
+      await route.fulfill({
+        json: {
+          data: {
+            id: 'review-only',
+            number: 'JU-REVIEW-ONLY',
+            transaction_code: 'TRX-REVIEW',
+            journal_mode: 'internal',
+            date: '2026-10-01',
+            type: 'general',
+            status: 'submitted',
+            review_note: null,
+            memo: 'Review without posting',
+            reference: null,
+            period_id: 'period-2026',
+            created_at: null,
+            posted_at: null,
+            audit_trail: [],
+            entries_debit: [{ account_id: 'bank-bca', amount: '100', memo: null }],
+            entries_credit: [{ account_id: 'bank-bca', amount: '100', memo: null }],
+          },
+        },
+      });
+    } else {
+      await route.fulfill({
+        json: { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 25 } },
+      });
+    }
+  });
+  await page.goto('/journals/review-only');
+  const approve = page.getByTestId('approve-and-post');
+  await expect(approve).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByTestId('request-revision')).toHaveAttribute('aria-disabled', 'false');
+  // Without journal.update the entries stay locked and the form says why.
+  await expect(page.getByTestId('journal-permission-notice')).toContainText('mengedit jurnal');
+  await expect(page.getByTestId('add-line-debit')).toHaveCount(0);
+  await approve.click({ force: true });
+  await expect(page.getByText('Akses dibatasi', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/belum memiliki izin untuk menyetujui dan memposting jurnal/),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('review-denied-message.png') });
+  expect(posted).toBe(false);
+  await expect(page).toHaveURL(/\/journals\/review-only/);
+});
+
+test('hides create actions and opens details read-only for a role that can only read', async ({
+  page,
+}, testInfo) => {
+  const fixture = await mockPermissions(page);
+  fixture.setActor('operator');
+  fixture.setOperatorPermissions(['journal.read', 'account.read', 'period.read']);
+  await page.route('**/api/v1/spa/journals**', (route) =>
+    route.fulfill({
+      json: { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 25 } },
+    }),
+  );
+  await page.goto('/journals');
+  await expect(page.getByRole('heading', { name: 'Jurnal', exact: true })).toBeVisible();
+  await expect(page.getByTestId('create-journal')).toHaveCount(0);
+  await page.goto('/periode');
+  await expect(page.getByRole('heading', { name: 'Periode Akuntansi', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ Periode Baru', exact: true })).toHaveCount(0);
+  await page.goto('/akun');
+  await page.getByRole('row', { name: /1101 Bank BCA/ }).click();
+  const editor = page.getByRole('dialog');
+  await expect(editor.getByRole('heading', { name: 'Detail Akun 1101' })).toBeVisible();
+  await expect(page.getByTestId('account-read-only-notice')).toContainText('Mode baca saja');
+  await expect(editor.getByRole('button', { name: 'Simpan', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('account-read-only-detail.png') });
+  await editor.getByRole('button', { name: 'Tutup', exact: true }).last().click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByTestId('access-denied-content')).toHaveCount(0);
+});
 
 test('Fiscal readers can load reconciliation without requesting unauthorized tax provisions', async ({
   page,

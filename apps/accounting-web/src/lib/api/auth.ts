@@ -25,6 +25,7 @@ export interface AuthUser {
     can_manage_cron: boolean;
     bookkeeping_mode: 'independent_books' | 'internal_only';
     date_format: string;
+    max_open_tabs: number;
     issue_report_url: string | null;
     last_activity_at: string | null;
   }>;

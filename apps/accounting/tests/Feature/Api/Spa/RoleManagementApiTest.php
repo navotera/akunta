@@ -130,8 +130,8 @@ it('lets an Ecopa app admin assign a local accounting role', function () {
 
 it('hides roles without configured permissions and rejects their assignment', function () {
     $unconfiguredRole = Role::create([
-        'code' => 'approver',
-        'name' => 'Approver',
+        'code' => 'cashier',
+        'name' => 'Cashier',
         'is_preset' => true,
     ]);
     $unassignedUser = User::create([

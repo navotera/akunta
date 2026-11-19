@@ -2,8 +2,10 @@
 
 Admin membuka **Settings → Role Management** pada workspace aktif.
 Daftar role memiliki pencarian nama/deskripsi, tombol **Role Baru**, serta
-detail dengan tab **Izin** dan **Anggota**. Tiga role bawaan adalah Supervisor,
-Operator, dan Inspector Fiskal. Pengaturan satu workspace tidak mengubah preset
+detail dengan tab **Izin**, **Workspace**, dan **Anggota**. Role bawaan Accounting yang bisa
+dipilih di User & Roles juga tampil dalam matriks, termasuk Accountant.
+Default Accountant sama dengan Operator; pengaturan keduanya selanjutnya
+terpisah per workspace. Pengaturan satu workspace tidak mengubah preset
 global atau hak role yang sama pada workspace lain.
 
 Ketiga role bawaan memiliki tombol **Restore to Default** di kanan atas daftar
@@ -22,9 +24,24 @@ user pada tab Anggota dan menekan **Terapkan ke N user**.
 Role baru dapat dimulai kosong atau menyalin izin tersimpan dari role lain.
 Penyalinan dilakukan sekali, sehingga perubahan role sumber tidak mengubah
 salinan. **Kembalikan bawaan** pada custom role kembali ke snapshot izin awalnya.
+Pilihan **Salin izin awal dari** menentukan sumber izin, bukan user tujuan.
+Setelah menyimpan izin, admin menetapkan user melalui tab **Anggota** atau
+pilihan **Role Akunta** di User & Roles.
 Nama/deskripsi custom role dapat diubah; tiga nama bawaan tetap dilindungi.
 Role yang masih memiliki assignment belum dicabut tidak dapat dihapus.
 Penghapusan role custom mempertahankan baris role untuk histori assignment.
+
+Tab **Workspace** pada tiap role menentukan workspace satu tenant tempat role
+itu dapat ditetapkan kepada user. Role bawaan aktif pada seluruh workspace
+secara awal; role custom mulai aktif hanya pada workspace pembuatnya. Admin
+yang berwenang pada workspace tujuan dapat menambah atau melepasnya. Izin role
+tetap dikonfigurasi terpisah per workspace. Pelepasan ditolak bila masih ada
+anggota aktif pada workspace tersebut, termasuk assignment seluruh workspace.
+Backend menolak assignment langsung maupun massal ke role yang tidak aktif
+pada workspace tujuan. Penambahan role custom ke workspace lain memakai role
+yang sama tetapi menyimpan izin workspace secara independen. Perubahan nama
+dan penghapusan role custom yang dipakai beberapa workspace memerlukan hak
+pengelolaan pada seluruh workspace terkait dan diaudit per workspace.
 
 Penetapan massal mengganti role pada assignment yang dipilih secara atomik,
 bukan menambah role lain. Hanya assignment user aktif di workspace yang sama
@@ -47,10 +64,17 @@ centang, termasuk perubahan dependency, dan tetap terlihat saat kategori ditutup
 | Lampiran | Melihat/mengunduh, menambah, menghapus |
 | Periode | Melihat/memilih, membuat, mengedit, menghapus, menutup, membuka kembali |
 | Jurnal Berulang | Melihat, membuat, mengedit/jeda/lanjutkan, menghapus, menjalankan manual |
-| Auto Mapping | Melihat data/hasil, mengelola rule/memproses ulang |
+| Auto Mapping | Melihat data/hasil, mengelola rule/memproses ulang, memetakan entitas aplikasi sumber |
 | Dashboard dan laporan | Dashboard manajemen, laporan keuangan dan rincian sumber |
 | Fiskal | Melihat koreksi/rekonsiliasi, mengelola koreksi draft, menyetujui koreksi, melihat/membuat provisi pajak |
 | Pengaturan | Menerapkan template COA, melihat scheduler, mengelola data simulasi bertanda fake |
+
+`automapping.entity_link.manage` mengizinkan pembuatan/penghapusan pasangan ID
+entitas aplikasi sumber dengan workspace Akunta aktif. Izin ini terpisah dari
+`automapping.manage` untuk rule jurnal, bergantung pada `automapping.read`,
+dan diberikan bawaan kepada Supervisor saja. Operator dapat membaca pemetaan;
+Inspector Fiskal tidak mengakses Auto Mapping. Role custom dapat diberi atau
+dicabut izin ini lewat matriks Role Management, tanpa grant otomatis.
 
 **account.rename**, **account.update**, **account.activate**, dan **account.delete**
 terpisah. Izin mengganti nama tidak mengizinkan perubahan kode, struktur,
@@ -99,6 +123,15 @@ tersebut. Pemilihan disaring oleh backend berdasarkan status yang boleh diedit,
 buku/workspace, dan periode terbuka. Inspector tidak dapat memakai aksi ini.
 Preview dan simpan tetap memeriksa ulang semua jurnal pilihan; tidak ada kode
 permission baru, perubahan default role, atau grant otomatis pada custom role.
+
+Approval massal jurnal memakai `journal.read` untuk daftar serta
+`journal.review` dan `journal.post` untuk memilih semua dan memproses batch.
+Backend memeriksa ulang ID terpilih pada workspace aktif, status `submitted`,
+periode, akun, dan keseimbangan melalui aksi posting yang sama. Inspector tetap
+ditolak. Tidak ada kode permission atau default role baru; custom role hanya
+dapat menggunakan aksi ini bila seluruh izin tersebut diberikan.
+Pengaturan maksimal tab berada di Setting General dan memakai otorisasi admin
+workspace yang sama dengan pengaturan General lainnya.
 
 Memilih aksi pada UI ikut mengaktifkan akses baca yang diperlukan.
 Mencabut dependency ikut mencabut aksi yang memerlukannya. Backend menolak
@@ -159,6 +192,40 @@ Bootstrap /api/v1/me menyertakan permissions, roles, is_fiscal_inspector, dan ca
 entity. SPA memakai informasi itu untuk navigasi dan kontrol form.
 Middleware SPA serta Gate tetap menjadi boundary backend, sehingga request
 langsung dan sesi dengan UI lama tetap diperiksa.
+
+## Respons UI saat izin tidak dimiliki
+
+Kontrol tidak boleh tampil aktif lalu diam ketika diklik. Accounting Web memakai
+tiga pola, dipilih berdasarkan peran kontrol tersebut pada halaman:
+
+1. **Disembunyikan** — aksi yang memang bukan wewenang pengguna pada workspace
+   aktif: tombol buat (`+ Akun Baru`, `+ Template Baru`, `+ Periode Baru`,
+   `+ Schedule Baru`, `+ Buat Jurnal`), hapus, nonaktifkan/tutup/aktifkan kembali
+   periode, pause/hapus jadwal, `Restore as Draft`, tombol `+` koreksi cepat,
+   simpan/reprocess rule Auto Mapping, dan tombol Simpan pada form yang terbuka
+   sebagai detail.
+2. **Notice baca-saja** — form utama yang dibuka tanpa izin mengubah tetap tampil
+   sebagai detail dengan input terkunci dan satu baris penjelasan
+   (`PermissionNotice`) berisi izin yang belum dimiliki serta arahan menghubungi
+   admin workspace. Berlaku pada editor akun (termasuk izin sebagian, misalnya
+   hanya `account.rename`), periode, jadwal jurnal berulang, form jurnal/template,
+   koreksi Fiskal, rule Auto Mapping, dan Settings General. Kunci karena status
+   jurnal atau periode tetap dijelaskan oleh banner halaman yang sudah ada.
+3. **Pesan saat diklik** — kontrol yang harus tetap terlihat karena menjadi
+   bagian alur atau penanda status memakai `aria-disabled`, bukan atribut
+   `disabled`, sehingga klik dijawab toast "Akses dibatasi" melalui
+   `notifyPermissionDenied`. Berlaku pada `Setujui dan Posting` tanpa
+   `journal.post`, `Revisi` tanpa `journal.review`, `Resume`/`Run Sekarang`/Simpan
+   jadwal auto-post tanpa `journal.post`, ikon bookmark template tanpa
+   `template.bookmark`, dan penanda lampiran di daftar jurnal tanpa
+   `attachment.read`.
+
+Kalimat pesan berasal dari `apps/accounting-web/src/lib/utils/permission-feedback.ts`
+agar seragam. Atribut `disabled` native tetap dipakai untuk keadaan non-izin
+(sedang menyimpan, data belum lengkap, jurnal belum balance) dan sebaiknya
+disertai `title` yang menyebut syaratnya. Ketiga pola hanya mengatur tampilan;
+tidak ada kode permission, default role, atau pemeriksaan backend yang berubah,
+dan penolakan 403 dari API tetap ditampilkan oleh panel "Akses dibatasi".
 
 ## Konsistensi navigasi dan aksi
 

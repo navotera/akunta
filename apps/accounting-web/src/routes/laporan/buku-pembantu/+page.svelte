@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { createListReturn } from '$lib/utils/list-return.svelte.js';
+
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -142,10 +144,19 @@
         return;
       }
     }
+    listReturn.restore();
     if (isInspector) journalMode = 'fiscal';
     await deriveKnownPairs();
     if (pair) await load();
   });
+  const listReturn = createListReturn(
+    'subsidiary-ledger',
+    () => ({ pair, periodStart, periodEnd, journalMode }),
+    (saved) => {
+      ({ pair, periodStart, periodEnd, journalMode } = saved);
+    },
+    () => !loading && rows.length > 0,
+  );
 </script>
 
 <ReportShell
@@ -232,10 +243,13 @@
         {#each mergedRows() as row (row.ref_id)}
           <tr
             class="cursor-pointer border-t border-border-soft hover:bg-page-bg"
-            onclick={() =>
-              goto(
+            data-return-row={`subsidiary-ledger:${row.ref_id}`}
+            onclick={() => {
+              listReturn.remember(row.ref_id);
+              void goto(
                 `/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${row.ref_id}`,
-              )}
+              );
+            }}
           >
             <td class="px-4 py-2 font-mono">{row.code ?? '—'}</td>
             <td class="px-4 py-2">{row.label ?? row.ref_id}</td>
@@ -299,10 +313,13 @@
         {#each rows as r (r.ref_id)}
           <tr
             class="border-t border-border-soft hover:bg-page-bg cursor-pointer"
-            onclick={() =>
-              goto(
+            data-return-row={`subsidiary-ledger:${r.ref_id}`}
+            onclick={() => {
+              listReturn.remember(r.ref_id);
+              void goto(
                 `/laporan/buku-besar?source_app=${meta?.source_app}&source_ref_type=${meta?.ref_type}&source_ref_id=${r.ref_id}`,
-              )}
+              );
+            }}
           >
             <td class="px-4 py-2 font-mono">{r.code ?? '—'}</td>
             <td class="px-4 py-2">{r.label ?? r.ref_id}</td>

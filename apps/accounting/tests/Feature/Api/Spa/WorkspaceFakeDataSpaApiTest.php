@@ -159,6 +159,42 @@ it('isolates general and number format settings per workspace', function () {
         ->and(data_get($other->workspace_settings, 'transaction_number_format'))->toBe('OTHER-TRX/{numbering}');
 });
 
+it('defaults to eight open tabs and validates the workspace tab limit', function () {
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->regular->id)
+        ->getJson('/api/v1/spa/workspaces')
+        ->assertOk()
+        ->assertJsonFragment(['id' => $this->regular->id, 'max_open_tabs' => 8]);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->regular->id)
+        ->patchJson('/api/v1/spa/workspaces/'.$this->regular->id, [
+            'name' => $this->regular->name,
+            'max_open_tabs' => 3,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.max_open_tabs', 3);
+
+    $this->actingAs($this->user)
+        ->getJson('/api/v1/me')
+        ->assertOk()
+        ->assertJsonFragment(['id' => $this->regular->id, 'max_open_tabs' => 3])
+        ->assertJsonFragment(['id' => $this->fake->id, 'max_open_tabs' => 8]);
+
+    $this->actingAs($this->user)
+        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->regular->id)
+        ->patchJson('/api/v1/spa/workspaces/'.$this->regular->id, [
+            'name' => $this->regular->name,
+            'max_open_tabs' => 0,
+        ])
+        ->assertUnprocessable();
+
+    expect(data_get($this->regular->refresh()->workspace_settings, 'max_open_tabs'))->toBe(3);
+});
+
 it('creates the required tax accounts with a new workspace', function () {
     $response = $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])

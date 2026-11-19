@@ -27,8 +27,10 @@
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { journalAttachmentView } from '$lib/stores/journal-attachment-view.svelte.js';
   import { workspaceApi, type WorkspaceRecord } from '$lib/api/workspace.js';
   import FormatTokenInput from '$lib/components/ui/FormatTokenInput.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import {
     fakeDataApi,
     type FakeDataGroup,
@@ -48,6 +50,7 @@
 
   type SettingSection =
     | 'general'
+    | 'appearance'
     | 'workspace'
     | 'number-formats'
     | 'entity-profile'
@@ -61,6 +64,12 @@
   const sections: Array<{ id: SettingSection; label: string; description: string; icon: string }> =
     [
       { id: 'general', label: 'General', description: 'Preferensi dasar aplikasi', icon: '⚙' },
+      {
+        id: 'appearance',
+        label: 'Tampilan',
+        description: 'Preferensi tampilan pribadi',
+        icon: '◐',
+      },
       { id: 'notification', label: 'Notification', description: 'Atur pemberitahuan', icon: '♢' },
       { id: 'cron', label: 'Cron & Scheduler', description: 'Status job otomatis', icon: '⚡' },
       { id: 'users', label: 'User & Roles', description: 'Pengguna dan hak akses', icon: '♙' },
@@ -153,6 +162,7 @@
       null,
   );
   let dateFormat = $state(DEFAULT_DATE_FORMAT);
+  let maxOpenTabs = $state(8);
   let themeColor = $state<string>('blue');
   let savedMessage = $state<string | null>(null);
   let workspaceRecords = $state<WorkspaceRecord[]>([]);
@@ -300,11 +310,13 @@
 
   async function initializeSettings() {
     await auth.refresh();
+    journalAttachmentView.hydrate(auth.user?.id ?? null);
     if (isFiscalInspector()) {
       await goto('/dashboard', { replaceState: true });
       return;
     }
     if ($page.url.searchParams.get('section') === 'workspace') activeSection = 'workspace';
+    if ($page.url.searchParams.get('section') === 'appearance') activeSection = 'appearance';
     if ($page.url.searchParams.get('section') === 'users') activeSection = 'users';
     if ($page.url.searchParams.get('section') === 'permissions') activeSection = 'permissions';
     if ($page.url.searchParams.get('section') === 'integration') activeSection = 'integration';
@@ -496,6 +508,7 @@
         };
         bookkeepingMode = activeWorkspace.bookkeeping_mode ?? 'independent_books';
         dateFormat = activeWorkspace.date_format ?? DEFAULT_DATE_FORMAT;
+        maxOpenTabs = activeWorkspace.max_open_tabs ?? 8;
         setDateFormat(dateFormat, activeWorkspace.id);
         issueReportUrl = activeWorkspace.issue_report_url ?? '';
       }
@@ -511,11 +524,14 @@
     try {
       const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
       if (!isAdmin || !activeWorkspace) throw new Error('Workspace aktif tidak ditemukan.');
+      if (!Number.isInteger(maxOpenTabs) || maxOpenTabs < 1 || maxOpenTabs > 50)
+        throw new Error('Maksimal tab terbuka harus berupa angka 1 sampai 50.');
 
       await workspaceApi.update(activeWorkspace.id, {
         name: activeWorkspace.name,
         bookkeeping_mode: bookkeepingMode,
         date_format: dateFormat,
+        max_open_tabs: maxOpenTabs,
         issue_report_url: issueReportUrl.trim() || null,
       });
       setDateFormat(dateFormat, activeWorkspace.id);
@@ -1010,6 +1026,13 @@
         <p class="mt-1 text-sm text-text-muted">
           Preferensi umum untuk pengalaman menggunakan Akunta.
         </p>
+        {#if !isAdmin}
+          <PermissionNotice
+            class="mt-4"
+            testId="general-settings-read-only-notice"
+            message="Mode baca saja. Hanya Admin Aplikasi Akunta yang dapat mengubah pengaturan General."
+          />
+        {/if}
         <div class="mt-6 divide-y divide-border-soft">
           <div class="flex items-center justify-between gap-4 py-4">
             <div>
@@ -1073,6 +1096,25 @@
               </select>
             </div>
           </div>
+          <div class="flex items-center justify-between gap-4 py-4">
+            <div>
+              <h3 class="text-sm font-semibold">Maksimal tab terbuka</h3>
+              <p class="mt-1 text-xs text-text-muted">
+                Batas tab halaman untuk setiap pengguna pada workspace ini. Tab lain ditutup
+                otomatis saat batas terlampaui.
+              </p>
+            </div>
+            <input
+              type="number"
+              min="1"
+              max="50"
+              step="1"
+              bind:value={maxOpenTabs}
+              disabled={!isAdmin || generalSaving}
+              aria-label="Maksimal tab terbuka"
+              class="w-24 rounded-md border border-border-default bg-page-bg px-3 py-2 text-sm"
+            />
+          </div>
           <div class="flex items-start justify-between gap-4 py-4">
             <div>
               <h3 class="text-sm font-semibold">Laporan Issue</h3>
@@ -1119,6 +1161,45 @@
               </button>
             </div>
           {/if}
+        </div>
+      {:else if activeSection === 'appearance'}
+        <h2 class="text-lg font-bold">Tampilan</h2>
+        <p class="mt-1 text-sm text-text-muted">
+          Preferensi pribadi untuk tampilan daftar jurnal di perangkat ini.
+        </p>
+        <div
+          class="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-border-soft py-4"
+        >
+          <div>
+            <h3 class="text-sm font-semibold">Lampiran pada daftar jurnal</h3>
+            <p class="mt-1 text-xs text-text-muted">
+              Pilih gambar kecil atau ikon lampiran. Klik keduanya untuk membuka preview dan galeri.
+            </p>
+          </div>
+          <div
+            class="inline-flex rounded-md border border-border-default p-1"
+            role="group"
+            aria-label="Tampilan lampiran daftar jurnal"
+          >
+            <button
+              type="button"
+              class="rounded px-3 py-1.5 text-sm {journalAttachmentView.value === 'thumbnail'
+                ? 'bg-primary-light font-semibold text-primary'
+                : 'text-text-muted hover:text-text-default'}"
+              aria-pressed={journalAttachmentView.value === 'thumbnail'}
+              onclick={() => journalAttachmentView.set('thumbnail')}
+              data-testid="journal-attachment-view-thumbnail">Thumbnail</button
+            >
+            <button
+              type="button"
+              class="rounded px-3 py-1.5 text-sm {journalAttachmentView.value === 'icon'
+                ? 'bg-primary-light font-semibold text-primary'
+                : 'text-text-muted hover:text-text-default'}"
+              aria-pressed={journalAttachmentView.value === 'icon'}
+              onclick={() => journalAttachmentView.set('icon')}
+              data-testid="journal-attachment-view-icon">Ikon saja</button
+            >
+          </div>
         </div>
       {:else if activeSection === 'workspace'}
         <div class="flex items-start justify-between gap-4">

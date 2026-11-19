@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { onDestroy, onMount, tick } from 'svelte';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { journalAttachmentView } from '$lib/stores/journal-attachment-view.svelte.js';
+  import { tenant } from '$lib/stores/tenant.svelte.js';
   import { isFiscalInspector } from '$lib/stores/permissions.svelte.js';
   import { can, activeRoles, canManagePermissions } from '$lib/stores/permissions.svelte.js';
   import {
@@ -13,11 +15,17 @@
     type AccountReplacementPreview,
   } from '$lib/api/journal.js';
   import { accountApi, type AccountOption } from '$lib/api/account.js';
+  import { attachmentApi, type Attachment } from '$lib/api/attachment.js';
   import { periodApi, type Period } from '$lib/api/period.js';
   import Combobox, { type ComboOption } from '$lib/components/ui/Combobox.svelte';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
+  import AttachmentPreview from '$lib/components/journal/AttachmentPreview.svelte';
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
+  import {
+    notifyPermissionDenied,
+    permissionDeniedMessage,
+  } from '$lib/utils/permission-feedback.js';
 
   let items = $state<JournalSummary[]>([]);
   let loading = $state(true);
@@ -31,12 +39,26 @@
   });
   let currentPage = $state(1);
   let lastPage = $state(1);
+  let perPage = $state(50);
+  let highlightJournalId = $state<string | null>(null);
+  let tableScrollElement = $state<HTMLDivElement>();
+  let highlightBounds = $state<{ top: number; height: number; width: number } | null>(null);
+  let horizontalScroll = 0;
+  let scrollToHighlight = false;
+  let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+  onDestroy(() => {
+    if (highlightTimer) clearTimeout(highlightTimer);
+  });
   let accountDeletion = $state<AccountDeletionContext | null>(null);
   const deletionAccountId = $derived($page.url.searchParams.get('delete_account_id'));
   let periodStatus = $state<'active' | 'inactive'>('active');
   let trashedCount = $state(0);
   let restoringId = $state<string | null>(null);
   let error = $state<string | null>(null);
+  let previewAttachment = $state<Attachment | null>(null);
+  let previewAttachments = $state<Attachment[]>([]);
+  let previewJournalId = $state<string | null>(null);
+  let previewError = $state<string | null>(null);
   let periods = $state<Period[]>([]);
   let accounts = $state<AccountOption[]>([]);
   let filtersOpen = $state(false);
@@ -53,6 +75,26 @@
   let batchBusy = $state(false);
   let batchError = $state<string | null>(null);
   let batchMessage = $state<string | null>(null);
+  let approvalSelection = $state<JournalSelection[]>([]);
+  let approvalSelecting = $state(false);
+  let approvalAllMatching = $state(false);
+  let approvalSkipped = $state(0);
+  let approvalBusy = $state(false);
+  let approvalError = $state<string | null>(null);
+  let approvalMessage = $state<string | null>(null);
+  let approvalRequest = 0;
+  const approvalIds = $derived(new Set(approvalSelection.map((journal) => journal.id)));
+  const approvalPage = $derived(
+    items.filter(
+      (journal) =>
+        journal.status === 'submitted' &&
+        !journal.deleted_at &&
+        periods.some((period) => period.id === journal.period_id && period.status === 'open'),
+    ),
+  );
+  const approvalPageSelected = $derived(
+    approvalPage.length > 0 && approvalPage.every((journal) => approvalIds.has(journal.id)),
+  );
   const selectedIds = $derived(new Set(selectedJournals.map((journal) => journal.id)));
   const isSupervisor = $derived(
     canManagePermissions() ||
@@ -106,6 +148,42 @@
     date_to: '',
     search: '',
   });
+  type JournalListContext = {
+    status: JournalListTab;
+    journalMode: 'internal' | 'fiscal' | 'all';
+    periodStatus: 'active' | 'inactive';
+    filters: JournalFilters;
+    page: number;
+    perPage: number;
+    scrollLeft: number;
+    lastOpenedId: string | null;
+  };
+  function contextKey(): string {
+    return `akunta.journal-list.${auth.user?.id ?? 'anonymous'}.${tenant.id ?? 'unknown'}`;
+  }
+
+  function saveListContext(): void {
+    const context: JournalListContext = {
+      status: statusTab,
+      journalMode,
+      periodStatus,
+      filters: { ...appliedFilters },
+      page: currentPage,
+      perPage,
+      scrollLeft: horizontalScroll,
+      lastOpenedId: highlightJournalId,
+    };
+    sessionStorage.setItem(contextKey(), JSON.stringify(context));
+  }
+
+  function readListContext(): JournalListContext | null {
+    try {
+      const stored = sessionStorage.getItem(contextKey());
+      return stored ? (JSON.parse(stored) as JournalListContext) : null;
+    } catch {
+      return null;
+    }
+  }
   let appliedFilters = $state<JournalFilters>(emptyFilters());
   let draftFilters = $state<JournalFilters>(emptyFilters());
   let journalMode = $state<'internal' | 'fiscal' | 'all'>('internal');
@@ -121,6 +199,14 @@
   type JournalStatusTab = 'draft' | 'submitted' | 'posted' | 'rejected' | 'reversed';
   type JournalListTab = JournalStatusTab | 'trashed' | 'all';
   let statusTab = $state<JournalListTab>('draft');
+  const canApproveBatch = $derived(
+    !deletionAccountId &&
+      !isInspector &&
+      can('journal.read') &&
+      can('journal.review') &&
+      can('journal.post') &&
+      statusTab === 'submitted',
+  );
   const statusTabs = $derived<{ value: JournalListTab; label: string }[]>([
     ...(deletionAccountId ? [{ value: 'all' as const, label: 'Semua status' }] : []),
     { value: 'draft', label: 'Draft' },
@@ -157,14 +243,79 @@
     selectionError = null;
   }
 
+  function clearApprovalSelection() {
+    approvalRequest += 1;
+    approvalSelection = [];
+    approvalAllMatching = false;
+    approvalSkipped = 0;
+    approvalError = null;
+    approvalSelecting = false;
+  }
+
+  function selectApproval(journal: JournalSelection, checked: boolean) {
+    if (approvalSelecting || approvalBusy) return;
+    approvalAllMatching = false;
+    approvalSkipped = 0;
+    approvalMessage = null;
+    if (
+      checked &&
+      approvalPage.some((item) => item.id === journal.id) &&
+      !approvalIds.has(journal.id)
+    )
+      approvalSelection = [...approvalSelection, journal];
+    if (!checked) approvalSelection = approvalSelection.filter((item) => item.id !== journal.id);
+  }
+
+  async function selectAllForApproval() {
+    if (!canApproveBatch || approvalSelecting || approvalBusy || loading) return;
+    const requestId = ++approvalRequest;
+    approvalSelecting = true;
+    approvalError = null;
+    approvalMessage = null;
+    try {
+      const result = await journalApi.selectForApproval(listParams());
+      if (requestId !== approvalRequest) return;
+      approvalSelection = result.data;
+      approvalSkipped = result.meta.skipped_count;
+      approvalAllMatching = true;
+    } catch (error) {
+      if (requestId === approvalRequest)
+        approvalError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (requestId === approvalRequest) approvalSelecting = false;
+    }
+  }
+
+  async function approveSelected() {
+    if (!canApproveBatch || approvalBusy || approvalSelection.length === 0) return;
+    const ids = approvalSelection.map((journal) => journal.id);
+    if (!window.confirm(`Setujui dan posting ${ids.length} jurnal yang dipilih?`)) return;
+    approvalBusy = true;
+    approvalError = null;
+    try {
+      const result = await journalApi.approveBatch(ids);
+      approvalMessage = `${result.approved_count} jurnal berhasil disetujui dan diposting.`;
+      await load();
+    } catch (error) {
+      approvalError = error instanceof Error ? error.message : String(error);
+    } finally {
+      approvalBusy = false;
+    }
+  }
+
   async function load(pageNumber = 1, keepSelection = false) {
-    if (!keepSelection) clearSelection();
+    horizontalScroll = tableScrollElement?.scrollLeft ?? horizontalScroll;
+    if (!keepSelection) {
+      clearSelection();
+      clearApprovalSelection();
+    }
     loading = true;
     error = null;
+    let scrollAfterLoad = false;
     try {
       const res = await journalApi.list({
         ...listParams(),
-        per_page: 50,
+        per_page: perPage,
         page: pageNumber,
       });
       items = res.data;
@@ -180,10 +331,48 @@
         reversed: res.meta.status_counts?.reversed ?? 0,
       };
       trashedCount = res.meta.trashed_count ?? 0;
+      saveListContext();
+      syncListUrl();
+      if (scrollToHighlight && items.some((item) => item.id === highlightJournalId)) {
+        scrollToHighlight = false;
+        scrollAfterLoad = true;
+      } else if (scrollToHighlight) {
+        scrollToHighlight = false;
+        highlightJournalId = null;
+        saveListContext();
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+      await tick();
+      if (tableScrollElement) tableScrollElement.scrollLeft = horizontalScroll;
+      if (scrollAfterLoad) {
+        const row = document.getElementById(`journal-row-${highlightJournalId}`);
+        if (row && tableScrollElement) {
+          const bounds = row.getBoundingClientRect();
+          const containerBounds = tableScrollElement.getBoundingClientRect();
+          highlightBounds = {
+            top:
+              bounds.top -
+              containerBounds.top +
+              tableScrollElement.scrollTop -
+              tableScrollElement.clientTop,
+            height: bounds.height,
+            width: bounds.width,
+          };
+          const top = window.scrollY + bounds.top - (window.innerHeight - bounds.height) / 2;
+          window.scrollTo(window.scrollX, Math.max(0, top));
+        }
+        const focusedId = highlightJournalId;
+        highlightTimer = setTimeout(() => {
+          if (highlightJournalId !== focusedId) return;
+          highlightJournalId = null;
+          highlightBounds = null;
+          saveListContext();
+          highlightTimer = null;
+        }, 1300);
+      }
     }
   }
 
@@ -217,6 +406,7 @@
         return;
       }
     }
+    journalAttachmentView.hydrate(auth.user?.id ?? null);
     if (isInspector) journalMode = 'fiscal';
     if (deletionAccountId) {
       journalMode = isInspector ? 'fiscal' : 'all';
@@ -226,7 +416,60 @@
       appliedFilters.account_id = deletionAccountId;
       draftFilters.account_id = deletionAccountId;
     }
-    await Promise.all([load(), loadFilterOptions()]);
+    const params = $page.url.searchParams;
+    const storedContext = readListContext();
+    if (storedContext && Number.isFinite(storedContext.scrollLeft)) {
+      horizontalScroll = Math.max(0, storedContext.scrollLeft);
+    }
+    const hasListQuery = [
+      'delete_account_id',
+      'status',
+      'journal_mode',
+      'page',
+      'period_id',
+      'account_id',
+      'type',
+      'date_from',
+      'date_to',
+      'search',
+    ].some((key) => params.has(key));
+    if (!hasListQuery && storedContext) {
+      if (statusTabs.some((tab) => tab.value === storedContext.status))
+        statusTab = storedContext.status;
+      if (!isInspector && ['internal', 'fiscal', 'all'].includes(storedContext.journalMode)) {
+        journalMode = storedContext.journalMode;
+      }
+      appliedFilters = { ...emptyFilters(), ...storedContext.filters };
+    }
+    const requestedPerPage = Number(params.get('per_page') ?? storedContext?.perPage);
+    if ([10, 25, 50, 100].includes(requestedPerPage)) perPage = requestedPerPage;
+    highlightJournalId = params.get('focus_journal') ?? storedContext?.lastOpenedId ?? null;
+    scrollToHighlight = Boolean(highlightJournalId);
+    const requestedStatus = params.get('status');
+    if (!deletionAccountId && statusTabs.some((tab) => tab.value === requestedStatus)) {
+      statusTab = requestedStatus as JournalListTab;
+    }
+    const requestedMode = params.get('journal_mode');
+    if (
+      !deletionAccountId &&
+      !isInspector &&
+      ['internal', 'fiscal', 'all'].includes(requestedMode ?? '')
+    ) {
+      journalMode = requestedMode as typeof journalMode;
+    }
+    if (hasListQuery)
+      for (const key of Object.keys(appliedFilters) as (keyof JournalFilters)[]) {
+        if (key === 'account_id' && deletionAccountId) continue;
+        appliedFilters[key] = params.get(key) ?? '';
+      }
+    draftFilters = { ...appliedFilters };
+    const requestedPage = Number(params.get('page'));
+    const restoredPage = !hasListQuery && storedContext ? storedContext.page : 1;
+    await Promise.all([
+      load(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : restoredPage),
+      loadFilterOptions(),
+    ]);
+    if (currentPage > lastPage && total > 0) await load(lastPage);
   });
 
   function statusColor(s: JournalSummary['status']): string {
@@ -258,8 +501,63 @@
     }
   }
 
+  function listSearchParams(): URLSearchParams {
+    const params = new URLSearchParams();
+    if (deletionAccountId) {
+      params.set('delete_account_id', deletionAccountId);
+      if (periodStatus === 'inactive') params.set('period_status', periodStatus);
+    }
+    params.set('status', statusTab);
+    params.set('journal_mode', journalMode);
+    for (const [key, value] of Object.entries(appliedFilters)) {
+      if (value) params.set(key, value);
+    }
+    if (currentPage > 1) params.set('page', String(currentPage));
+    if (perPage !== 50) params.set('per_page', String(perPage));
+    return params;
+  }
+
+  function syncListUrl(): void {
+    const target = `/journals?${listSearchParams().toString()}`;
+    if (`${window.location.pathname}${window.location.search}` === target) return;
+    // Keep the mounted list and SvelteKit history state while its filters and
+    // page become the browser's Back destination.
+    replaceState(target, $page.state);
+  }
+
   function journalUrl(id: string): string {
-    return `/journals/${id}${deletionAccountId ? `?delete_account_id=${encodeURIComponent(deletionAccountId)}${periodStatus === 'inactive' ? '&period_status=inactive' : ''}` : ''}`;
+    const params = listSearchParams();
+    params.set('focus_journal', id);
+    return `/journals/${id}?${params.toString()}`;
+  }
+
+  function rememberOpenedJournal(id: string): void {
+    if (highlightTimer) clearTimeout(highlightTimer);
+    horizontalScroll = tableScrollElement?.scrollLeft ?? horizontalScroll;
+    highlightJournalId = id;
+    saveListContext();
+  }
+
+  async function previewJournalAttachment(journalId: string): Promise<void> {
+    if (!can('attachment.read')) {
+      notifyPermissionDenied(permissionDeniedMessage('melihat lampiran jurnal'));
+      return;
+    }
+    if (previewJournalId) return;
+    previewJournalId = journalId;
+    previewError = null;
+    try {
+      const attachments = await attachmentApi.listFor('App\\Models\\Journal', journalId);
+      const attachment =
+        attachments.find((item) => item.mime_type?.startsWith('image/')) ?? attachments[0];
+      if (!attachment) throw new Error('Lampiran tidak ditemukan.');
+      previewAttachments = attachments;
+      previewAttachment = attachment;
+    } catch (caught) {
+      previewError = caught instanceof Error ? caught.message : 'Lampiran gagal dibuka.';
+    } finally {
+      previewJournalId = null;
+    }
   }
 
   function batchSelectionReason(journal: JournalSummary): string {
@@ -388,7 +686,7 @@
           role="group"
           aria-label="Mode jurnal"
         >
-          {#if deletionAccountId}
+          {#if !isInspector}
             <button
               type="button"
               class="rounded-full px-3 py-1 font-medium {journalMode === 'all'
@@ -424,11 +722,13 @@
             }}>Fiskal</button
           >
         </div>
-        <a
-          href="/journals/new"
-          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-          data-testid="create-journal">+ Buat Jurnal</a
-        >
+        {#if can('journal.create')}
+          <a
+            href="/journals/new"
+            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+            data-testid="create-journal">+ Buat Jurnal</a
+          >
+        {/if}
       {/if}
       <button
         type="button"
@@ -593,6 +893,70 @@
       </button>
     {/each}
   </nav>
+
+  {#if canApproveBatch}
+    <div
+      class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-default bg-card-bg p-3 text-sm"
+      data-testid="bulk-approval-toolbar"
+    >
+      <div>
+        <p class="font-semibold" aria-live="polite">
+          {#if approvalSelecting}Memeriksa jurnal lintas halaman…
+          {:else if approvalAllMatching}Semua {approvalSelection.length} jurnal yang dapat disetujui dipilih.
+          {:else}{approvalSelection.length} jurnal dipilih untuk approval.{/if}
+        </p>
+        <p class="mt-1 text-xs text-text-muted">
+          Pilihan mengikuti buku dan filter saat ini. Hanya jurnal Di review pada periode terbuka
+          yang dapat disetujui.
+        </p>
+        {#if approvalAllMatching && approvalSkipped > 0}
+          <p class="mt-1 text-xs text-text-muted">
+            {approvalSkipped} jurnal dilewati karena tidak memenuhi syarat.
+          </p>
+        {/if}
+        <div class="mt-2 flex gap-4">
+          <button
+            type="button"
+            class="font-semibold text-primary hover:underline disabled:opacity-50"
+            disabled={loading || approvalSelecting || approvalBusy || total === 0}
+            onclick={selectAllForApproval}
+            data-testid="bulk-approval-select-all">Pilih semua yang dapat disetujui</button
+          >
+          {#if approvalSelection.length > 0}
+            <button
+              type="button"
+              class="text-text-muted hover:underline"
+              disabled={approvalBusy}
+              onclick={clearApprovalSelection}>Batalkan pilihan</button
+            >
+          {/if}
+        </div>
+      </div>
+      <button
+        type="button"
+        class="rounded-md bg-primary px-3 py-2 font-semibold text-white disabled:opacity-50"
+        disabled={approvalSelection.length === 0 || approvalSelecting || approvalBusy || loading}
+        onclick={approveSelected}
+        data-testid="bulk-approval-submit"
+      >
+        {approvalBusy ? 'Memproses…' : `Setujui dan Posting (${approvalSelection.length})`}
+      </button>
+    </div>
+  {/if}
+  {#if approvalError}<p
+      class="mb-4 rounded-md border border-danger/30 bg-danger-light p-3 text-sm text-danger"
+      role="alert"
+      data-testid="bulk-approval-error"
+    >
+      {approvalError}
+    </p>{/if}
+  {#if approvalMessage}<p
+      class="mb-4 rounded-md border border-border-default bg-page-bg p-3 text-sm"
+      role="status"
+      data-testid="bulk-approval-result"
+    >
+      {approvalMessage}
+    </p>{/if}
 
   {#if canBatchReplace && accountDeletion && accountDeletion.journal_count > 0}
     <div
@@ -776,6 +1140,12 @@
     </section>
   {/if}
 
+  {#if previewError}
+    <p class="mb-3 text-sm text-danger" role="alert" data-testid="journal-attachment-preview-error">
+      {previewError}
+    </p>
+  {/if}
+
   {#if loading}
     <div class="text-text-muted">Memuat…</div>
   {:else if error}
@@ -791,20 +1161,33 @@
         Jurnal yang masuk status Trashed akan dihapus per 30 hari
       </div>
     {/if}
-    <div class="overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs">
+    <div
+      bind:this={tableScrollElement}
+      class="relative overflow-x-auto rounded-lg border border-border-default bg-card-bg shadow-xs"
+      data-testid="journal-table-scroll"
+    >
       <table class="w-full text-sm">
         <thead class="bg-page-bg text-xs uppercase tracking-wider text-text-muted">
           <tr>
-            {#if canBatchReplace}
+            {#if canBatchReplace || canApproveBatch}
               <th class="w-12 px-3 py-3 text-left"
                 ><input
                   type="checkbox"
                   class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  checked={allPageSelected}
-                  disabled={selectablePage.length === 0 || selectingAll}
-                  onchange={(event) => selectPage(event.currentTarget.checked)}
-                  aria-label="Pilih semua jurnal yang dapat diedit di halaman ini"
-                  data-testid="batch-select-page"
+                  checked={canApproveBatch ? approvalPageSelected : allPageSelected}
+                  disabled={canApproveBatch
+                    ? approvalPage.length === 0 || approvalSelecting || approvalBusy
+                    : selectablePage.length === 0 || selectingAll}
+                  onchange={(event) =>
+                    canApproveBatch
+                      ? approvalPage.forEach((journal) =>
+                          selectApproval(journal, event.currentTarget.checked),
+                        )
+                      : selectPage(event.currentTarget.checked)}
+                  aria-label={canApproveBatch
+                    ? 'Pilih jurnal di halaman ini untuk approval'
+                    : 'Pilih semua jurnal yang dapat diedit di halaman ini'}
+                  data-testid={canApproveBatch ? 'bulk-approval-select-page' : 'batch-select-page'}
                 /></th
               >
             {/if}
@@ -822,24 +1205,41 @@
           {#each items as j (j.id)}
             {@const selectionReason = canBatchReplace ? batchDisabledReason(j) : ''}
             <tr
+              id={`journal-row-${j.id}`}
               class="border-t border-border-soft hover:bg-page-bg {j.deleted_at
                 ? ''
                 : 'cursor-pointer'}"
-              onclick={() => !j.deleted_at && goto(journalUrl(j.id))}
+              data-testid={`journal-row-${j.id}`}
+              onclick={() => {
+                if (j.deleted_at) return;
+                rememberOpenedJournal(j.id);
+                void goto(journalUrl(j.id));
+              }}
             >
-              {#if canBatchReplace}
+              {#if canBatchReplace || canApproveBatch}
                 <td class="px-3 py-3">
                   <input
                     type="checkbox"
                     class="accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                    checked={selectedIds.has(j.id)}
-                    disabled={Boolean(selectionReason) || selectingAll}
-                    title={selectionReason || 'Pilih jurnal untuk penggantian akun'}
+                    checked={canApproveBatch ? approvalIds.has(j.id) : selectedIds.has(j.id)}
+                    disabled={canApproveBatch
+                      ? !approvalPage.some((item) => item.id === j.id) ||
+                        approvalSelecting ||
+                        approvalBusy
+                      : Boolean(selectionReason) || selectingAll}
+                    title={canApproveBatch
+                      ? 'Pilih jurnal untuk approval'
+                      : selectionReason || 'Pilih jurnal untuk penggantian akun'}
                     aria-label={`Pilih jurnal ${j.number}`}
                     aria-describedby={selectionReason ? `batch-reason-${j.id}` : undefined}
                     onclick={(event) => event.stopPropagation()}
-                    onchange={(event) => selectJournal(j, event.currentTarget.checked)}
-                    data-testid={`batch-select-${j.id}`}
+                    onchange={(event) =>
+                      canApproveBatch
+                        ? selectApproval(j, event.currentTarget.checked)
+                        : selectJournal(j, event.currentTarget.checked)}
+                    data-testid={canApproveBatch
+                      ? `bulk-approval-select-${j.id}`
+                      : `batch-select-${j.id}`}
                   />
                 </td>
               {/if}
@@ -865,7 +1265,58 @@
                 </span>
               </td>
               <td class="px-4 py-3">{formatDate(j.date)}</td>
-              <td class="px-4 py-3">{j.memo ?? '—'}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="min-w-0">{j.memo ?? '—'}</span>
+                  {#if j.attachment_count === 1 && j.attachment_thumbnail_url && journalAttachmentView.value === 'thumbnail'}
+                    <button
+                      type="button"
+                      class="h-7 w-7 shrink-0 overflow-hidden rounded border border-border-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      aria-label={`Lihat lampiran jurnal ${j.number}`}
+                      title="Lihat lampiran"
+                      disabled={previewJournalId !== null}
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        void previewJournalAttachment(j.id);
+                      }}
+                      data-testid={`journal-attachment-thumbnail-${j.id}`}
+                      ><img
+                        src={j.attachment_thumbnail_url}
+                        alt=""
+                        class="h-full w-full object-cover"
+                      /></button
+                    >
+                  {:else if (j.attachment_count ?? 0) > 0}
+                    <button
+                      type="button"
+                      class="inline-flex shrink-0 items-center gap-1 text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      title={`${j.attachment_count} lampiran`}
+                      aria-label={`Lihat ${j.attachment_count} lampiran jurnal ${j.number}`}
+                      disabled={previewJournalId !== null}
+                      onclick={(event) => {
+                        event.stopPropagation();
+                        void previewJournalAttachment(j.id);
+                      }}
+                      data-testid={`journal-attachment-indicator-${j.id}`}
+                    >
+                      <svg
+                        class="h-4 w-4"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                        ><path
+                          d="m7 10.5 5.2-5.2a3 3 0 0 1 4.2 4.2L9 16.9a4.5 4.5 0 0 1-6.4-6.4l7.5-7.5"
+                        /></svg
+                      >
+                      {#if (j.attachment_count ?? 0) > 1}{j.attachment_count} Lampiran{/if}
+                    </button>
+                  {/if}
+                </div>
+              </td>
               <td class="px-4 py-3 text-right font-mono tabnum">{formatRupiah(j.total)}</td>
               <td class="px-4 py-3">
                 <span
@@ -877,11 +1328,11 @@
                 </span>
               </td>
               <td class="px-4 py-3">
-                {#if j.deleted_at}
+                {#if j.deleted_at && can('journal.delete')}
                   <button
                     type="button"
                     class="rounded-md border border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={restoringId === j.id || !can('journal.delete')}
+                    disabled={restoringId === j.id}
                     data-testid="restore-journal-{j.id}"
                     onclick={(event) => {
                       event.stopPropagation();
@@ -890,11 +1341,14 @@
                   >
                     {restoringId === j.id ? 'Memulihkan…' : 'Restore as Draft'}
                   </button>
-                {:else if deletionAccountId}
+                {:else if deletionAccountId && !j.deleted_at}
                   <a
                     href={journalUrl(j.id)}
                     class="font-semibold text-primary hover:underline"
-                    onclick={(event) => event.stopPropagation()}>Buka jurnal</a
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      rememberOpenedJournal(j.id);
+                    }}>Buka jurnal</a
                   >
                 {:else}
                   <span class="text-text-muted">—</span>
@@ -903,7 +1357,9 @@
             </tr>
           {:else}
             <tr
-              ><td colspan={canBatchReplace ? 9 : 8} class="px-4 py-10 text-center text-text-muted"
+              ><td
+                colspan={canBatchReplace || canApproveBatch ? 9 : 8}
+                class="px-4 py-10 text-center text-text-muted"
                 >{statusTab === 'trashed'
                   ? 'Belum ada jurnal di Trashed.'
                   : 'Belum ada jurnal.'}</td
@@ -912,26 +1368,56 @@
           {/each}
         </tbody>
       </table>
+      {#if highlightBounds}
+        <div
+          class="journalReturnHighlight"
+          style:top={`${highlightBounds.top}px`}
+          style:height={`${highlightBounds.height}px`}
+          style:width={`${highlightBounds.width}px`}
+          aria-hidden="true"
+          data-testid="journal-return-highlight"
+        ></div>
+      {/if}
     </div>
-    {#if lastPage > 1}
-      <div class="mt-4 flex items-center justify-between gap-3 text-sm">
-        <span class="text-text-muted">Halaman {currentPage} dari {lastPage} · {total} jurnal</span>
-        <div class="flex gap-2">
-          <button
-            type="button"
-            class="rounded-md border border-border-default px-3 py-2 disabled:opacity-50"
-            disabled={currentPage <= 1 || loading}
-            onclick={() => void load(currentPage - 1, true)}>Sebelumnya</button
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <label class="flex items-center gap-2 text-text-muted">
+        Per Page
+        <select
+          class="rounded-md border border-border-default bg-card-bg px-2 py-1.5 text-text-default"
+          value={String(perPage)}
+          onchange={(event) => {
+            perPage = Number(event.currentTarget.value);
+            void load(1);
+          }}
+          data-testid="journal-per-page"
+        >
+          <option value="10">10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </label>
+      {#if lastPage > 1}
+        <div class="flex items-center gap-3">
+          <span class="text-text-muted">Halaman {currentPage} dari {lastPage} · {total} jurnal</span
           >
-          <button
-            type="button"
-            class="rounded-md border border-border-default px-3 py-2 disabled:opacity-50"
-            disabled={currentPage >= lastPage || loading}
-            onclick={() => void load(currentPage + 1, true)}>Berikutnya</button
-          >
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="rounded-md border border-border-default px-3 py-2 disabled:opacity-50"
+              disabled={currentPage <= 1 || loading}
+              onclick={() => void load(currentPage - 1, true)}>Sebelumnya</button
+            >
+            <button
+              type="button"
+              class="rounded-md border border-border-default px-3 py-2 disabled:opacity-50"
+              disabled={currentPage >= lastPage || loading}
+              onclick={() => void load(currentPage + 1, true)}>Berikutnya</button
+            >
+          </div>
         </div>
-      </div>
-    {/if}
+      {/if}
+    </div>
   {/if}
 
   {#if canBatchReplace && accountDeletion}
@@ -1061,3 +1547,44 @@
     </dialog>
   {/if}
 </div>
+
+{#if previewAttachment}
+  <AttachmentPreview
+    attachment={previewAttachment}
+    attachments={previewAttachments}
+    onClose={() => {
+      previewAttachment = null;
+      previewAttachments = [];
+    }}
+  />
+{/if}
+
+<style>
+  .journalReturnHighlight {
+    position: absolute;
+    left: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        ellipse 65% 160% at 18% 45%,
+        rgba(27, 132, 255, 0.2) 0%,
+        rgba(27, 132, 255, 0.08) 48%,
+        transparent 80%
+      ),
+      radial-gradient(ellipse 50% 140% at 72% 60%, rgba(0, 190, 255, 0.14) 0%, transparent 75%);
+    animation: journalReturnGlow 1.3s ease-out forwards;
+  }
+
+  @keyframes journalReturnGlow {
+    0% {
+      opacity: 0;
+    }
+    12%,
+    60% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+</style>

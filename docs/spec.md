@@ -697,11 +697,56 @@ reversal, dan saldo tetap independen. Sesudah create tidak ada sinkronisasi
 otomatis antarpasangan. Mode gabungan hanya menerima akun
 `availability=both`.
 
+Daftar jurnal menyediakan approval massal pada tab Di review. Pengguna dapat
+memilih jurnal pada satu halaman atau semua yang cocok dengan buku dan filter
+saat ini. Hanya ID jurnal yang dipilih yang dikirim ke backend. Setiap jurnal
+harus tetap berstatus `submitted`, berada pada periode terbuka, memiliki entry
+yang valid dan balance, serta lolos izin `journal.review` dan `journal.post`.
+Seluruh batch diproses atomik melalui aksi posting jurnal yang sama, dengan
+audit `journal.post` per jurnal. Jurnal pasangan Intern/Fiskal tidak otomatis
+ikut diposting jika ID-nya tidak dipilih.
+
+Setting General menyediakan `max_open_tabs` per workspace (default 8, rentang
+1–50). Batas ini diterapkan pada tab halaman pengguna saat membuka halaman baru
+dan saat memulihkan riwayat tab; halaman aktif dipertahankan ketika batas turun.
+
 Lampiran yang dipilih pada input gabungan ditampilkan pada kedua jurnal melalui
 record attachment masing-masing, dengan file tersimpan yang sama. Saat jurnal
 tunggal yang sudah memiliki lampiran pertama kali diubah menjadi input gabungan,
 record attachment dipetakan ke pasangan yang baru dibuat; perubahan lampiran
 setelah pasangan terbentuk tetap independen.
+
+Kolom Keterangan pada daftar jurnal menampilkan ringkasan lampiran bila user
+memiliki izin `attachment.read`: satu gambar sebagai thumbnail, satu file lain
+sebagai ikon, dan lebih dari satu file sebagai ikon beserta jumlah lampiran.
+Ringkasan mengikuti jurnal dan buku yang sedang ditampilkan; URL thumbnail
+berlaku sementara dan data lampiran tidak dikirim tanpa izin baca lampiran.
+Settings → Tampilan menyediakan pilihan pribadi Thumbnail (bawaan) atau Ikon
+saja untuk daftar jurnal. Pilihan disimpan per pengguna pada browser. Indikator
+lampiran dan thumbnail sama-sama membuka preview; jika lampiran lebih dari satu,
+modal menampilkan galeri gambar dan ikon file lain. PDF dapat dibaca dalam
+viewer tertanam. Hak baca lampiran dan pembatasan buku tetap berlaku.
+Pengguna dengan izin `journal.read` dan `attachment.read` dapat membuka gambar
+penuh dari thumbnail daftar atau nama lampiran pada detail jurnal, termasuk saat
+form jurnal read-only. Klik thumbnail tidak membuka detail jurnal. Daftar jurnal
+memulihkan filter, halaman, posisi horizontal tabel, dan baris terakhir saat
+kembali dari detail, lalu
+memberi kilatan gradasi aurora biru yang memudar selama sekitar 1,3 detik
+serta menggulir ke baris tersebut;
+setelah itu warna baris dan hover kembali normal. Daftar jurnal dan periode yang
+berhalaman menyediakan pilihan Per Page dengan bawaan 50 baris.
+
+Penanda kembali yang sama diterapkan pada Bagan Akun (List, Tree, dan T-View),
+Auto Mapping, Template Jurnal, Periode, Jurnal Berulang, Koreksi Fiskal,
+Neraca Saldo, Buku Besar, dan Buku Pembantu. Efek muncul sesudah detail/form
+ditutup atau daftar dibuka kembali; posisi dan lebar kolom tidak berubah.
+Konteks disimpan per pengguna dan entity dalam sesi browser, termasuk filter,
+pilihan tampilan, halaman yang tersedia, posisi scroll, dan cabang Tree akun.
+Record yang dihapus atau tidak lagi terlihat tidak diberi highlight dan tidak
+dimunculkan dengan mengabaikan filter. Efek visual memakai akses baca yang
+sudah berlaku dan tidak memberikan izin mutasi tambahan. Tombol kembali dari
+detail jurnal yang dibuka melalui Buku Besar atau Jurnal Berulang kembali ke
+daftar asal yang diizinkan tersebut.
 
 Template jurnal juga dapat memiliki scope `Intern`, `Fiskal`, atau `Intern &
 Fiskal`. Template scope `Intern & Fiskal` hanya menerima akun
@@ -802,6 +847,29 @@ Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
 Jurnal draft yang dihapus operator/accountant tidak langsung dihapus permanen.
 Jurnal dipindahkan ke tab `Trashed`, tetap dapat dipulihkan sebagai `draft`, dan
 dihapus permanen oleh scheduler setelah 30 hari sejak `deleted_at`.
+
+### 8.7.1 Pemetaan entitas sumber Auto Mapping
+
+Integrasi eksternal dapat mengirim `source_entity_id` miliknya sendiri sebagai
+pengganti `entity_id` Akunta. Admin atau role yang diberi izin memetakan pasangan
+aplikasi sumber + ID entitas sumber ke satu entitas Akunta pada halaman Auto Mapping
+workspace tujuan. Identifier sumber adalah bagian envelope, bukan field rule
+jurnal. Request wajib mengirim tepat satu dari kedua ID. Tidak ada pemilihan
+entitas default atau berdasarkan nama perusahaan.
+
+Sebelum raw disimpan, backend memakai identitas aplikasi dari Bearer token untuk
+mencari pemetaan, menolak target yang tidak aktif/tidak ditemukan, dan memeriksa
+izin efektif `journal.create` serta `journal.post` pengguna token pada entitas
+tujuan. Pemetaan yang belum ada ditolak tanpa membuat raw atau jurnal. Request
+lama dengan `entity_id` tetap didukung dan menjalani pemeriksaan target yang
+sama. Event dari dua entitas sumber tidak saling menduplikasi walaupun memakai
+idempotency key yang sama; raw menyimpan identitas aplikasi/entitas sumber dan
+key eksternal untuk pelacakan. Perubahan atau penghapusan pemetaan tidak
+memindahkan raw/jurnal historis.
+
+Pemetaan hanya dapat dikelola dengan `automapping.entity_link.manage` pada
+workspace tujuan, terpisah dari izin mengubah rule jurnal. Perubahan diaudit;
+Inspector Fiskal tetap tidak dapat mengakses Auto Mapping.
 
 ### 8.8 Fake Data Lengkap dan Aman
 

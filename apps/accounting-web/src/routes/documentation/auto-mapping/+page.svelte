@@ -1,6 +1,6 @@
 <script lang="ts">
   const example = `{
-  "entity_id": "01J...",
+  "source_entity_id": "550e8400-e29b-41d4-a716-446655440000",
   "source_type": "petty_cash.expense",
   "source": "https://petty-cash.example.com/events",
   "idempotency_key": "PC-2026-0001",
@@ -54,13 +54,27 @@
   </div>
 
   <section class="mt-8">
+    <h2 class="text-xl font-bold">Hubungkan entitas aplikasi sumber</h2>
+    <p class="mt-2 text-sm leading-6 text-text-muted">
+      Pilih entitas Akunta yang dituju, lalu buka <strong>Auto Mapping</strong>. Pada
+      <strong>Pemetaan Entitas Sumber</strong>, pilih aplikasi pengirim dan isi UUID entitas dari
+      aplikasi tersebut. Simpan satu pasangan untuk setiap entitas sumber. Aplikasi pengirim
+      kemudian cukup mengirim <code>source_entity_id</code> miliknya sendiri. Token pengirim tetap
+      harus memiliki izin membuat dan posting jurnal pada entitas Akunta tujuan. Untuk integrasi
+      lama, <code>entity_id</code> Akunta masih dapat dikirim sebagai pengganti
+      <code>source_entity_id</code>; kirim tepat salah satu.
+    </p>
+  </section>
+
+  <section class="mt-8">
     <h2 class="text-xl font-bold">Mengirim data</h2>
     <p class="mt-2 text-sm leading-6 text-text-muted">
       Gunakan Bearer API token dengan permission <code class="rounded bg-page-bg px-1"
         >journal.create</code
       >
       dan <code class="rounded bg-page-bg px-1">journal.post</code>. Endpoint tersedia pada dua path
-      berikut:
+      berikut. Saat memakai <code>source_entity_id</code>, sertakan
+      <code>idempotency_key</code> unik untuk setiap event dalam entitas sumber:
     </p>
     <div class="mt-3 rounded-lg bg-slate-950 p-4 font-mono text-sm text-slate-100">
       POST /api/auto-mapping/ingest<br />POST /api/v1/auto-mapping/ingest
@@ -104,8 +118,8 @@
       <li>Tanggal transaksi harus berada pada periode yang terbuka.</li>
       <li>Gunakan idempotency key unik untuk mencegah transaksi ganda.</li>
       <li>
-        Rule lama dapat diedit dan raw data lama dapat dimasukkan kembali ke queue melalui tombol
-        reprocess.
+        Varian rule baru dapat disimpan dan raw data lama dapat dimasukkan kembali ke queue melalui
+        tombol reprocess.
       </li>
     </ul>
   </section>
