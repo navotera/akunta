@@ -600,26 +600,24 @@ class JournalController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $entity = $this->resolveEntity($request);
-        /** @var Journal $journal */
-        $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
+        $this->requirePermission('journal.delete', $entity);
 
-        if ($journal->status === Journal::STATUS_POSTED) {
-            abort_unless(
-                $this->isSupervisorLevel($request, $entity),
-                403,
-                'Hanya Supervisor yang dapat memindahkan jurnal Tersimpan ke Trashed.',
-            );
-        } else {
-            $this->requirePermission('journal.delete', $entity);
-            if ($journal->status !== Journal::STATUS_DRAFT) {
-                throw ValidationException::withMessages(['status' => 'Only draft journals can be deleted.']);
+        DB::transaction(function () use ($request, $entity, $id): void {
+            $journal = Journal::where('entity_id', $entity->id)->lockForUpdate()->findOrFail($id);
+            $this->authorizeBookRead($request, $journal->journal_mode);
+            $statusFrom = $journal->status;
+            if ($statusFrom === Journal::STATUS_POSTED) {
+                abort_unless(
+                    $this->isSupervisorLevel($request, $entity),
+                    403,
+                    'Hanya Supervisor yang dapat memindahkan jurnal Tersimpan ke Trashed.',
+                );
+            } elseif (! in_array($statusFrom, [Journal::STATUS_DRAFT, Journal::STATUS_REJECTED], true)) {
+                throw ValidationException::withMessages(['status' => 'Jurnal harus berstatus Draft atau Perlu Revisi untuk dihapus.']);
             }
-        }
 
-        $before = $this->snapshot($journal->load('entries.account'));
-        $statusFrom = $journal->status;
-        $journal->assertPeriodOpen();
-        DB::transaction(function () use ($journal, $entity, $before, $statusFrom): void {
+            $journal->assertPeriodOpen(true);
+            $before = $this->snapshot($journal->load('entries.account'));
             $journal->delete();
             $this->auditLogger->record(
                 'journal.trash', Journal::class, $journal->id, $entity->id,
@@ -647,6 +645,7 @@ class JournalController extends Controller
         $journal->assertPeriodOpen();
 
         DB::transaction(function () use ($journal, $entity): void {
+            $statusFrom = $journal->status;
             $journal->restore();
             $journal->forceFill([
                 'status' => Journal::STATUS_DRAFT,
@@ -657,7 +656,7 @@ class JournalController extends Controller
             $this->auditLogger->record(
                 'journal.restore', Journal::class, $journal->id, $entity->id,
                 [
-                    'status_from' => Journal::STATUS_DRAFT,
+                    'status_from' => $statusFrom,
                     'status_to' => Journal::STATUS_DRAFT,
                 ], Auth::id(),
             );
@@ -731,7 +730,9 @@ class JournalController extends Controller
         $this->requirePermission('journal.submit', $entity);
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
         try {
-            $this->submitJournal->execute($journal, Auth::user());
+            $journal = $this->submitJournal->execute($journal, Auth::user());
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Throwable $e) {
             throw ValidationException::withMessages(['submit' => $e->getMessage()]);
         }
@@ -763,7 +764,9 @@ class JournalController extends Controller
         $data = $request->validate(['note' => 'required|string|max:500']);
         $journal = Journal::where('entity_id', $entity->id)->findOrFail($id);
         try {
-            $this->rejectJournal->execute($journal, Auth::user(), $data['note']);
+            $journal = $this->rejectJournal->execute($journal, Auth::user(), $data['note']);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Throwable $e) {
             throw ValidationException::withMessages(['review' => $e->getMessage()]);
         }

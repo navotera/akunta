@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { JournalStatus } from '../../src/lib/api/journal.js';
 
 const ENTITY = '01J00000000000000000000871';
 const PERIOD = '01J00000000000000000000872';
@@ -17,15 +18,18 @@ async function mockJournals(
   permissions: string[],
   attachmentCase = false,
   role = 'reviewer',
+  workflow?: { status: 'draft' | 'rejected'; mutations: string[] },
 ) {
   const requests: string[][] = [];
+  const trashed = new Set<string>();
+  const changed = new Set<string>();
   const journals = (attachmentCase ? [...IDS, THIRD_ID] : IDS).map((id, index) => ({
     id,
     number: `JU-REVIEW-${index + 1}`,
     journal_mode: 'internal',
     period_id: attachmentCase && index < 2 ? OLD_PERIOD : PERIOD,
     date: attachmentCase && index < 2 ? '2022-05-04' : '2026-05-04',
-    status: 'submitted',
+    status: (workflow?.status ?? 'submitted') as JournalStatus,
     type: 'general',
     memo: 'Perlu approval',
     reference: null,
@@ -37,6 +41,14 @@ async function mockJournals(
         ? 'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22/%3E'
         : null,
   }));
+  const detail = (journal: (typeof journals)[number]) => ({
+    ...journal,
+    transaction_code: 'TRX-REVIEW',
+    review_note: journal.status === 'rejected' ? 'Perbarui bukti transaksi.' : null,
+    audit_trail: [],
+    entries_debit: [{ account_id: 'bank', amount: '100', memo: null }],
+    entries_credit: [{ account_id: 'sales', amount: '100', memo: null }],
+  });
   await page.addInitScript(
     (entity) => localStorage.setItem('akunta.active_entity_id', entity),
     ENTITY,
@@ -65,6 +77,22 @@ async function mockJournals(
                 max_open_tabs: 8,
               },
             ],
+          },
+        },
+      });
+    } else if (url.pathname === '/api/v1/spa/attachments' && request.method() === 'POST') {
+      workflow?.mutations.push('upload');
+      changed.add(IDS[0]);
+      await route.fulfill({
+        status: 201,
+        json: {
+          data: {
+            id: PDF_ID,
+            attachable_type: 'App\\Models\\Journal',
+            attachable_id: IDS[0],
+            filename: 'bukti-baru.pdf',
+            mime_type: 'application/pdf',
+            size_bytes: 2048,
           },
         },
       });
@@ -148,47 +176,51 @@ async function mockJournals(
       );
       await route.fulfill({ json: { data: { approved_count: ids.length } } });
     } else if (url.pathname.startsWith('/api/v1/spa/journals/') && url.pathname.endsWith('/post')) {
+      workflow?.mutations.push('post');
       const id = url.pathname.split('/').at(-2);
       const journal = journals.find((item) => item.id === id);
       if (journal) journal.status = 'posted';
       await route.fulfill({ json: { data: { ...journal, status: 'posted' } } });
+    } else if (workflow && url.pathname.endsWith('/submit')) {
+      workflow.mutations.push('submit');
+      const journal = journals.find((item) => item.id === url.pathname.split('/').at(-2))!;
+      if (!changed.has(journal.id)) {
+        const message =
+          'Ubah data jurnal atau lampirannya sebelum mengajukan kembali untuk review.';
+        await route.fulfill({ status: 422, json: { message, errors: { submit: [message] } } });
+      } else {
+        journal.status = 'submitted';
+        await route.fulfill({ json: { data: detail(journal) } });
+      }
     } else if (
       url.pathname.startsWith('/api/v1/spa/journals/') &&
       url.pathname.endsWith('/cancel-review')
     ) {
       const journal = journals.find((item) => item.id === url.pathname.split('/').at(-2));
       if (journal) journal.status = 'draft';
-      await route.fulfill({
-        json: {
-          data: journal && {
-            ...journal,
-            transaction_code: 'TRX-REVIEW',
-            review_note: null,
-            audit_trail: [],
-            entries_debit: [{ account_id: 'bank', amount: '100', memo: null }],
-            entries_credit: [{ account_id: 'sales', amount: '100', memo: null }],
-          },
-        },
-      });
+      await route.fulfill({ json: { data: journal && detail(journal) } });
     } else if (url.pathname.startsWith('/api/v1/spa/journals/')) {
       const journal = journals.find((item) => item.id === url.pathname.split('/').at(-1));
-      await route.fulfill({
-        json: {
-          data: journal && {
-            ...journal,
-            transaction_code: 'TRX-REVIEW',
-            review_note: null,
-            audit_trail: [],
-            entries_debit: [{ account_id: 'bank', amount: '100', memo: null }],
-            entries_credit: [{ account_id: 'sales', amount: '100', memo: null }],
-          },
-        },
-      });
+      if (workflow && journal && request.method() === 'PATCH') {
+        workflow.mutations.push('save');
+        journal.memo = request.postDataJSON().memo;
+        changed.add(journal.id);
+      }
+      if (workflow && journal && request.method() === 'DELETE') {
+        workflow.mutations.push('delete');
+        trashed.add(journal.id);
+        await route.fulfill({ status: 204 });
+      } else {
+        await route.fulfill({ json: { data: journal && detail(journal) } });
+      }
     } else if (url.pathname === '/api/v1/spa/journals') {
       const requestedPage = Number(url.searchParams.get('page') ?? '1');
-      const visible = (url.searchParams.get('status') === 'submitted' ? journals : []).filter(
+      const status = url.searchParams.get('status');
+      const visible = journals.filter(
         (journal) =>
-          journal.status === 'submitted' &&
+          (status === 'trashed'
+            ? trashed.has(journal.id)
+            : !trashed.has(journal.id) && journal.status === status) &&
           (!url.searchParams.get('period_id') ||
             journal.period_id === url.searchParams.get('period_id')),
       );
@@ -208,8 +240,14 @@ async function mockJournals(
               last_page: attachmentCase ? 1 : visible.length,
               per_page: attachmentCase ? 50 : 1,
               total: visible.length,
-              status_counts: { submitted: journals.length },
-              trashed_count: 0,
+              status_counts: Object.fromEntries(
+                ['draft', 'submitted', 'rejected'].map((s) => [
+                  s,
+                  journals.filter((journal) => journal.status === s && !trashed.has(journal.id))
+                    .length,
+                ]),
+              ),
+              trashed_count: trashed.size,
             },
           },
         });
@@ -240,6 +278,86 @@ test('shows a thumbnail, a count, or an icon in journal descriptions', async ({ 
   await expect(page.getByTestId(`journal-attachment-indicator-${THIRD_ID}`)).toBeVisible();
   await expect(page.getByTestId(`journal-attachment-indicator-${THIRD_ID}`)).toHaveText('');
 });
+
+const revisionPermissions = [
+  'journal.read',
+  'journal.submit',
+  'journal.update',
+  'account.read',
+  'period.read',
+];
+
+test('resubmits a changed revision for review even when the user can post', async ({ page }) => {
+  const mutations: string[] = [];
+  await mockJournals(page, [...revisionPermissions, 'journal.post'], false, 'operator', {
+    status: 'rejected',
+    mutations,
+  });
+  await page.goto('/journals?status=rejected');
+  await page.getByTestId(`journal-row-${IDS[0]}`).click();
+  const resubmit = page.getByRole('button', { name: 'Ajukan Kembali' });
+  await expect(page.getByTestId('review-note')).toContainText('Perbarui bukti transaksi.');
+  await resubmit.click();
+  const error = page.getByTestId('form-banner');
+  await expect(error).toContainText('Ubah data jurnal atau lampirannya');
+  await expect(error).toBeFocused();
+  await expect(page.getByTestId('delete-journal')).toHaveCount(0);
+
+  await page.getByTestId('journal-memo').fill('Memo disesuaikan untuk review kedua.');
+  await resubmit.click();
+  await expect(page).toHaveURL(/\/journals\?[^#]*status=rejected/);
+  await expect(page.getByTestId(`journal-row-${IDS[0]}`)).toHaveCount(0);
+  await page.getByRole('button', { name: /In Review/ }).click();
+  await expect(page.getByTestId(`journal-row-${IDS[0]}`)).toBeVisible();
+  expect(mutations).toEqual(['submit', 'save', 'submit']);
+});
+
+test('resubmits an attachment-only revision without rewriting the journal', async ({ page }) => {
+  const mutations: string[] = [];
+  await mockJournals(
+    page,
+    [...revisionPermissions, 'attachment.read', 'attachment.upload'],
+    false,
+    'operator',
+    {
+      status: 'rejected',
+      mutations,
+    },
+  );
+  await page.goto(`/journals/${IDS[0]}`);
+  await page.getByTestId('journal-attachments-input').setInputFiles({
+    name: 'bukti-baru.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4'),
+  });
+  await page.getByRole('button', { name: 'Ajukan Kembali' }).click();
+  await expect(page).toHaveURL(/\/journals(?:\?|$)/);
+  expect(mutations).toEqual(['upload', 'submit']);
+});
+
+for (const status of ['draft', 'rejected'] as const) {
+  test(`trashes an eligible ${status} journal from the main form`, async ({ page }) => {
+    const mutations: string[] = [];
+    await mockJournals(
+      page,
+      ['journal.read', 'journal.delete', 'account.read', 'period.read'],
+      false,
+      'operator',
+      {
+        status,
+        mutations,
+      },
+    );
+    await page.goto(`/journals/${IDS[0]}?status=${status}`);
+    await expect(page.getByTestId('posting-jurnal')).toHaveCount(0);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('delete-journal').click();
+    await expect(page).toHaveURL(/\/journals\?[^#]*status=/);
+    await page.getByRole('button', { name: /Trashed/ }).click();
+    await expect(page.getByTestId(`journal-row-${IDS[0]}`)).toBeVisible();
+    expect(mutations).toEqual(['delete']);
+  });
+}
 
 for (const role of ['operator', 'reviewer']) {
   test(`opens the full attachment from the journal thumbnail for ${role}`, async ({ page }) => {

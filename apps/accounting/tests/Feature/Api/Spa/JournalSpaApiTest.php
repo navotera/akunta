@@ -15,8 +15,10 @@ use App\Models\Journal;
 use App\Models\JournalEntry;
 use App\Models\Period;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     Gate::define('journal.post', fn (?Authenticatable $u = null) => true);
@@ -589,6 +591,152 @@ it('allows an admin to edit a submitted journal mode and send it for revision', 
         ->assertJsonPath('data.review_note', 'Lengkapi bukti transaksi.');
 });
 
+function createJournalForSpaRevision(Entity $entity, Period $period, string $mode, string $status = Journal::STATUS_SUBMITTED): Journal
+{
+    return Journal::create([
+        'entity_id' => $entity->id, 'period_id' => $period->id,
+        'journal_mode' => $mode, 'number' => 'JU-REVISION-'.uniqid(),
+        'date' => '2026-05-14', 'memo' => 'Memo saat review', 'status' => $status,
+    ]);
+}
+
+it('lets an operator resubmit after changing journal content or attachments', function (string $change, string $mode) {
+    Storage::fake(config('filesystems.default'));
+    $journal = createJournalForSpaRevision($this->entity, $this->period, $mode);
+    $group = (string) Str::ulid();
+    $journal->update(['input_group_id' => $group]);
+    $otherMode = $mode === Journal::MODE_INTERNAL ? Journal::MODE_FISCAL : Journal::MODE_INTERNAL;
+    $paired = createJournalForSpaRevision($this->entity, $this->period, $otherMode, Journal::STATUS_REJECTED);
+    $paired->update(['input_group_id' => $group]);
+    $journal->entries()->createMany([
+        ['line_no' => 1, 'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0],
+        ['line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100],
+    ]);
+    $url = "/api/v1/spa/journals/{$journal->id}";
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id);
+    $upload = fn () => $this->post('/api/v1/spa/attachments', [
+        'attachable_type' => Journal::class,
+        'attachable_id' => $journal->id,
+        'file' => UploadedFile::fake()->create('bukti.pdf', 1, 'application/pdf'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+    $remove = $change === 'remove attachment' ? $upload()->json('data.id') : null;
+
+    $this->postJson("{$url}/reject", ['note' => 'Mohon perbarui data.'])->assertOk();
+    $this->postJson("{$url}/post")->assertUnprocessable()->assertJsonValidationErrors('post');
+    $this->user->assignments()->first()->role->update(['code' => 'operator']);
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+
+    $payload = [
+        'date' => '2026-05-14', 'memo' => 'Memo saat review',
+        'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100.00']],
+        'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => 100]],
+    ];
+    $this->patchJson($url, $payload)->assertOk()->assertJsonPath('data.status', Journal::STATUS_REJECTED);
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+
+    if ($change === 'metadata') {
+        $this->patchJson($url, [...$payload, 'reference' => 'INV-REVISI'])->assertOk();
+        $this->patchJson($url, $payload)->assertOk();
+        $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+        $this->patchJson($url, [...$payload, 'reference' => 'INV-REVISI'])->assertOk();
+    } elseif ($change === 'debit' || $change === 'credit') {
+        $account = $this->cash->replicate()->fill(['code' => '1202']);
+        $account->save();
+        $payload['entries_'.$change][0]['account_id'] = $account->id;
+        $this->patchJson($url, $payload)->assertOk();
+    } elseif ($remove) {
+        $this->deleteJson("/api/v1/spa/attachments/{$remove}")->assertNoContent();
+    } else {
+        $temporary = $upload()->json('data.id');
+        $this->deleteJson("/api/v1/spa/attachments/{$temporary}")->assertNoContent();
+        $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+        $upload();
+    }
+
+    $this->postJson("{$url}/submit")->assertOk()
+        ->assertJsonPath('data.status', Journal::STATUS_SUBMITTED)
+        ->assertJsonPath('data.review_note', null)
+        ->assertJsonPath('data.posted_at', null);
+    $this->postJson("{$url}/submit")->assertUnprocessable();
+    expect($journal->refresh()->reviewed_at)->toBeNull()
+        ->and($paired->refresh()->status)->toBe(Journal::STATUS_REJECTED)
+        ->and(AuditLog::where('action', 'journal.submit')->where('resource_id', $journal->id)->sole()->metadata['status_from'])
+        ->toBe(Journal::STATUS_REJECTED);
+})->with([
+    ['metadata', Journal::MODE_INTERNAL],
+    ['debit', Journal::MODE_FISCAL],
+    ['credit', Journal::MODE_INTERNAL],
+    ['upload attachment', Journal::MODE_FISCAL],
+    ['remove attachment', Journal::MODE_INTERNAL],
+]);
+
+it('recognizes real edits saved after a legacy revision request', function () {
+    $journal = createJournalForSpaRevision($this->entity, $this->period, Journal::MODE_INTERNAL, Journal::STATUS_REJECTED);
+    $journal->update(['reviewed_at' => now()->subDay(), 'review_note' => 'Perbarui memo.']);
+    AuditLog::create([
+        'entity_id' => $this->entity->id, 'resource_type' => Journal::class, 'resource_id' => $journal->id,
+        'action' => 'journal.reject', 'metadata' => ['note' => 'Perbarui memo.'], 'created_at' => $journal->reviewed_at,
+    ]);
+    $journal->entries()->createMany([
+        ['line_no' => 1, 'account_id' => $this->cash->id, 'debit' => 100, 'credit' => 0],
+        ['line_no' => 2, 'account_id' => $this->revenue->id, 'debit' => 0, 'credit' => 100],
+    ]);
+    $url = "/api/v1/spa/journals/{$journal->id}";
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id);
+    $payload = [
+        'date' => '2026-05-14', 'memo' => 'Memo saat review',
+        'entries_debit' => [['account_id' => $this->cash->id, 'amount' => '100']],
+        'entries_credit' => [['account_id' => $this->revenue->id, 'amount' => '100']],
+    ];
+    $this->patchJson($url, $payload)->assertOk();
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+    $this->patchJson($url, [...$payload, 'memo' => 'Memo sudah diperbaiki'])->assertOk();
+    $this->postJson("{$url}/submit")->assertOk()->assertJsonPath('data.status', Journal::STATUS_SUBMITTED);
+
+    $this->postJson("{$url}/reject", ['note' => 'Revisi kedua.'])->assertOk();
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+    $this->postJson("{$url}/cancel-review")->assertUnprocessable();
+});
+
+it('enforces workspace, role grants and open periods on revision actions', function () {
+    $journal = createJournalForSpaRevision($this->entity, $this->period, Journal::MODE_FISCAL, Journal::STATUS_REJECTED);
+    $url = "/api/v1/spa/journals/{$journal->id}";
+    $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id);
+    $role = $this->user->assignments()->first()->role;
+    $role->update(['code' => 'revision-editor']);
+    $permissions = Permission::whereIn('code', ['journal.submit', 'journal.delete'])->pluck('id');
+
+    $role->permissions()->detach($permissions);
+    $this->postJson("{$url}/submit")->assertForbidden();
+    $this->deleteJson($url)->assertForbidden();
+
+    $role->permissions()->attach($permissions);
+    $this->period->update(['status' => Period::STATUS_CLOSED]);
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('period');
+    $this->deleteJson($url)->assertUnprocessable()->assertJsonValidationErrors('period');
+    $this->period->update(['status' => Period::STATUS_OPEN]);
+    $this->postJson("{$url}/submit")->assertUnprocessable()->assertJsonValidationErrors('submit');
+
+    $other = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'Other workspace']);
+    $this->user->assignments()->create([
+        'entity_id' => $other->id,
+        'app_id' => $this->user->assignments()->first()->app_id,
+        'role_id' => $role->id,
+    ]);
+    $this->withHeader('X-Tenant-Slug', $other->id);
+    $this->postJson("{$url}/submit")->assertNotFound();
+    $this->deleteJson($url)->assertNotFound();
+
+    $this->withHeader('X-Tenant-Slug', $this->entity->id);
+    $role->update(['code' => 'inspector']);
+    $this->getJson($url)->assertOk();
+    $this->postJson("{$url}/submit")->assertForbidden();
+    $this->deleteJson($url)->assertForbidden();
+
+    $role->update(['code' => 'revision-editor']);
+    $this->deleteJson($url)->assertNoContent();
+});
+
 it('allows a submitter to cancel review and records the status transition', function () {
     $journal = Journal::create([
         'entity_id' => $this->entity->id,
@@ -627,8 +775,9 @@ it('allows a submitter to cancel review and records the status transition', func
     expect($audit->metadata['status_from'])->toBe(Journal::STATUS_SUBMITTED);
 });
 
-it('soft deletes draft journals, lists them in trashed, and restores them as draft', function () {
-    Journal::create([
+it('lets an operator trash draft or rejected journals and restore them as draft', function (string $status) {
+    $this->user->assignments()->first()->role->update(['code' => 'operator']);
+    $submitted = Journal::create([
         'entity_id' => $this->entity->id,
         'period_id' => $this->period->id,
         'type' => Journal::TYPE_GENERAL,
@@ -647,14 +796,15 @@ it('soft deletes draft journals, lists them in trashed, and restores them as dra
         'number' => 'JU-202605-052',
         'date' => '2026-05-16',
         'memo' => 'Trash workflow test',
-        'status' => Journal::STATUS_DRAFT,
+        'status' => $status,
     ]);
 
     $request = fn (string $method, string $url) => $this->actingAs($this->user)
-        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->withHeaders(['X-Tenant-Slug' => $this->entity->id, 'Accept' => 'application/json'])
         ->{$method}($url);
 
     $request('delete', "/api/v1/spa/journals/{$journal->id}")->assertNoContent();
+    $request('delete', "/api/v1/spa/journals/{$submitted->id}")->assertUnprocessable();
 
     expect(Journal::find($journal->id))->toBeNull()
         ->and(Journal::withTrashed()->find($journal->id)?->trashed())->toBeTrue();
@@ -669,15 +819,17 @@ it('soft deletes draft journals, lists them in trashed, and restores them as dra
         ->assertJsonPath('meta.status_counts.submitted', 1)
         ->assertJsonPath('meta.status_counts.draft', 0)
         ->assertJsonPath('data.0.number', 'JU-202605-052')
-        ->assertJsonPath('data.0.status', Journal::STATUS_DRAFT);
+        ->assertJsonPath('data.0.status', $status);
 
     $request('post', "/api/v1/spa/journals/{$journal->id}/restore")
         ->assertOk()
         ->assertJsonPath('data.status', Journal::STATUS_DRAFT);
 
     expect(Journal::find($journal->id))->not->toBeNull()
-        ->and(Journal::find($journal->id)?->status)->toBe(Journal::STATUS_DRAFT);
-});
+        ->and(Journal::find($journal->id)?->status)->toBe(Journal::STATUS_DRAFT)
+        ->and(AuditLog::where('action', 'journal.trash')->where('resource_id', $journal->id)->sole()->metadata['status_from'])->toBe($status)
+        ->and(AuditLog::where('action', 'journal.restore')->where('resource_id', $journal->id)->sole()->metadata['status_from'])->toBe($status);
+})->with([Journal::STATUS_DRAFT, Journal::STATUS_REJECTED]);
 
 it('skips numbers still held by trashed journals when creating a new journal', function () {
     foreach ([3, 4] as $sequence) {
