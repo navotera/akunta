@@ -879,6 +879,29 @@ Pemetaan hanya dapat dikelola dengan `automapping.entity_link.manage` pada
 workspace tujuan, terpisah dari izin mengubah rule jurnal. Perubahan diaudit;
 Inspector Fiskal tetap tidak dapat mengakses Auto Mapping.
 
+### 8.7.1 Pemetaan entitas sumber Auto Mapping
+
+Integrasi eksternal dapat mengirim `source_entity_id` miliknya sendiri sebagai
+pengganti `entity_id` Akunta. Admin atau role yang diberi izin memetakan pasangan
+aplikasi sumber + ID entitas sumber ke satu entitas Akunta pada halaman Auto Mapping
+workspace tujuan. Identifier sumber adalah bagian envelope, bukan field rule
+jurnal. Request wajib mengirim tepat satu dari kedua ID. Tidak ada pemilihan
+entitas default atau berdasarkan nama perusahaan.
+
+Sebelum raw disimpan, backend memakai identitas aplikasi dari Bearer token untuk
+mencari pemetaan, menolak target yang tidak aktif/tidak ditemukan, dan memeriksa
+izin efektif `journal.create` serta `journal.post` pengguna token pada entitas
+tujuan. Pemetaan yang belum ada ditolak tanpa membuat raw atau jurnal. Request
+lama dengan `entity_id` tetap didukung dan menjalani pemeriksaan target yang
+sama. Event dari dua entitas sumber tidak saling menduplikasi walaupun memakai
+idempotency key yang sama; raw menyimpan identitas aplikasi/entitas sumber dan
+key eksternal untuk pelacakan. Perubahan atau penghapusan pemetaan tidak
+memindahkan raw/jurnal historis.
+
+Pemetaan hanya dapat dikelola dengan `automapping.entity_link.manage` pada
+workspace tujuan, terpisah dari izin mengubah rule jurnal. Perubahan diaudit;
+Inspector Fiskal tetap tidak dapat mengakses Auto Mapping.
+
 ### 8.8 Fake Data Lengkap dan Aman
 
 Instalasi aplikasi yang menjalankan seeder menyediakan satu entitas bawaan `PT. Fake Data` dengan
