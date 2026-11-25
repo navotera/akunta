@@ -16,6 +16,8 @@
     index: number;
     accounts: AccountOption[];
     selectedAccountLabel?: string;
+    /** The form is read-only: actions that would change the row are not offered. */
+    locked?: boolean;
     onChange: (next: Row) => void;
     onRemove: () => void;
   }
@@ -28,6 +30,7 @@
     onChange,
     onRemove,
     selectedAccountLabel = '',
+    locked = false,
   }: Props = $props();
 
   let amountDisplay = $state(
@@ -200,9 +203,12 @@
 
   <button
     type="button"
-    class="flex items-center justify-center w-7 h-7 rounded text-text-muted hover:text-danger hover:bg-danger-light transition-colors"
+    class="flex items-center justify-center w-7 h-7 rounded text-text-muted hover:text-danger hover:bg-danger-light transition-colors {locked
+      ? 'invisible'
+      : ''}"
     onclick={onRemove}
     aria-label="Hapus baris"
+    aria-hidden={locked}
   >
     <svg
       width="16"

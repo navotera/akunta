@@ -7,6 +7,13 @@ const REVENUE_ID = '01J00000000000000000000804';
 const PERIOD_ID = '01J00000000000000000000805';
 const JOURNAL_IDS = ['01J00000000000000000000806', '01J00000000000000000000807'];
 
+/**
+ * The journal list writes its tab and filters into the URL so Back restores
+ * them. Match the page and the deletion context instead of the exact query.
+ */
+const relatedJournalList = (url: URL) =>
+  url.pathname === '/journals' && url.searchParams.get('delete_account_id') === OLD_ID;
+
 async function mockDeletionWorkflow(
   page: Page,
   options: {
@@ -347,7 +354,7 @@ for (const viewport of [
       await expect(page.getByTestId('account-soft-delete-inactive')).toHaveCount(0);
       expect(state.deleteRequests).toEqual([ENTITY_ID]);
       await page.getByTestId('account-related-journals').click();
-      await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+      await expect(page).toHaveURL(relatedJournalList);
       const guidance = page.getByTestId('account-deletion-guidance');
       await expect(guidance).toContainText('Terdapat 2 jurnal');
       const periodTabs = page.getByRole('navigation', { name: 'Kategori periode jurnal' });
@@ -420,7 +427,7 @@ for (const viewport of [
       const open = page.getByTestId('batch-account-open');
       await expect(open).toBeDisabled();
       await page.getByTestId(`batch-select-${JOURNAL_IDS[0]}`).check();
-      await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+      await expect(page).toHaveURL(relatedJournalList);
       await page.getByRole('button', { name: 'Berikutnya', exact: true }).click();
       await page.getByTestId('batch-select-page').check();
       await expect(page.getByTestId('batch-account-toolbar')).toContainText('2 jurnal dipilih');
@@ -473,7 +480,10 @@ for (const viewport of [
       });
       await page.getByRole('link', { name: 'Buka jurnal', exact: true }).click();
       await expect(page).toHaveURL(
-        `/journals/${JOURNAL_IDS[0]}?delete_account_id=${OLD_ID}&period_status=inactive`,
+        (url) =>
+          url.pathname === `/journals/${JOURNAL_IDS[0]}` &&
+          url.searchParams.get('delete_account_id') === OLD_ID &&
+          url.searchParams.get('period_status') === 'inactive',
       );
       await expect(page.getByTestId('entry-account-debit-0')).toBeDisabled();
       await page.getByTestId('cancel').click();
@@ -628,7 +638,7 @@ for (const viewport of [
       await page.getByRole('option', { name: /Kas Pengganti/ }).click();
       await expect(page.getByTestId('account-to-replace-debit-0')).toHaveCount(0);
       await page.getByTestId('save-draft').click();
-      await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+      await expect(page).toHaveURL(relatedJournalList);
       expect(state.replacementRequests).toEqual([JOURNAL_IDS[0]]);
       expect(state.journals[1].entries_debit[0].account_id).toBe(OLD_ID);
       expect(state.journals[0].entries_debit[0].amount).toBe('100');
@@ -671,7 +681,7 @@ test('uses the same journal form in read-only mode for a viewer and returns to t
   await expect(page.getByTestId('save-draft')).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByTestId('cancel').click();
-  await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+  await expect(page).toHaveURL(relatedJournalList);
   expect(state.replacementRequests).toEqual([]);
 });
 
@@ -784,7 +794,7 @@ test('saves a reviewed journal account replacement without posting or changing i
   await page.getByTestId('entry-account-debit-0').click();
   await page.getByRole('option', { name: /Kas Pengganti/ }).click();
   await page.getByTestId('save-draft').click();
-  await expect(page).toHaveURL(`/journals?delete_account_id=${OLD_ID}`);
+  await expect(page).toHaveURL(relatedJournalList);
   await expect(page.getByTestId('account-deletion-guidance')).toContainText('Terdapat 1 jurnal');
   expect(state.journals[0].status).toBe('submitted');
   expect(state.replacementRequests).toEqual([JOURNAL_IDS[0]]);
@@ -850,7 +860,7 @@ test('opens period editing and creation in the native demo instead of applying a
   const editor = page.getByRole('dialog');
   await expect(editor.getByRole('textbox', { name: /^Nama/ })).toBeEnabled();
   await expect(editor.getByRole('button', { name: 'Simpan', exact: true })).toBeEnabled();
-  await expect(editor.getByRole('button', { name: 'Tutup', exact: true })).toBeEnabled();
+  await expect(editor.getByRole('button', { name: 'Tutup Periode', exact: true })).toBeEnabled();
   await editor.getByRole('button', { name: 'Batal', exact: true }).click();
   await page.getByRole('button', { name: '+ Periode Baru', exact: true }).click();
   await expect(editor.getByRole('textbox', { name: /^Nama/ })).toBeEnabled();

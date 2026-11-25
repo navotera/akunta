@@ -21,12 +21,11 @@ class PostJournalAction extends BaseAction
             $this->authorize('journal.post', $journal);
         }
 
-        $this->validate($journal);
-        $statusFrom = $journal->status;
-
-        $this->fireBefore(Hooks::JOURNAL_BEFORE_POST, $journal, $user);
-
-        $this->runInTransaction(function () use ($journal, $user, $statusFrom) {
+        $this->runInTransaction(function () use ($journal, $user) {
+            $journal = Journal::where('entity_id', $journal->entity_id)->lockForUpdate()->findOrFail($journal->id);
+            $this->validate($journal);
+            $statusFrom = $journal->status;
+            $this->fireBefore(Hooks::JOURNAL_BEFORE_POST, $journal, $user);
             $journal->forceFill([
                 'status' => Journal::STATUS_POSTED,
                 'posted_at' => now(),
@@ -62,6 +61,11 @@ class PostJournalAction extends BaseAction
             throw JournalException::notDraft($journal->status);
         }
 
+        $this->validateContents($journal);
+    }
+
+    public function validateContents(Journal $journal): void
+    {
         $journal->loadMissing('entries.account', 'period');
 
         if ($journal->entries->isEmpty()) {

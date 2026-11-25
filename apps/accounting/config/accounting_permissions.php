@@ -54,7 +54,13 @@ $rows = [
 ];
 
 return [
-    'roles' => ['supervisor' => 'Supervisor', 'operator' => 'Operator', 'inspector' => 'Inspector Fiskal'],
+    'roles' => [
+        'supervisor' => 'Supervisor', 'operator' => 'Operator', 'accountant' => 'Accountant',
+        'accountant_assistant' => 'Accountant Assistant', 'approver' => 'Approver',
+        'tax_officer' => 'Tax Officer', 'internal_auditor' => 'Internal Auditor',
+        'auditor_external' => 'Auditor (External)', 'viewer' => 'Viewer',
+        'inspector' => 'Inspector Fiskal',
+    ],
     'inspector_permissions' => ['journal.read', 'account.read', 'period.read', 'report.read', 'attachment.read', 'fiscal.adjustment.read'],
     'catalog' => array_map(fn (array $row): array => [
         'code' => $row[0], 'group' => $row[1], 'label' => $row[2],

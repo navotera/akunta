@@ -38,6 +38,8 @@ Gunakan dokumentasi sesuai konteks perubahan:
 - [`docs/architecture.md`](docs/architecture.md) — batas komponen dan alur
   sistem.
 - [`docs/testing.md`](docs/testing.md) — test suite dan pola pengujian.
+- [`docs/auto-mapping.md`](docs/auto-mapping.md) — peta implementasi Auto Mapping
+  untuk perubahan ingest, rule, queue, jurnal, atau UI terkait.
 - `docs/handover-*.md` — konteks sesi terbaru; ini bukan pengganti spec atau
   keputusan yang sudah locked.
 

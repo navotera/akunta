@@ -15,6 +15,10 @@
   import { accountApi, type Account } from '$lib/api/account.js';
   import { ApiError } from '$lib/api/client.js';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
+  import {
+    notifyPermissionDenied,
+    permissionDeniedMessage,
+  } from '$lib/utils/permission-feedback.js';
 
   interface LineDraft {
     account_id: string;
@@ -211,6 +215,10 @@
 
   async function toggleBookmark(event: MouseEvent, template: JournalTemplateSummary) {
     event.stopPropagation();
+    if (!can('template.bookmark')) {
+      notifyPermissionDenied(permissionDeniedMessage('mengubah bookmark template'));
+      return;
+    }
     if (bookmarking) return;
     const isBookmarked = !template.is_bookmarked;
     bookmarking = template.id;
@@ -250,14 +258,15 @@
       <h1 class="text-2xl font-bold">Template Jurnal</h1>
       <p class="text-sm text-text-muted">{items.length} template</p>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-      onclick={openCreate}
-      disabled={!can('template.create')}
-    >
-      + Template Baru
-    </button>
+    {#if can('template.create')}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={openCreate}
+      >
+        + Template Baru
+      </button>
+    {/if}
   </header>
 
   {#if loading}
@@ -328,14 +337,20 @@
                 <span class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="shrink-0 rounded p-1 transition-colors {t.is_bookmarked
+                    class="shrink-0 rounded p-1 transition-colors aria-disabled:cursor-not-allowed aria-disabled:opacity-60 {t.is_bookmarked
                       ? 'text-primary'
                       : 'text-text-muted hover:text-primary'}"
                     aria-label={t.is_bookmarked ? `Hapus bookmark ${t.name}` : `Bookmark ${t.name}`}
                     aria-pressed={t.is_bookmarked === true}
-                    title={t.is_bookmarked ? 'Hapus bookmark' : 'Bookmark template'}
+                    aria-disabled={!can('template.bookmark')}
+                    title={!can('template.bookmark')
+                      ? 'Anda belum memiliki izin mengubah bookmark'
+                      : t.is_bookmarked
+                        ? 'Hapus bookmark'
+                        : 'Bookmark template'}
                     onclick={(event) => toggleBookmark(event, t)}
-                    disabled={bookmarking === t.id || !can('template.bookmark')}
+                    disabled={bookmarking === t.id}
+                    data-testid={`template-bookmark-${t.id}`}
                   >
                     <svg
                       width="16"

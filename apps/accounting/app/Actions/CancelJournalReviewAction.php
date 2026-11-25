@@ -13,24 +13,22 @@ class CancelJournalReviewAction extends BaseAction
     public function execute(Journal $journal, ?User $user = null): Journal
     {
         $this->authorize('journal.submit', $journal);
-        $journal->assertPeriodOpen();
+        $this->runInTransaction(function () use ($journal, $user): void {
+            $journals = Journal::query()
+                ->where('entity_id', $journal->entity_id)
+                ->where('status', Journal::STATUS_SUBMITTED)
+                ->where(function ($query) use ($journal): void {
+                    $query->whereKey($journal->id);
+                    if ($journal->input_group_id) {
+                        $query->orWhere('input_group_id', $journal->input_group_id);
+                    }
+                })
+                ->orderBy('id')->lockForUpdate()->get();
 
-        if ($journal->status !== Journal::STATUS_SUBMITTED) {
-            throw new \DomainException('Hanya jurnal yang sedang direview yang dapat dibatalkan.');
-        }
+            if (! $journals->contains($journal->id)) {
+                throw new \DomainException('Hanya jurnal yang sedang direview yang dapat dibatalkan.');
+            }
 
-        $journals = Journal::query()
-            ->where('entity_id', $journal->entity_id)
-            ->where('status', Journal::STATUS_SUBMITTED)
-            ->where(function ($query) use ($journal): void {
-                $query->whereKey($journal->id);
-                if ($journal->input_group_id) {
-                    $query->orWhere('input_group_id', $journal->input_group_id);
-                }
-            })
-            ->get();
-
-        $this->runInTransaction(function () use ($journals, $user): void {
             foreach ($journals as $item) {
                 $item->assertPeriodOpen(true);
                 $item->forceFill([

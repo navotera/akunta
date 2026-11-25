@@ -258,7 +258,8 @@ test('does not restore saved pages after their permissions are revoked in the de
   state.permissionsB = ['journal.read', 'period.read', 'account.read'];
   const before = requests.length;
   await switchEntity(page, ENTITY_B);
-  await expect(page).toHaveURL('/journals');
+  // The journal list appends its tab and book to the URL after loading.
+  await expect(page).toHaveURL(/\/journals(?:\?|$)/);
   await expect(labels(page)).toHaveText(['Jurnal']);
   expect(
     requests
@@ -281,7 +282,8 @@ test('keeps inspector dashboard restrictions when restoring destination history'
   state.inspectorB = true;
   state.permissionsB = ['journal.read', 'period.read', 'dashboard.read'];
   await switchEntity(page, ENTITY_B);
-  await expect(page).toHaveURL('/journals');
+  // The journal list appends its tab and book to the URL after loading.
+  await expect(page).toHaveURL(/\/journals(?:\?|$)/);
   await expect(labels(page)).toHaveText(['Jurnal']);
   await expect(page.getByRole('button', { name: 'Intern', exact: true })).toHaveCount(0);
 });

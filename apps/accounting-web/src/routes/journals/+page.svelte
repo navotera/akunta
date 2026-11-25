@@ -22,6 +22,10 @@
   import AttachmentPreview from '$lib/components/journal/AttachmentPreview.svelte';
   import { formatRupiah } from '@akunta/ui';
   import { formatDate } from '$lib/utils/date.js';
+  import {
+    notifyPermissionDenied,
+    permissionDeniedMessage,
+  } from '$lib/utils/permission-feedback.js';
 
   let items = $state<JournalSummary[]>([]);
   let loading = $state(true);
@@ -535,7 +539,11 @@
   }
 
   async function previewJournalAttachment(journalId: string): Promise<void> {
-    if (previewJournalId || !can('attachment.read')) return;
+    if (!can('attachment.read')) {
+      notifyPermissionDenied(permissionDeniedMessage('melihat lampiran jurnal'));
+      return;
+    }
+    if (previewJournalId) return;
     previewJournalId = journalId;
     previewError = null;
     try {
@@ -714,11 +722,13 @@
             }}>Fiskal</button
           >
         </div>
-        <a
-          href="/journals/new"
-          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-          data-testid="create-journal">+ Buat Jurnal</a
-        >
+        {#if can('journal.create')}
+          <a
+            href="/journals/new"
+            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+            data-testid="create-journal">+ Buat Jurnal</a
+          >
+        {/if}
       {/if}
       <button
         type="button"
@@ -1318,11 +1328,11 @@
                 </span>
               </td>
               <td class="px-4 py-3">
-                {#if j.deleted_at}
+                {#if j.deleted_at && can('journal.delete')}
                   <button
                     type="button"
                     class="rounded-md border border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={restoringId === j.id || !can('journal.delete')}
+                    disabled={restoringId === j.id}
                     data-testid="restore-journal-{j.id}"
                     onclick={(event) => {
                       event.stopPropagation();
@@ -1331,7 +1341,7 @@
                   >
                     {restoringId === j.id ? 'Memulihkan…' : 'Restore as Draft'}
                   </button>
-                {:else if deletionAccountId}
+                {:else if deletionAccountId && !j.deleted_at}
                   <a
                     href={journalUrl(j.id)}
                     class="font-semibold text-primary hover:underline"

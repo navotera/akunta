@@ -2,8 +2,10 @@
 
 Admin membuka **Settings → Role Management** pada workspace aktif.
 Daftar role memiliki pencarian nama/deskripsi, tombol **Role Baru**, serta
-detail dengan tab **Izin**, **Workspace**, dan **Anggota**. Tiga role bawaan adalah Supervisor,
-Operator, dan Inspector Fiskal. Pengaturan satu workspace tidak mengubah preset
+detail dengan tab **Izin**, **Workspace**, dan **Anggota**. Role bawaan Accounting yang bisa
+dipilih di User & Roles juga tampil dalam matriks, termasuk Accountant.
+Default Accountant sama dengan Operator; pengaturan keduanya selanjutnya
+terpisah per workspace. Pengaturan satu workspace tidak mengubah preset
 global atau hak role yang sama pada workspace lain.
 
 Ketiga role bawaan memiliki tombol **Restore to Default** di kanan atas daftar
@@ -22,6 +24,9 @@ user pada tab Anggota dan menekan **Terapkan ke N user**.
 Role baru dapat dimulai kosong atau menyalin izin tersimpan dari role lain.
 Penyalinan dilakukan sekali, sehingga perubahan role sumber tidak mengubah
 salinan. **Kembalikan bawaan** pada custom role kembali ke snapshot izin awalnya.
+Pilihan **Salin izin awal dari** menentukan sumber izin, bukan user tujuan.
+Setelah menyimpan izin, admin menetapkan user melalui tab **Anggota** atau
+pilihan **Role Akunta** di User & Roles.
 Nama/deskripsi custom role dapat diubah; tiga nama bawaan tetap dilindungi.
 Role yang masih memiliki assignment belum dicabut tidak dapat dihapus.
 Penghapusan role custom mempertahankan baris role untuk histori assignment.
@@ -136,6 +141,10 @@ role lain yang juga dipegang user tersebut.
 
 ## Batas yang tetap berlaku
 
+- Pengajuan ulang jurnal Perlu Revisi memakai `journal.submit`, dan perubahan
+  sebelum pengajuan memakai `journal.update` serta izin lampiran yang relevan.
+  `journal.delete` mengizinkan pemindahan jurnal Draft atau Perlu Revisi ke
+  Trashed pada periode terbuka. Kedua operasi memakai grant workspace aktif.
 - Jurnal Tersimpan tetap read-only untuk Operator. Grant journal.update tidak
   melewati pemeriksaan status dan level Supervisor/admin pada record Tersimpan.
   Pengeditan jurnal Di review memerlukan journal.review dan journal.update.
@@ -187,6 +196,40 @@ Bootstrap /api/v1/me menyertakan permissions, roles, is_fiscal_inspector, dan ca
 entity. SPA memakai informasi itu untuk navigasi dan kontrol form.
 Middleware SPA serta Gate tetap menjadi boundary backend, sehingga request
 langsung dan sesi dengan UI lama tetap diperiksa.
+
+## Respons UI saat izin tidak dimiliki
+
+Kontrol tidak boleh tampil aktif lalu diam ketika diklik. Accounting Web memakai
+tiga pola, dipilih berdasarkan peran kontrol tersebut pada halaman:
+
+1. **Disembunyikan** — aksi yang memang bukan wewenang pengguna pada workspace
+   aktif: tombol buat (`+ Akun Baru`, `+ Template Baru`, `+ Periode Baru`,
+   `+ Schedule Baru`, `+ Buat Jurnal`), hapus, nonaktifkan/tutup/aktifkan kembali
+   periode, pause/hapus jadwal, `Restore as Draft`, tombol `+` koreksi cepat,
+   simpan/reprocess rule Auto Mapping, dan tombol Simpan pada form yang terbuka
+   sebagai detail.
+2. **Notice baca-saja** — form utama yang dibuka tanpa izin mengubah tetap tampil
+   sebagai detail dengan input terkunci dan satu baris penjelasan
+   (`PermissionNotice`) berisi izin yang belum dimiliki serta arahan menghubungi
+   admin workspace. Berlaku pada editor akun (termasuk izin sebagian, misalnya
+   hanya `account.rename`), periode, jadwal jurnal berulang, form jurnal/template,
+   koreksi Fiskal, rule Auto Mapping, dan Settings General. Kunci karena status
+   jurnal atau periode tetap dijelaskan oleh banner halaman yang sudah ada.
+3. **Pesan saat diklik** — kontrol yang harus tetap terlihat karena menjadi
+   bagian alur atau penanda status memakai `aria-disabled`, bukan atribut
+   `disabled`, sehingga klik dijawab toast "Akses dibatasi" melalui
+   `notifyPermissionDenied`. Berlaku pada `Setujui dan Posting` tanpa
+   `journal.post`, `Revisi` tanpa `journal.review`, `Resume`/`Run Sekarang`/Simpan
+   jadwal auto-post tanpa `journal.post`, ikon bookmark template tanpa
+   `template.bookmark`, dan penanda lampiran di daftar jurnal tanpa
+   `attachment.read`.
+
+Kalimat pesan berasal dari `apps/accounting-web/src/lib/utils/permission-feedback.ts`
+agar seragam. Atribut `disabled` native tetap dipakai untuk keadaan non-izin
+(sedang menyimpan, data belum lengkap, jurnal belum balance) dan sebaiknya
+disertai `title` yang menyebut syaratnya. Ketiga pola hanya mengatur tampilan;
+tidak ada kode permission, default role, atau pemeriksaan backend yang berubah,
+dan penolakan 403 dari API tetap ditampilkan oleh panel "Akses dibatasi".
 
 ## Konsistensi navigasi dan aksi
 

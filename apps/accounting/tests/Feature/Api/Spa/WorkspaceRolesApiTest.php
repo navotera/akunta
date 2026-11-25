@@ -98,10 +98,11 @@ it('applies every catalog grant and revoke to bootstrap and Gates within the ass
     }
 })->with(['supervisor', 'operator', 'inspector', 'custom', 'inspector_copy']);
 
-it('includes all three defaults and keeps Inspector Fiskal read-only', function () {
+it('includes assignable Accounting presets and keeps Inspector Fiskal read-only', function () {
     $snapshot = workspaceRoleSnapshot($this);
     $roles = collect($snapshot['roles'])->keyBy('code');
-    expect($roles->keys()->all())->toBe(['supervisor', 'operator', 'inspector'])
+    expect($roles->keys()->all())->toBe(array_keys(config('accounting_permissions.roles')))
+        ->and($roles['accountant']['defaults'])->toEqualCanonicalizing($roles['operator']['defaults'])
         ->and($roles['inspector']['name'])->toBe('Inspector Fiskal')
         ->and($roles['inspector']['defaults'])->toEqualCanonicalizing(config('accounting_permissions.inspector_permissions'));
     $this->putJson('/api/v1/spa/permission-management/inspector', [

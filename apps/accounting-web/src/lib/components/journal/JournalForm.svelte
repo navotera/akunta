@@ -26,6 +26,12 @@
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import SavedAttachments from './SavedAttachments.svelte';
   import AttachmentPreview from './AttachmentPreview.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import {
+    notifyPermissionDenied,
+    permissionDeniedMessage,
+    readOnlyNotice,
+  } from '$lib/utils/permission-feedback.js';
   import { page } from '$app/stores';
   import {
     loadJournalDraft,
@@ -134,6 +140,30 @@
   const canWithdrawReview = $derived(
     submittedUploadLocked && Boolean(onCancelReview) && can('journal.submit'),
   );
+  const resubmitting = $derived(initial?.status === 'rejected');
+  const canPostOrSubmit = $derived(can('journal.submit') || (!resubmitting && can('journal.post')));
+  const formLocked = $derived(
+    readOnly ||
+      (!templateMode &&
+        (!can(initial ? 'journal.update' : 'journal.create') ||
+          (reviewMode && !can('journal.review')))),
+  );
+  /**
+   * Explains a form locked by permissions. Locks caused by journal status or
+   * period are explained by the page that owns the record.
+   */
+  const permissionNotice = $derived.by(() => {
+    if (templateMode) return readOnly ? readOnlyNotice('mengedit template jurnal') : null;
+    if (readOnly) return null;
+    const missing = !can(initial ? 'journal.update' : 'journal.create')
+      ? initial
+        ? 'mengedit jurnal'
+        : 'membuat jurnal'
+      : reviewMode && !can('journal.review')
+        ? 'mereview jurnal'
+        : null;
+    return missing ? `Isi jurnal tidak dapat diubah. ${permissionDeniedMessage(missing)}` : null;
+  });
 
   const draftPath = $page.url.pathname;
   const draftScope = journalDraftScope();
@@ -184,6 +214,11 @@
   let handledAttachmentResetToken = $state(0);
   let pendingJournalMode = $state<JournalMode | null>(null);
   let periodError = $state<string | null>(null);
+  let errorBanner = $state<HTMLDivElement>();
+
+  $effect(() => {
+    if (resubmitting && serverErrors?.submit) errorBanner?.focus();
+  });
 
   $effect(() => {
     if (attachmentResetToken === handledAttachmentResetToken) return;
@@ -614,13 +649,7 @@
 <svelte:window on:keydown={handleWindowKeydown} />
 
 <div class="ak-journal-shell">
-  <fieldset
-    disabled={readOnly ||
-      (!templateMode &&
-        (!can(initial ? 'journal.update' : 'journal.create') ||
-          (reviewMode && !can('journal.review'))))}
-    class="contents"
-  >
+  <fieldset disabled={formLocked} class="contents">
     <header class="px-6 pt-4 pb-2">
       <p class="text-xs font-medium text-text-muted">{breadcrumb}</p>
       <div class="flex flex-wrap items-center justify-between gap-3 mt-1">
@@ -697,10 +726,20 @@
     </header>
 
     <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 px-6 pb-32">
+      {#if permissionNotice}
+        <PermissionNotice
+          class="xl:col-span-12"
+          testId="journal-permission-notice"
+          message={permissionNotice}
+        />
+      {/if}
       {#if attachmentError || serverMessage || fieldError('number') || fieldError('entries') || fieldError('tenant')}
         <div
           class="xl:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
           data-testid="form-banner"
+          bind:this={errorBanner}
+          tabindex="-1"
+          role="alert"
         >
           {attachmentError ??
             fieldError('number') ??
@@ -716,6 +755,9 @@
         >
           <span class="font-semibold">Catatan review:</span>
           {initial.review_note}
+          {#if resubmitting && can('journal.submit') && !readOnly}
+            <p class="mt-1">Setelah memperbarui data atau lampiran, pilih Ajukan Kembali.</p>
+          {/if}
         </div>
       {/if}
 
@@ -747,13 +789,14 @@
                   index={i}
                   accounts={visibleAccounts}
                   selectedAccountLabel={historicalAccountLabel(row.account_id)}
+                  locked={formLocked}
                   onChange={(n) => updateDebit(i, n)}
                   onRemove={() => removeDebit(i)}
                 />
               </div>
             {/each}
           </div>
-          <AddLineButton side="debit" onclick={addDebit} />
+          {#if !formLocked}<AddLineButton side="debit" onclick={addDebit} />{/if}
         </section>
 
         <section
@@ -782,13 +825,14 @@
                   index={i}
                   accounts={visibleAccounts}
                   selectedAccountLabel={historicalAccountLabel(row.account_id)}
+                  locked={formLocked}
                   onChange={(n) => updateCredit(i, n)}
                   onRemove={() => removeCredit(i)}
                 />
               </div>
             {/each}
           </div>
-          <AddLineButton side="credit" onclick={addCredit} />
+          {#if !formLocked}<AddLineButton side="credit" onclick={addCredit} />{/if}
         </section>
 
         {#if !templateMode}
@@ -828,28 +872,40 @@
                   Hubungi pengguna yang berwenang untuk mencabut review sebelum mengubah lampiran.
                 {/if}
               </p>
+            {:else if formLocked}
+              {#if savedAttachments.length === 0}
+                <p class="text-sm text-text-muted" data-testid="journal-attachments-empty">
+                  Tidak ada lampiran.
+                </p>
+              {/if}
             {:else}
-              <input
-                bind:this={attachmentInput}
-                class="sr-only"
-                type="file"
-                accept="application/pdf,image/jpeg,image/png"
-                multiple
-                onchange={(event) => selectAttachments(event.currentTarget.files)}
-                data-testid="journal-attachments-input"
-                disabled={!can('attachment.upload')}
-              />
-              <button
-                type="button"
-                class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
-                onclick={() => attachmentInput?.click()}
-                data-testid="journal-attachments-picker"
-                disabled={!can('attachment.upload')}
-              >
-                Klik untuk pilih file
-                <span class="block text-xs mt-1 opacity-70">Maks. 5MB per file (PDF, JPG, PNG)</span
+              {#if can('attachment.upload')}
+                <input
+                  bind:this={attachmentInput}
+                  class="sr-only"
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  multiple
+                  onchange={(event) => selectAttachments(event.currentTarget.files)}
+                  data-testid="journal-attachments-input"
+                />
+                <button
+                  type="button"
+                  class="w-full rounded-md border border-dashed border-border-default p-6 text-center text-sm text-text-muted hover:border-primary hover:text-primary"
+                  onclick={() => attachmentInput?.click()}
+                  data-testid="journal-attachments-picker"
                 >
-              </button>
+                  Klik untuk pilih file
+                  <span class="block text-xs mt-1 opacity-70"
+                    >Maks. 5MB per file (PDF, JPG, PNG)</span
+                  >
+                </button>
+              {:else}
+                <PermissionNotice
+                  testId="journal-attachments-denied"
+                  message={permissionDeniedMessage('menambah lampiran')}
+                />
+              {/if}
               {#if !templateMode && !initial}
                 <label class="mt-3 flex items-center gap-2 text-sm text-text-muted">
                   <input
@@ -1125,24 +1181,41 @@
       {#if !readOnly && !templateMode && reviewMode && (onApprove || onRevise)}
         <button
           type="button"
-          onclick={() => onApprove?.(payload())}
-          disabled={saving || !balanced || !!periodError || !can('journal.post')}
-          title={!balanced ? 'Total debit harus sama dengan kredit dan lebih dari nol.' : undefined}
-          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50"
+          onclick={() =>
+            can('journal.post')
+              ? onApprove?.(payload())
+              : notifyPermissionDenied(permissionDeniedMessage('menyetujui dan memposting jurnal'))}
+          disabled={saving || (can('journal.post') && (!balanced || !!periodError))}
+          aria-disabled={!can('journal.post')}
+          title={!can('journal.post')
+            ? 'Memerlukan izin menyetujui dan menyimpan jurnal'
+            : !balanced
+              ? 'Total debit harus sama dengan kredit dan lebih dari nol.'
+              : undefined}
+          class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           data-testid="approve-and-post"
         >
           Setujui dan Posting
         </button>
         <button
           type="button"
-          onclick={() => onRevise?.(payload())}
-          disabled={saving || !can('journal.review')}
-          class="rounded-md border border-warning/50 bg-warning-light px-4 py-2 text-sm font-semibold text-black hover:bg-warning hover:text-black disabled:opacity-50"
+          onclick={() =>
+            can('journal.review')
+              ? onRevise?.(payload())
+              : notifyPermissionDenied(
+                  permissionDeniedMessage('mereview dan meminta revisi jurnal'),
+                )}
+          disabled={saving}
+          aria-disabled={!can('journal.review')}
+          title={!can('journal.review')
+            ? 'Memerlukan izin mereview dan meminta revisi jurnal'
+            : undefined}
+          class="rounded-md border border-warning/50 bg-warning-light px-4 py-2 text-sm font-semibold text-black hover:bg-warning hover:text-black disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           data-testid="request-revision"
         >
           Revisi
         </button>
-      {:else if !readOnly && !templateMode && allowPosting && (initial || can('journal.create')) && (can('journal.post') || can('journal.submit'))}
+      {:else if !readOnly && !templateMode && allowPosting && (initial || can('journal.create')) && canPostOrSubmit}
         <button
           type="button"
           onclick={handlePosting}
@@ -1151,7 +1224,11 @@
           class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="posting-jurnal"
         >
-          {!can('journal.post') && can('journal.submit') ? 'Ajukan Review' : 'Posting Jurnal'}
+          {resubmitting
+            ? 'Ajukan Kembali'
+            : can('journal.post')
+              ? 'Posting Jurnal'
+              : 'Ajukan Review'}
         </button>
       {/if}
       {#if canWithdrawReview}
@@ -1166,7 +1243,7 @@
           Batalkan Review
         </button>
       {/if}
-      {#if (templateMode || !readOnly) && onDelete && can(templateMode ? 'template.delete' : 'journal.delete') && (templateMode ? !!template : ['draft', 'posted'].includes(initial?.status ?? ''))}
+      {#if (templateMode || !readOnly) && onDelete && can(templateMode ? 'template.delete' : 'journal.delete') && (templateMode ? !!template : ['draft', 'rejected', 'posted'].includes(initial?.status ?? ''))}
         <button
           type="button"
           onclick={() => void onDelete?.()}

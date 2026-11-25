@@ -10,6 +10,7 @@
     type AutoMappingRule,
   } from '$lib/api/auto-mapping.js';
   import AjaxAccountCombobox from '$lib/components/ui/AjaxAccountCombobox.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { formatDate, formatDateTime } from '$lib/utils/date.js';
   import { formatRupiah } from '@akunta/ui';
@@ -1432,20 +1433,29 @@
             <div class="flex items-center gap-2 text-[12px] text-[#78829d]">
               Tips: pastikan Total Debit sama dengan Total Kredit sebelum menyimpan.
             </div>
-            <div class="flex gap-2">
-              <button
-                type="button"
-                class="h-10 rounded-md border border-[#dbdfe9] bg-white px-4 text-[13px] font-semibold text-[#4b5675] hover:border-[#1b84ff] hover:text-[#1b84ff]"
-                onclick={reprocess}
-                disabled={!raw?.rule || !can('automapping.manage')}>Reprocess Raw Lama</button
-              ><button
-                type="button"
-                class="h-10 rounded-md bg-[#1b84ff] px-5 text-[13px] font-semibold text-white hover:bg-[#056ee9] disabled:opacity-50"
-                onclick={save}
-                disabled={saving || !canSave || !can('automapping.manage')}
-                >{saving ? 'Menyimpan...' : 'Simpan Rule Variant'}</button
-              >
-            </div>
+            {#if can('automapping.manage')}
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="h-10 rounded-md border border-[#dbdfe9] bg-white px-4 text-[13px] font-semibold text-[#4b5675] hover:border-[#1b84ff] hover:text-[#1b84ff] disabled:cursor-not-allowed disabled:opacity-50"
+                  onclick={reprocess}
+                  disabled={!raw?.rule}
+                  title={!raw?.rule ? 'Simpan rule terlebih dahulu sebelum reprocess' : undefined}
+                  >Reprocess Raw Lama</button
+                ><button
+                  type="button"
+                  class="h-10 rounded-md bg-[#1b84ff] px-5 text-[13px] font-semibold text-white hover:bg-[#056ee9] disabled:cursor-not-allowed disabled:opacity-50"
+                  onclick={save}
+                  disabled={saving || !canSave}
+                  >{saving ? 'Menyimpan...' : 'Simpan Rule Variant'}</button
+                >
+              </div>
+            {:else}
+              <PermissionNotice
+                testId="automapping-read-only-notice"
+                message="Anda dapat melihat dan mencoba susunan rule, tetapi perubahan tidak dapat disimpan atau diproses ulang. Anda belum memiliki izin mengelola rule Auto Mapping. Hubungi admin workspace untuk meminta akses."
+              />
+            {/if}
           </div>
         </div>{/if}
     {/if}

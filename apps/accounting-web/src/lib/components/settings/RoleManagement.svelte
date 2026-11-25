@@ -406,7 +406,7 @@
             >
             {#if creating}
               <label class="mt-3 block text-sm font-medium"
-                >Izin awal dari<select
+                >Salin izin awal dari<select
                   class="mt-1 w-full rounded-md border border-border-default px-3 py-2 font-normal"
                   bind:value={baseRole}
                   ><option value="">Role kosong</option>{#each data.roles as role}<option

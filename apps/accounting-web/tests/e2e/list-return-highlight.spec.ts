@@ -215,8 +215,9 @@ async function expectGlow(page: Page, rowId: string) {
 
 for (const list of [
   { route: '/akun', row: `accounts:${ACCOUNT}`, close: 'Tutup editor akun' },
-  { route: '/periode', row: `periods:${ID}`, close: 'Batal' },
-  { route: '/jurnal-berulang', row: `recurring:${ID}`, close: 'Batal' },
+  // The fixture user can only read, so these details offer "Tutup" instead of "Batal".
+  { route: '/periode', row: `periods:${ID}`, close: 'Tutup' },
+  { route: '/jurnal-berulang', row: `recurring:${ID}`, close: 'Tutup' },
 ]) {
   test(`highlights the original row after closing ${list.route} without shifting columns`, async ({
     page,

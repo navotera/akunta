@@ -375,28 +375,35 @@ tax_codes
 └── UQ (entity_id, code)
 ```
 
-### 4.3 Database-per-Tenant Layout
+### 4.3 Tenant Data Layout (shared database)
+
+> Direvisi 2026-11-19 — sebelumnya database-per-tenant. Keputusan lengkap:
+> `docs/decisions.md` → "shared database multi-tenant".
 
 **Strategy:**
-- PostgreSQL: satu database per tenant (preferred — overhead rendah)
-- Shared DB: `ecosystem_control` — metadata tenant, API keys, provisioning state, license state
-- Per-tenant DB: `tenant_<ulid>` — semua tabel di 4.1 + 4.2 + app-specific
+- Satu database PostgreSQL per aplikasi; semua tenant aplikasi itu berada di
+  dalamnya (pooled). Tenant = organisasi Ecopa.
+- Tabel milik tenant memiliki `tenant_id NOT NULL` (plus `entity_id` untuk scope
+  workspace), foreign key berpasangan `(tenant_id, …)`, dan Row-Level Security.
+- Tabel global (`users`, `apps`, `permissions`, role preset, infrastruktur)
+  tidak memiliki `tenant_id`.
+- Database khusus (silo) hanya opsi per tenant, dirutekan dari kolom koneksi di
+  `tenants`; skema dan migration identik.
 
 ```
 PostgreSQL instance
-├── ecosystem_control  ← master (WP/main-tier managed)
-│   ├── tenants (slug, db_name, plan, status)
-│   ├── licenses
-│   └── provisioning_log
-├── tenant_01H...       ← per tenant
-│   ├── tenants (tenant anchor row — reflect ke control)
-│   ├── entities
-│   ├── users
-│   ├── accounts, journals, …
-│   └── (schema versioned via migrations)
-└── tenant_02K...
-    └── …
+├── accounting            ← satu DB untuk semua tenant Accounting
+│   ├── tenants (slug, ecopa_organization_id, plan, status, koneksi)
+│   ├── users, apps, permissions            (global)
+│   ├── entities, roles, user_app_assignments (tenant_id)
+│   ├── accounts, journals, journal_entries, … (tenant_id + entity_id, RLS)
+│   └── (satu set migration)
+├── payroll / cash_mgmt / poso / ecopa ← database per aplikasi, model sama
+└── tenant_<ulid>         ← hanya bila tenant memakai opsi silo
 ```
+
+Catatan: nama koneksi default Accounting saat ini masih `ecosystem_control`
+(warisan); nama ini tidak menandakan database terpisah per tenant.
 
 ### 4.4 Jurnal Khusus — Resource Layout (Step 12c, opsi B) [added 2026-04-30]
 
@@ -543,10 +550,9 @@ WP Plugin → Main-Tier: POST /api/v1/tenants/provision
    body: { email, plan, slug }
 Main-Tier:
   ├─ Create users row (invite email flow)
-  ├─ Allocate tenant_<ulid> DB
-  ├─ Run migrations on new DB (queue job: ProvisionTenantDatabase)
-  ├─ Seed default COA template + preset roles
-  ├─ INSERT ecosystem_control.tenants
+  ├─ INSERT tenants (ecopa_organization_id, status=provisioning)
+  │    (shared database — tidak membuat DB baru; silo hanya bila diminta kontrak)
+  ├─ Seed default COA template + preset roles dengan tenant_id baru
   ├─ dispatch event('tenant.after_provision', $tenant)
   └─ Return { tenant_id, api_key, accounting_url }
 WP Plugin → user email: welcome + link ke accounting URL
@@ -557,7 +563,8 @@ User → Accounting: first login → setup flow (section 7 spec)
 
 ## 6. Tenant Context Resolution
 
-**Problem:** Request masuk ke mana DB-per-tenant? Butuh resolve tenant sebelum query.
+**Problem:** Setiap request/job harus memiliki konteks tenant sebelum query,
+agar global scope dan Row-Level Security membatasi data ke tenant itu.
 
 **Approach:** middleware `TenantResolver`
 ```
@@ -567,10 +574,15 @@ Strategi (by priority):
 3. JWT claim: tenant_id di token (integrated mode)
 ```
 
-Setelah resolve:
-- Swap DB connection → `tenant_<ulid>`
-- Register Eloquent global scope: `entity_id` check via user assignments
+Tenant wajib cocok dengan identitas terautentikasi (organisasi pada sesi Ecopa
+atau pemilik token API); header/subdomain dari klien tidak cukup sendirian.
+
+Setelah resolve (direvisi 2026-11-19, lihat `docs/decisions.md`):
+- Set `TenantContext` dan `app.tenant_id` pada koneksi PostgreSQL (RLS); reset di
+  akhir request/job
+- Register Eloquent global scope: `tenant_id`, lalu `entity_id` via user assignments
 - Bind tenant singleton ke container
+- Swap koneksi hanya untuk tenant dengan opsi database khusus (silo)
 
 ---
 
@@ -692,7 +704,7 @@ akunta/
     └────┬───┘
          ▼
 ┌────────────────────┐
-│ PostgreSQL Primary │  ←  ecosystem_control + all tenant DBs
+│ PostgreSQL Primary │  ←  satu DB per aplikasi (semua tenant, RLS)
 │ + Read Replica     │
 └────────────────────┘
 ┌────────────────────┐
@@ -724,7 +736,7 @@ Semua bisa di-default kalau ga ada preference. Diangkat karena impact ke skeleto
 | # | Question | Default yg direkomend |
 |---|----------|------------------------|
 | Q1 | Apakah pakai ULID atau UUID v7 untuk PK? | **ULID** (sortable, lebih pendek) |
-| Q2 | Migrasi per-tenant DB: pakai library `stancl/tenancy` atau roll-own? | **roll-own ringkas** (stancl heavy untuk DB-per-tenant PostgreSQL, tapi viable) |
+| Q2 | Migrasi per-tenant DB: pakai library `stancl/tenancy` atau roll-own? | **roll-own ringkas** (stancl heavy untuk DB-per-tenant PostgreSQL, tapi viable). *Superseded 2026-11-19: shared database + RLS, lihat §4.3.* |
 | Q3 | Eventing: hanya in-process (Laravel Events) atau tambah outbox pattern untuk cross-app reliability? | **in-process v1**, outbox v2 saat webhook jadi first-class |
 | Q4 | Filament panels — satu panel per app (`/admin-accounting`, `/admin-payroll`) atau single unified panel? | **Satu panel per app** (isolasi clean, mirip spec 2.2) |
 | Q5 | Shared DB `ecosystem_control` pakai MySQL (sama dengan WordPress) atau PostgreSQL? | **PostgreSQL** (konsisten dengan tenant DBs, lebih gampang join saat debug) |

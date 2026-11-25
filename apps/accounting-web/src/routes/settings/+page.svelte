@@ -30,6 +30,7 @@
   import { journalAttachmentView } from '$lib/stores/journal-attachment-view.svelte.js';
   import { workspaceApi, type WorkspaceRecord } from '$lib/api/workspace.js';
   import FormatTokenInput from '$lib/components/ui/FormatTokenInput.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import {
     fakeDataApi,
     type FakeDataGroup,
@@ -1025,6 +1026,13 @@
         <p class="mt-1 text-sm text-text-muted">
           Preferensi umum untuk pengalaman menggunakan Akunta.
         </p>
+        {#if !isAdmin}
+          <PermissionNotice
+            class="mt-4"
+            testId="general-settings-read-only-notice"
+            message="Mode baca saja. Hanya Admin Aplikasi Akunta yang dapat mengubah pengaturan General."
+          />
+        {/if}
         <div class="mt-6 divide-y divide-border-soft">
           <div class="flex items-center justify-between gap-4 py-4">
             <div>

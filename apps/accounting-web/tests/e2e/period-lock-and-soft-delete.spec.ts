@@ -281,5 +281,6 @@ test('keeps locked period journals read-only without exposing activation to a vi
   await page.getByRole('button', { name: /Ditutup/ }).click();
   await page.getByRole('row').filter({ hasText: '2026' }).click();
   await expect(page.getByTestId('period-activation-reason')).toHaveCount(0);
-  await expect(page.getByTestId('period-activate')).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('Periode terkunci. Hubungi admin');
+  await expect(page.getByTestId('period-activate')).toHaveCount(0);
 });

@@ -16,6 +16,11 @@
   import Combobox from '$lib/components/ui/Combobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { formatDate } from '$lib/utils/date.js';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import { notifyPermissionDenied, readOnlyNotice } from '$lib/utils/permission-feedback.js';
+
+  const AUTO_POST_DENIED =
+    'Jadwal ini memakai posting otomatis. Menjalankan, melanjutkan, atau menyimpannya memerlukan izin menyetujui dan menyimpan jurnal. Hubungi admin workspace untuk meminta akses.';
 
   let items = $state<RecurringJournal[]>([]);
   let templates = $state<JournalTemplateSummary[]>([]);
@@ -33,6 +38,17 @@
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
+  const canSaveSchedule = $derived(can(editing ? 'recurring.update' : 'recurring.create'));
+
+  /** Auto-post schedules post journals, so they also need the posting permission. */
+  function lacksPostPermission(autoPost: boolean | null | undefined): boolean {
+    return Boolean(autoPost) && !can('journal.post');
+  }
+
+  function withPostPermission(autoPost: boolean | null | undefined, action: () => void) {
+    if (lacksPostPermission(autoPost)) notifyPermissionDenied(AUTO_POST_DENIED);
+    else action();
+  }
 
   async function load() {
     loading = true;
@@ -185,15 +201,17 @@
       <h1 class="text-2xl font-bold">Jurnal Berulang</h1>
       <p class="text-sm text-text-muted">{items.length} schedule</p>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-      onclick={openCreate}
-      disabled={templates.length === 0 || !can('recurring.create')}
-      title={templates.length === 0 ? 'Buat template jurnal dulu' : undefined}
-    >
-      + Schedule Baru
-    </button>
+    {#if can('recurring.create')}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-50"
+        onclick={openCreate}
+        disabled={templates.length === 0}
+        title={templates.length === 0 ? 'Buat template jurnal dulu' : undefined}
+      >
+        + Schedule Baru
+      </button>
+    {/if}
   </header>
 
   {#if loading}
@@ -262,7 +280,16 @@
       onclick={(e) => e.stopPropagation()}
       role="dialog"
     >
-      <h2 class="mb-4 text-lg font-bold">{editing ? `Edit ${editing.name}` : 'Schedule Baru'}</h2>
+      <h2 class="mb-4 text-lg font-bold">
+        {editing ? `${canSaveSchedule ? 'Edit' : 'Detail'} ${editing.name}` : 'Schedule Baru'}
+      </h2>
+      {#if !canSaveSchedule}
+        <PermissionNotice
+          class="mb-4"
+          testId="recurring-read-only-notice"
+          message={readOnlyNotice('mengedit jadwal jurnal berulang')}
+        />
+      {/if}
       <fieldset
         disabled={!can(editing ? 'recurring.update' : 'recurring.create')}
         class="grid grid-cols-2 gap-3 text-sm"
@@ -330,64 +357,75 @@
           <input type="checkbox" bind:checked={form.auto_post} disabled={!can('journal.post')} />
           <span>Auto-post setelah jalankan</span>
         </label>
+        {#if canSaveSchedule && !can('journal.post')}
+          <p
+            class="col-span-2 -mt-2 text-xs text-text-muted"
+            data-testid="recurring-auto-post-hint"
+          >
+            Pilihan auto-post memerlukan izin menyetujui dan menyimpan jurnal.
+          </p>
+        {/if}
       </fieldset>
 
       <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap gap-2">
           {#if editing}
-            {#if editing.status === 'active'}
+            {#if editing.status === 'active' && can('recurring.update')}
               <button
                 type="button"
                 class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
                 onclick={() => pause(editing!)}
-                disabled={!can('recurring.update')}
               >
                 Pause
               </button>
-            {:else if editing.status === 'paused'}
+            {:else if editing.status === 'paused' && can('recurring.update')}
               <button
                 type="button"
-                class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white"
-                onclick={() => resume(editing!)}
-                disabled={!can('recurring.update') || (editing.auto_post && !can('journal.post'))}
+                class="rounded-md border border-paid/40 bg-paid-light px-3 py-2 text-sm font-semibold text-paid hover:bg-paid hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                onclick={() => withPostPermission(editing!.auto_post, () => resume(editing!))}
+                aria-disabled={lacksPostPermission(editing.auto_post)}
               >
                 Resume
               </button>
             {/if}
-            <button
-              type="button"
-              class="rounded-md border border-primary/40 bg-primary-light px-3 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
-              onclick={() => run(editing!)}
-              disabled={!can('recurring.run') || (editing.auto_post && !can('journal.post'))}
-            >
-              Run Sekarang
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
-              onclick={() => destroy(editing!)}
-              disabled={!can('recurring.delete')}
-            >
-              Hapus
-            </button>
+            {#if can('recurring.run')}
+              <button
+                type="button"
+                class="rounded-md border border-primary/40 bg-primary-light px-3 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                onclick={() => withPostPermission(editing!.auto_post, () => run(editing!))}
+                aria-disabled={lacksPostPermission(editing.auto_post)}
+              >
+                Run Sekarang
+              </button>
+            {/if}
+            {#if can('recurring.delete')}
+              <button
+                type="button"
+                class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+                onclick={() => destroy(editing!)}
+              >
+                Hapus
+              </button>
+            {/if}
           {/if}
         </div>
         <div class="flex gap-2">
           <button
             type="button"
             class="text-sm text-text-muted hover:text-text-default"
-            onclick={closeForm}>Batal</button
+            onclick={closeForm}>{canSaveSchedule ? 'Batal' : 'Tutup'}</button
           >
-          <button
-            type="button"
-            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-            onclick={save}
-            disabled={saving ||
-              !can(editing ? 'recurring.update' : 'recurring.create') ||
-              (form.auto_post && !can('journal.post'))}
-          >
-            {saving ? 'Menyimpan…' : 'Simpan'}
-          </button>
+          {#if canSaveSchedule}
+            <button
+              type="button"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              onclick={() => withPostPermission(form.auto_post, save)}
+              disabled={saving}
+              aria-disabled={lacksPostPermission(form.auto_post)}
+            >
+              {saving ? 'Menyimpan…' : 'Simpan'}
+            </button>
+          {/if}
         </div>
       </div>
     </div>

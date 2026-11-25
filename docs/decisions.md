@@ -9,7 +9,7 @@ User approved all defaults from architecture.md §10.
 | # | Question | Decision |
 |---|----------|----------|
 | Q1 | PK identifier | **ULID** (sortable, lebih pendek dari UUID v4) |
-| Q2 | Tenancy migration library | **Roll-own ringkas** (skip `stancl/tenancy`, PostgreSQL DB-per-tenant lebih sederhana custom) |
+| Q2 | Tenancy migration library | **Roll-own ringkas** (skip `stancl/tenancy`, PostgreSQL DB-per-tenant lebih sederhana custom). *Superseded 2026-11-19: default kini shared database (pooled) — lihat "shared database multi-tenant".* |
 | Q3 | Eventing model v1 | **In-process (Laravel Events)**. Outbox pattern ditunda ke v2 saat webhook jadi first-class |
 | Q4 | Filament panel layout | **Satu panel per app** (`/admin-accounting`, `/admin-payroll`, dll) — isolasi clean per spec 2.2 |
 | Q5 | `ecosystem_control` DB engine | **PostgreSQL** (konsisten dengan tenant DBs) |
@@ -927,7 +927,7 @@ Landed:
 
 Step 12b-α-ii-min closed. Remaining priority:
 
-1. **12b-α-iii** — seed split + TenantResolver connection swap + tenant-conn auth. Multi-hour refactor; expects test-harness rewiring across 94 accounting tests.
+1. **12b-α-iii** — seed split + TenantResolver connection swap + tenant-conn auth. Multi-hour refactor; expects test-harness rewiring across 94 accounting tests. *Dibatalkan 2026-11-19 — diganti isolasi `tenant_id` + RLS di shared database (lihat "shared database multi-tenant").*
 2. **Reporting phase 2** — Buku Besar drill-down + PDF/XLSX export + comparative BS/IS. Low risk, demo-ready.
 3. **Step 14-iii** — GitHub/Microsoft multi-provider + SSO audit + login button polish.
 4. **Step 11** — main-tier OIDC (now ECOPA — see below).
@@ -939,6 +939,10 @@ Recommend **reporting phase 2** for demo polish (low risk). **12b-α-iii** is th
 User correction (2026-04-25 evening, second clarification):
 
 > "Di Ecopa hanya 1 organisasi, namun yang banyak adalah divisi."
+
+> *Superseded 2026-11-19:* Ecopa kini multi-organisasi; Akunta memetakan satu
+> organisasi Ecopa ke satu tenant di shared database. Lihat "shared database
+> multi-tenant" dan `docs/plans/ecopa-multi-org-workspaces.md`.
 
 **Multi-organization roadmap dropped.** Ecopa serve **satu organisasi** per deployment. Multi-org clients = deploy Ecopa instance terpisah (bukan multi-tenant in single instance). Pengelompokan internal user pakai existing `divisions` table.
 
@@ -1425,3 +1429,140 @@ Bulk assignment replaces selected entity-local assignments atomically while
 preserving the existing protected-admin and session/token revocation rules.
 Custom roles with unrevoked assignments cannot be removed; their shared Role
 rows remain for historical assignment references after removal from the registry.
+
+## Locked 2026-11-19 — shared database multi-tenant (pooled); tenant = organisasi Ecopa
+
+**Status:** dikunci atas persetujuan pemilik produk (2026-11-19). Implementasi
+belum dikerjakan; lihat urutan di bawah. Keputusan ini **menggantikan**
+database-per-tenant di `docs/spec.md` §11, `docs/architecture.md` §4.3/§5.4/§6,
+baris Q2 pada "architecture defaults accepted", dan rencana 12b-α-iii (swap
+koneksi per tenant). Bersama `docs/plans/ecopa-multi-org-workspaces.md`,
+keputusan ini juga menggantikan "Multi-organization roadmap dropped"
+(2026-04-25): Ecopa kini multi-organisasi dan Akunta mengikutinya.
+
+### Konteks
+
+- Target pasar adalah ribuan UKM dengan nilai langganan kecil dan data per
+  tenant kecil–menengah. Database per tenant membuat provisioning, migration
+  (N kali, risiko skema berbeda antar-tenant), backup, monitoring, dan pooling
+  koneksi PostgreSQL makin berat seiring jumlah tenant, tanpa manfaat yang
+  sebanding untuk segmen ini. UU PDP dan audit mensyaratkan kontrol akses,
+  enkripsi, audit trail, serta export/penghapusan per pelanggan, bukan
+  pemisahan database fisik.
+- Audit kode 2026-11-19:
+  - Seluruh data tenant sudah berada di satu database PostgreSQL (koneksi
+    default `ecosystem_control`). `config/tenancy.php` mengecualikan
+    `/api/v1/spa/*`, `/dashboard`, `/admin-accounting/*`, serta API jurnal,
+    auto-mapping, akun, dan webhook dari `TenantResolver`, sehingga swap
+    koneksi `tenant_<ulid>` tidak pernah aktif di jalur yang dipakai user.
+  - `ProvisionTenantAction` masih membuat database fisik `tenant_<ulid>` lewat
+    `TenantProvisioner`, tetapi database itu tidak dipakai saat runtime.
+  - Pemisahan data memakai `entity_id`. Di skema Accounting/RBAC hanya
+    `entities` dan `roles` yang memiliki `tenant_id`; `journal_entries` terikat
+    lewat `journal_id`, sedangkan `user_app_assignments`, `api_tokens`, dan
+    `audit_log` tidak menyimpan tenant.
+  - `ResolvesTenant` menerima entity dari header `X-Tenant-Slug` (berisi ID
+    entity) dan memperlakukan assignment `entity_id = NULL` sebagai akses ke
+    entity mana pun tanpa memeriksa tenant assignment tersebut.
+    `EcopaWebhookController` dan `EcopaReconcile` memakai fallback
+    `Tenant::query()->first()`. Dengan lebih dari satu tenant, keduanya membuka
+    akses lintas tenant.
+
+### Keputusan
+
+1. **Default: satu database bersama per aplikasi (pooled).** Semua tenant
+   Accounting berada di satu database PostgreSQL Accounting. Tenant baru tidak
+   lagi mendapat database fisik sendiri. Pemisahan database **per aplikasi**
+   tetap: Accounting, Payroll, Cash-mgmt, POSO, dan Ecopa masing-masing
+   memiliki database sendiri dan berkomunikasi hanya lewat API
+   (`modules/api-client`). Schema-per-tenant tidak dipakai.
+2. **Tenant = organisasi Ecopa (1:1).** `tenants.ecopa_organization_id` unik.
+   Setiap entity/workspace milik tepat satu tenant; satu tenant boleh memiliki
+   banyak entity. Mode standalone (tanpa Ecopa) memakai satu tenant default.
+   `users` tetap identitas global; keanggotaan dan role terhadap tenant/entity
+   dinyatakan lewat `user_app_assignments` yang terikat tenant.
+3. **Isolasi berlapis. Semua lapis wajib:**
+   1. **`tenant_id NOT NULL` di setiap tabel milik tenant**, termasuk tabel anak
+      (`journal_entries`), assignment, role kustom, token API, audit, lampiran,
+      auto-mapping, marker fake data, dan pengaturan workspace. `entity_id`
+      tetap menjadi scope workspace di dalam tenant. Tabel global yang sah tanpa
+      `tenant_id` hanya `users`, `apps`, `permissions`, role preset
+      (`tenant_id` null), tabel infrastruktur (cache, jobs, sessions), dan
+      konfigurasi tingkat instalasi. Setiap tabel baru wajib dinyatakan sebagai
+      milik tenant atau global.
+   2. **Integritas di database.** `entities` mendapat unique `(tenant_id, id)`.
+      Foreign key ke entity atau record induk memakai pasangan, misalnya
+      `(tenant_id, entity_id)` dan `(tenant_id, journal_id)`, sehingga baris
+      tidak dapat menunjuk record tenant lain. Index utama diawali `tenant_id`
+      atau `entity_id`.
+   3. **Konteks tenant di aplikasi.** Setiap request dan job memiliki satu
+      `TenantContext` yang ditentukan dari identitas terautentikasi
+      (organisasi pada sesi Ecopa, token API, atau tenant milik entity yang
+      di-assign ke user), bukan dari header klien saja. Header entity dari
+      klien hanya memilih entity di dalam tenant tersebut dan ditolak bila
+      berbeda tenant. Assignment tenant-wide (`entity_id` null) hanya berlaku
+      untuk entity pada tenant assignment itu. Model milik tenant memakai satu
+      trait/global scope bersama yang mengisi dan memfilter `tenant_id`.
+      Perintah terjadwal yang memproses banyak tenant mengiterasi tenant dan
+      menetapkan konteks per tenant. Tidak ada fallback ke "tenant pertama".
+   4. **PostgreSQL Row-Level Security sebagai pengaman terakhir.** Tabel milik
+      tenant memakai `ENABLE` + `FORCE ROW LEVEL SECURITY` dengan policy
+      `tenant_id = current_setting('app.tenant_id', true)`; konteks kosong
+      berarti tidak ada baris (fail-closed). Traffic aplikasi memakai role
+      database non-owner tanpa `BYPASSRLS`; migration dan maintenance memakai
+      role owner terpisah. Konteks diset per transaksi (`set_config(..., true)`)
+      atau di awal request/job dan selalu di-reset di akhir, agar aman untuk
+      koneksi persisten, worker queue, dan PgBouncer mode transaksi.
+   5. **Sumber daya di luar database** diberi namespace tenant: key cache, path
+      penyimpanan lampiran, payload job, webhook, idempotency key, dan log.
+4. **Database khusus (silo) hanya opsi, bukan default.** Dipakai untuk tenant
+   enterprise yang mewajibkan isolasi fisik secara kontrak, atau tenant besar
+   yang mengganggu tenant lain. Routing ditentukan kolom koneksi pada `tenants`
+   (default pooled); skema dan migration identik; `tenant_id` tetap disimpan
+   sehingga perpindahan pooled↔silo berupa salin/hapus berdasarkan `tenant_id`.
+   `TenantProvisioner` dipertahankan untuk jalur ini tetapi tidak dijalankan
+   pada provisioning default. Jalur silo tidak dibangun sebelum ada kebutuhan
+   kontraktual.
+5. **Backup, export, dan penghapusan.** Disaster recovery memakai backup
+   seluruh database dengan point-in-time recovery. Export/restore per tenant
+   dilakukan secara logis berdasarkan `tenant_id`, termasuk untuk permintaan
+   data pelanggan. Penghapusan tenant adalah operasi admin terpisah yang
+   diaudit, bukan bagian dari `Clear Fake Data`; aturan provenance fake data
+   tetap berlaku.
+6. **Skala.** Bila tabel jurnal membesar: partisi hash berdasarkan `tenant_id`,
+   read replica untuk laporan, lalu pindahkan tenant terbesar ke silo.
+
+### Yang tidak berubah
+
+- Invariant Intern/Fiskal, status/periode jurnal, balance, Inspector
+  fiskal-only, dan permission efektif per entity tetap berlaku di dalam tenant.
+- Tidak ada kode permission baru. Admin SSO hanya admin pada tenant
+  organisasinya; UI tidak menyediakan akses lintas tenant. Akses dukungan
+  lintas tenant, bila kelak dibutuhkan, memerlukan keputusan terpisah dan
+  audit, dan tidak boleh memakai bypass RLS dari jalur request.
+- Payroll, Cash-mgmt, dan POSO mengikuti model yang sama di database
+  masing-masing; pelaksanaannya dilacak terpisah.
+
+### Urutan implementasi
+
+Dikerjakan bersama `docs/plans/ecopa-multi-org-workspaces.md`. Migrasi data
+mengikuti aturan aman di rencana tersebut: aditif, idempotent, backup terlebih
+dahulu, dan jumlah record sebelum = sesudah.
+
+1. Backup. Migration aditif `tenants.ecopa_organization_id` (+ slug) dan
+   `tenant_id` nullable pada tabel milik tenant; backfill dari
+   `entities.tenant_id` atau record induk; laporan jumlah; baru kemudian
+   `NOT NULL` dan composite foreign key.
+2. `TenantContext` dan global scope. Perbaiki `ResolvesTenant`, assignment
+   tenant-wide, scope admin SSO, webhook, dan reconcile; hapus fallback tenant
+   pertama. `TenantResolver` berhenti swap koneksi untuk tenant pooled dan
+   pengecualian dev di `config/tenancy.php` diganti resolusi konteks.
+   `ProvisionTenantAction` berhenti membuat database fisik secara default.
+3. Test isolasi dua tenant: UI, API SPA, manipulasi header, token API, webhook,
+   queue/recurring, lampiran, dan cache.
+4. Aktifkan RLS bertahap (test → staging → production) dengan role database
+   aplikasi non-owner.
+5. Setelah semua hijau, Platform Admin Ecopa menyalakan **multi-organization
+   ready** untuk Akunta. Sebelum itu, production tidak boleh menerima tenant
+   atau organisasi kedua.
+6. Jalur silo hanya saat ada kontrak yang memerlukannya.

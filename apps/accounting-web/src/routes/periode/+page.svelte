@@ -12,6 +12,8 @@
   import { ApiError } from '$lib/api/client.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { formatDate } from '$lib/utils/date.js';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import { readOnlyNotice } from '$lib/utils/permission-feedback.js';
 
   let items = $state<Period[]>([]);
   let loading = $state(true);
@@ -40,6 +42,7 @@
   let visibleItems = $derived(tabItems.slice((currentPage - 1) * pageSize, currentPage * pageSize));
   const canReopenPeriod = $derived(can('period.reopen'));
   const canClosePeriod = $derived(can('period.close'));
+  const canSavePeriod = $derived(can(editing ? 'period.update' : 'period.create'));
   const isNativeFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
@@ -222,14 +225,15 @@
     <div>
       <h1 class="text-2xl font-bold">Periode Akuntansi</h1>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-      onclick={openCreate}
-      disabled={!can('period.create')}
-    >
-      + Periode Baru
-    </button>
+    {#if can('period.create')}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={openCreate}
+      >
+        + Periode Baru
+      </button>
+    {/if}
   </header>
 
   <nav
@@ -412,6 +416,13 @@
     >
       <h2 class="mb-4 text-lg font-bold">{editing ? `Periode ${editing.name}` : 'Periode Baru'}</h2>
       {#if fieldErr('_')}<p role="alert" class="mb-3 text-sm text-danger">{fieldErr('_')}</p>{/if}
+      {#if editing?.status === 'open' && !canSavePeriod}
+        <PermissionNotice
+          class="mb-3"
+          testId="period-read-only-notice"
+          message={readOnlyNotice('mengedit periode')}
+        />
+      {/if}
       <fieldset disabled={Boolean(editing && (editing.status !== 'open' || !can('period.update')))}>
         <div class="space-y-3 text-sm">
           <label class="block">
@@ -472,49 +483,53 @@
         <div class="flex flex-wrap gap-2">
           {#if editing}
             {#if editing.status === 'open'}
-              <button
-                type="button"
-                class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                onclick={() => deactivate(editing!)}
-                disabled={!can('period.deactivate')}>Nonaktifkan</button
-              >
-              <button
-                type="button"
-                class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
-                onclick={() => close(editing!)}
-                disabled={!canClosePeriod}
-              >
-                Tutup
-              </button>
-              <button
-                type="button"
-                class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
-                onclick={() => destroy(editing!)}
-                disabled={!can('period.delete')}
-              >
-                Hapus
-              </button>
-            {:else}
-              {#if editing.status === 'inactive'}
+              {#if can('period.deactivate')}
                 <button
                   type="button"
-                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                  onclick={() => close(editing!)}
-                  disabled={!canClosePeriod}>Tutup Periode</button
+                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold"
+                  onclick={() => deactivate(editing!)}>Nonaktifkan</button
                 >
               {/if}
-              <button
-                type="button"
-                class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-                onclick={() => reopen(editing!)}
-                disabled={saving ||
-                  !canReopenPeriod ||
-                  !activationReason.trim() ||
-                  !activationConfirmed}
-                data-testid="period-activate"
-              >
-                Aktifkan Kembali
-              </button>
+              {#if canClosePeriod}
+                <button
+                  type="button"
+                  class="rounded-md border border-warning/40 bg-warning-light px-3 py-2 text-sm font-semibold text-warning hover:bg-warning hover:text-white"
+                  onclick={() => close(editing!)}
+                >
+                  Tutup Periode
+                </button>
+              {/if}
+              {#if can('period.delete')}
+                <button
+                  type="button"
+                  class="rounded-md border border-danger/40 bg-danger-light px-3 py-2 text-sm font-semibold text-danger hover:bg-danger hover:text-white"
+                  onclick={() => destroy(editing!)}
+                >
+                  Hapus
+                </button>
+              {/if}
+            {:else}
+              {#if editing.status === 'inactive' && canClosePeriod}
+                <button
+                  type="button"
+                  class="rounded-md border border-border-default px-3 py-2 text-sm font-semibold"
+                  onclick={() => close(editing!)}>Tutup Periode</button
+                >
+              {/if}
+              {#if canReopenPeriod}
+                <button
+                  type="button"
+                  class="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+                  onclick={() => reopen(editing!)}
+                  disabled={saving || !activationReason.trim() || !activationConfirmed}
+                  title={!activationReason.trim() || !activationConfirmed
+                    ? 'Isi alasan aktivasi dan centang konfirmasi terlebih dahulu'
+                    : undefined}
+                  data-testid="period-activate"
+                >
+                  Aktifkan Kembali
+                </button>
+              {/if}
             {/if}
           {/if}
         </div>
@@ -522,14 +537,17 @@
           <button
             type="button"
             class="text-sm text-text-muted hover:text-text-default"
-            onclick={closeForm}>Batal</button
+            onclick={closeForm}
+            >{(!editing || editing.status === 'open' ? canSavePeriod : canReopenPeriod)
+              ? 'Batal'
+              : 'Tutup'}</button
           >
-          {#if !editing || editing.status === 'open'}
+          {#if (!editing || editing.status === 'open') && canSavePeriod}
             <button
               type="button"
               class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
               onclick={save}
-              disabled={saving || !can(editing ? 'period.update' : 'period.create')}
+              disabled={saving}
             >
               {saving ? 'Menyimpan…' : 'Simpan'}
             </button>

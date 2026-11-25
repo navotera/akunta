@@ -12,6 +12,8 @@
   import CoaTreeNode from '$lib/components/coa/CoaTreeNode.svelte';
   import AccountDescriptionTooltip from '$lib/components/coa/AccountDescriptionTooltip.svelte';
   import Combobox, { type ComboOption } from '$lib/components/ui/Combobox.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import { readOnlyNotice } from '$lib/utils/permission-feedback.js';
 
   type ViewMode = 'list' | 'tree' | 'tview';
 
@@ -150,6 +152,10 @@
   const canEditStructure = $derived(creating ? can('account.create') : can('account.update'));
   const canRename = $derived(creating ? can('account.create') : can('account.rename'));
   const canActivate = $derived(creating ? can('account.create') : can('account.activate'));
+  const canSaveAccount = $derived(canEditStructure || canRename || canActivate);
+  const partialAccountEdit = $derived(
+    canSaveAccount && !(canEditStructure && canRename && canActivate),
+  );
   let form = $state<AccountInput>({
     code: '',
     name: '',
@@ -417,15 +423,16 @@
       <h1 class="text-2xl font-bold">Bagan Akun</h1>
       <p class="text-sm text-text-muted">{items.length} akun</p>
     </div>
-    <button
-      type="button"
-      class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-      onclick={openCreate}
-      data-testid="account-create"
-      disabled={!can('account.create')}
-    >
-      + Akun Baru
-    </button>
+    {#if can('account.create')}
+      <button
+        type="button"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+        onclick={openCreate}
+        data-testid="account-create"
+      >
+        + Akun Baru
+      </button>
+    {/if}
   </header>
 
   <!-- Tabs + list controls -->
@@ -471,9 +478,14 @@
         </label>
         <button
           type="button"
-          class="relative inline-flex shrink-0 items-center gap-2 rounded-md border border-border-default bg-card-bg px-3 py-1.5 text-sm font-medium text-text-default hover:border-primary hover:text-primary"
+          class="relative inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary {filterOpen ||
+          activeFilterCount > 0
+            ? 'border-primary/40 bg-primary-light text-primary'
+            : 'border-border-default bg-card-bg text-text-default hover:border-primary hover:text-primary'}"
           onclick={() => (filterOpen = true)}
-          aria-label="Buka filter akun"
+          aria-label={activeFilterCount > 0
+            ? `Filter, ${activeFilterCount} aktif`
+            : 'Buka filter akun'}
           data-testid="account-filter-button"
         >
           <svg
@@ -489,10 +501,10 @@
           <span class="hidden sm:inline">Filter</span>
           {#if activeFilterCount > 0}
             <span
-              class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white"
-            >
-              {activeFilterCount}
-            </span>
+              class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-card-bg bg-danger"
+              aria-hidden="true"
+              data-testid="account-filter-active-dot"
+            ></span>
           {/if}
         </button>
       {:else}
@@ -828,7 +840,7 @@
     >
       <div class="mb-4 flex items-start justify-between gap-4">
         <h2 id="account-form-title" class="text-lg font-bold">
-          {editing ? `Edit Akun ${editing.code}` : 'Akun Baru'}
+          {editing ? `${canSaveAccount ? 'Edit' : 'Detail'} Akun ${editing.code}` : 'Akun Baru'}
         </h2>
         <button
           type="button"
@@ -840,6 +852,19 @@
           ×
         </button>
       </div>
+      {#if !canSaveAccount}
+        <PermissionNotice
+          class="mb-4"
+          testId="account-read-only-notice"
+          message={readOnlyNotice('mengubah akun')}
+        />
+      {:else if partialAccountEdit}
+        <PermissionNotice
+          class="mb-4"
+          testId="account-partial-edit-notice"
+          message="Sebagian isian terkunci karena izin Anda terbatas. Hubungi admin workspace bila perlu mengubah isian lainnya."
+        />
+      {/if}
       {#if editingIsSystem}
         <div
           class="mb-4 rounded-md border border-info/30 bg-info-light px-3 py-2 text-sm text-info"
@@ -1178,16 +1203,18 @@
           <button
             type="button"
             class="text-sm text-text-muted hover:text-text-default"
-            onclick={closeForm}>Batal</button
+            onclick={closeForm}>{canSaveAccount ? 'Batal' : 'Tutup'}</button
           >
-          <button
-            type="button"
-            class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
-            onclick={save}
-            disabled={saving || !(canEditStructure || canRename || canActivate)}
-          >
-            {saving ? 'Menyimpan…' : 'Simpan'}
-          </button>
+          {#if canSaveAccount}
+            <button
+              type="button"
+              class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-50"
+              onclick={save}
+              disabled={saving}
+            >
+              {saving ? 'Menyimpan…' : 'Simpan'}
+            </button>
+          {/if}
         </div>
       </div>
     </div>

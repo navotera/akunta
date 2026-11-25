@@ -146,10 +146,14 @@ test('template read permission opens the main form read-only and blocks direct c
 }) => {
   await mockTemplateApi(page, 204, ['account.read', 'template.read']);
   await page.goto('/template-jurnal');
-  await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toBeDisabled();
+  await expect(page.getByText(TEMPLATE.name, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '+ Template Baru', exact: true })).toHaveCount(0);
   await page.getByText(TEMPLATE.name, { exact: true }).click();
   await expect(page.getByTestId('template-name')).toHaveValue(TEMPLATE.name);
   await expect(page.getByTestId('template-name')).toBeDisabled();
+  await expect(page.getByTestId('journal-permission-notice')).toContainText(
+    'belum memiliki izin untuk mengedit template jurnal',
+  );
   await expect(page.getByTestId('save-as-template')).toHaveCount(0);
   await expect(page.getByTestId('delete-template')).toHaveCount(0);
   await page.goto('/journals/new?as_template=1');

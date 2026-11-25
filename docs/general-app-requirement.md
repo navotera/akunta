@@ -1,53 +1,52 @@
-# General App Requirements untuk Child App Akunta
+# General App Requirements untuk Aplikasi Baru
 
-**Status:** Draft untuk review produk dan arsitektur
+**Status:** Catatan pengembangan untuk aplikasi berikutnya; rincian domain tetap ditetapkan per aplikasi
 
-**Cakupan:** Aplikasi baru dalam ekosistem Akunta, misalnya Manajemen Aset, Payroll, dan Manajemen Kas
+**Cakupan:** Semua aplikasi baru yang saya buat, baik aplikasi mandiri di luar Akunta maupun child app Akunta
 
-**Acuan:** `docs/CHILD_APP_REGISTRATION_GUIDE.md`, `docs/cross-app-rbac.md`, `docs/permission-management.md`, `docs/spec.md`, dan `docs/decisions.md`
+**Acuan khusus child app Akunta:** `docs/CHILD_APP_REGISTRATION_GUIDE.md`, `docs/cross-app-rbac.md`, `docs/permission-management.md`, `docs/spec.md`, dan `docs/decisions.md`
 
-Dokumen ini adalah checklist kemampuan umum child app, bukan spesifikasi domain Manajemen Aset. Kontrak yang sudah dikunci dalam dokumen acuan tetap berlaku. Jika ada perbedaan antara dokumen historis dan implementasi terbaru, verifikasi kontrak dan test sebelum mengunci keputusan baru. Setiap child app memiliki data dan aturan domain sendiri. Mode terintegrasi mengikuti identitas Ecopa; mode uji lokal memakai autentikasi lokal tanpa Ecopa. Keduanya mempertahankan batas tenant/entity, role, permission, dan aturan domain.
+Dokumen ini adalah catatan dan checklist untuk merancang aplikasi berikutnya, bukan spesifikasi satu domain atau kewajiban memasukkan semua aplikasi ke monorepo Akunta. Bagian umum di bawah diterapkan sesuai kebutuhan produk: aplikasi tanpa tenant, entity, scheduler, atau integrasi eksternal tidak perlu membuat fitur tersebut hanya demi memenuhi checklist. Setiap aplikasi menetapkan data, aturan domain, stack, dan cara deployment sendiri. Bagian **Jika app adalah child app Akunta** menambahkan kontrak ekosistem yang hanya berlaku bagi aplikasi yang benar-benar terintegrasi dengan Akunta/Ecopa. Untuk child app, keputusan yang sudah dikunci dalam dokumen acuan tetap berlaku; bila dokumen historis dan implementasi terbaru berbeda, verifikasi kontrak dan test sebelum mengambil keputusan baru.
 
 ## 1. Role Management dan Permission Management (UI dan logic)
 
-- Child app memiliki katalog permission domain sendiri. Definisikan permission per aksi yang berbeda wewenang: baca daftar/detail, buat, ubah, hapus, persetujuan, impor/ekspor, dan aksi otomatis bila ada. Kode permission stabil, berlabel jelas, dikelompokkan menurut fitur, dan memiliki dependency bila suatu aksi memerlukan izin baca.
-- Sediakan UI untuk mencari role, membuat role custom, mengubah nama/deskripsi, melihat anggota, mengatur matriks izin, dan memulihkan izin bawaan. Gunakan pola **Settings → Role Management** Accounting sebagai referensi interaksi; child app boleh menyesuaikan istilah domain.
-- Role bawaan dan hak awalnya ditetapkan per child app. Role custom dapat dimulai kosong atau menyalin snapshot izin role lain. Pemulihan role custom kembali ke snapshot awalnya; pemulihan role bawaan kembali ke default child app. Perubahan satu workspace tidak mengubah workspace lain atau preset global.
-- Hak efektif dihitung dari seluruh assignment aktif pada workspace yang benar, dengan allowlist eksplisit dan batas domain yang tidak boleh dilampaui. Permission baru tidak otomatis diberikan kepada role custom atau override yang belum mencantumkannya.
-- UI mengikuti hak efektif, tetapi setiap endpoint dan job tetap melakukan otorisasi backend terhadap aksi, record induk, tenant/entity, status, dan kondisi domain. Tidak ada akses hanya karena tombol tersembunyi atau nama role tampak cocok.
-- Perubahan role, permission, dan penetapan anggota memiliki audit trail. Perubahan bersamaan memakai mekanisme revisi/konflik agar penyimpanan lama tidak menimpa perubahan admin lain. Batasi self-demotion dan hilangnya administrator terakhir sesuai aturan child app.
-- Untuk fitur baru, tinjau permission, default role, grant/revoke role custom, akses request langsung, dan isolasi workspace. Accounting memiliki batas khusus Inspector Fiskal dan buku Intern/Fiskal; child app lain menentukan batas domainnya sendiri tanpa menyalin role tersebut secara otomatis.
+- Jika aplikasi memiliki beberapa role, tetapkan katalog permission domain sendiri. Definisikan permission per aksi yang berbeda wewenang: baca daftar/detail, buat, ubah, hapus, persetujuan, impor/ekspor, dan aksi otomatis bila ada. Kode permission stabil, berlabel jelas, dikelompokkan menurut fitur, dan memiliki dependency bila suatu aksi memerlukan izin baca.
+- Bila role dapat dikelola pengguna, sediakan UI untuk mencari role, membuat role custom, mengubah nama/deskripsi, melihat anggota, mengatur matriks izin, dan memulihkan izin bawaan. Gunakan satu alur utama untuk pengelolaan role.
+- Role bawaan dan hak awalnya ditetapkan per aplikasi. Role custom dapat dimulai kosong atau menyalin snapshot izin role lain. Pemulihan role custom kembali ke snapshot awalnya; pemulihan role bawaan kembali ke default aplikasi. Pada aplikasi multi-workspace, perubahan satu workspace tidak mengubah workspace lain atau preset global.
+- Hak efektif dihitung dari seluruh assignment aktif pada scope yang benar, dengan allowlist eksplisit dan batas domain yang tidak boleh dilampaui. Permission baru tidak otomatis diberikan kepada role custom atau override yang belum mencantumkannya.
+- UI mengikuti hak efektif, tetapi setiap endpoint dan job tetap melakukan otorisasi backend terhadap aksi, record induk, scope data, status, dan kondisi domain. Tidak ada akses hanya karena tombol tersembunyi atau nama role tampak cocok.
+- Perubahan role, permission, dan penetapan anggota memiliki audit trail. Perubahan bersamaan memakai mekanisme revisi/konflik agar penyimpanan lama tidak menimpa perubahan admin lain. Batasi self-demotion dan hilangnya administrator terakhir sesuai aturan aplikasi.
+- Untuk fitur baru, tinjau permission, default role, grant/revoke role custom, akses request langsung, dan isolasi workspace jika ada. Batas role khusus suatu produk tidak otomatis menjadi role aplikasi berikutnya.
 
-**Selesai bila:** pengguna tanpa izin ditolak oleh backend, grant/revoke role custom berlaku pada workspace yang tepat, dan UI menampilkan keadaan read-only untuk pengguna yang hanya boleh membaca.
+**Selesai bila:** pengguna tanpa izin ditolak oleh backend, grant/revoke role custom berlaku pada scope yang tepat, dan UI menampilkan keadaan read-only untuk pengguna yang hanya boleh membaca.
 
 ## 2. User List (UI)
 
-- Sediakan daftar pengguna yang berhak masuk child app pada workspace aktif, serta pengguna Ecopa yang tersedia untuk ditetapkan bila kontrak Ecopa mengizinkannya. Bedakan dengan jelas **ditetapkan**, **belum memiliki role lokal**, **dicabut**, dan **dinonaktifkan**.
+- Sediakan daftar pengguna yang berhak masuk aplikasi pada scope aktif. Jika ada penyedia identitas eksternal, tampilkan pengguna yang tersedia untuk ditetapkan sesuai kontraknya. Bedakan dengan jelas **ditetapkan**, **belum memiliki role lokal**, **dicabut**, dan **dinonaktifkan**.
 - Tampilkan nama, email, status akses, role lokal, serta cakupan entity/workspace yang relevan. Sediakan pencarian, filter status/role, pagination, empty state, loading state, dan pesan kegagalan yang dapat ditindaklanjuti.
-- Daftar tidak menjadi sumber utama perubahan identitas. Nama/email dalam mode terintegrasi berasal dari Ecopa dan disinkronkan sebagai shadow user. Aksi yang tersedia di daftar tetap tunduk pada permission dan batas workspace.
-- Gunakan halaman **Settings → User & Roles** Accounting sebagai referensi; detail/edit role mengarah ke alur utama yang sama, bukan form tandingan.
+- Daftar tidak menjadi sumber utama perubahan identitas bila aplikasi memakai penyedia identitas eksternal. Nama/email dalam mode itu berasal dari penyedia identitas dan disinkronkan sebagai shadow user. Aksi yang tersedia tetap tunduk pada permission dan batas scope data.
+- Detail dan edit role mengarah ke alur utama yang sama, bukan form tandingan.
 
-**Selesai bila:** user dari workspace lain tidak terlihat, status sinkronisasi/assignment tidak disamakan dengan role lokal, dan daftar tetap dapat dipakai saat kosong atau saat sebagian data gagal dimuat.
+**Selesai bila:** user di luar scope tidak terlihat, status sinkronisasi/assignment tidak disamakan dengan role lokal bila integrasi identitas dipakai, dan daftar tetap dapat dipakai saat kosong atau saat sebagian data gagal dimuat.
 
 ## 3. User Assignment to Role (UI dan logic)
 
-- Pisahkan dua keputusan: Ecopa memberi atau mencabut akses user ke child app; admin child app memilih role domain lokal pada entity/workspace yang diizinkan. Payload Ecopa tidak boleh menentukan role domain rinci.
-- Event `user.assigned` membuat atau mengaktifkan shadow user dan assignment dengan role lokal kosong. Sampai role lokal dipilih, akses domain mengikuti aturan deny-by-default child app. Pilihan role dibatasi pada role yang tersedia di workspace tersebut.
+- Pisahkan keputusan memberi akses masuk aplikasi dari keputusan memberi role domain lokal. Jika identitas dikelola pihak luar, payload penyedia identitas tidak boleh menentukan role domain rinci tanpa kontrak yang eksplisit.
+- Jika assignment diterima melalui event, buat atau aktifkan shadow user dengan role lokal kosong. Sampai role lokal dipilih, akses domain mengikuti deny-by-default. Pilihan role dibatasi pada role yang tersedia di scope tersebut.
 - UI dapat menetapkan, mengganti, dan mencabut role lokal sesuai wewenang. Bila operasi massal disediakan, batasi pilihan pada assignment aktif di workspace yang sama, tampilkan dampaknya sebelum simpan, dan terapkan secara atomik.
-- Perubahan role mengubah hak efektif pada request berikutnya; pencabutan akses Ecopa atau penonaktifan user mencabut sesi/token aktif. Pertahankan record historis dan attribution audit.
+- Perubahan role mengubah hak efektif pada request berikutnya; pencabutan akses atau penonaktifan user mencabut sesi/token aktif. Pertahankan record historis dan attribution audit.
 - Lindungi penetapan diri sendiri, admin, serta role yang sedang dipakai sesuai kebijakan aplikasi. Catat pelaku, target, role lama/baru, workspace, dan waktu dalam audit.
 
-**Selesai bila:** assignment lintas workspace ditolak, role kosong tidak memperoleh izin domain, dan perubahan dapat diuji melalui UI maupun request API langsung.
+**Selesai bila:** assignment di luar scope ditolak, role kosong tidak memperoleh izin domain, dan perubahan dapat diuji melalui UI maupun request API langsung.
 
-## 4. Ecopa User Delivery dan registrasi aplikasi
+## 4. Integrasi identitas eksternal (jika ada)
 
-Bagian ini berlaku saat **mode terintegrasi Ecopa** aktif. Pada mode uji lokal bagian 11, Ecopa tidak dijalankan dan tidak menjadi prasyarat login atau pemakaian entity dummy.
+Bagian ini hanya berlaku bila aplikasi memakai SSO, registrasi, atau sinkronisasi pengguna dari layanan identitas lain. Aplikasi mandiri dengan autentikasi lokal tidak memerlukan Ecopa maupun kontrak webhook Akunta.
 
-- Sebelum login terintegrasi, child app mendaftar melalui alur approval Ecopa. Wizard awal hanya meminta Ecopa URL dan Registration Token; backend mengirim nama, slug aplikasi, dan base URL kanonis. Setelah approval, child app memakai SSO Ecopa. Detail callback, signature, status, dan retry mengikuti `docs/CHILD_APP_REGISTRATION_GUIDE.md`.
-- Terima callback pada satu endpoint standar `/webhooks/ecopa`. Verifikasi HMAC atas raw body memakai secret yang sesuai fase registrasi atau fase operasional; validasi event, app slug, dan subject sebelum mengubah data. Simpan credential terenkripsi dan jangan kirim secret ke browser/log.
-- Tangani `user.assigned`, `user.updated`, `user.revoked`, dan `user.deleted` secara idempotent berdasarkan `event_id`. `user.updated` memperbarui mirror nama/email; `user.revoked` mencabut akses; `user.deleted` menonaktifkan user sambil mempertahankan histori domain. Event registrasi `app.registration.approved` dan `app.registration.rejected` ditangani sesuai fase bootstrap.
-- Balas 2xx hanya setelah event diterapkan atau sudah pernah diterapkan. Dependency yang belum siap menghasilkan respons retryable; payload/signature salah tidak mengubah data. Simpan receipt sukses terpisah dari log setiap percobaan delivery, dan sediakan tampilan log operasional terbatas bagi admin aplikasi.
-- Jalankan rekonsiliasi berkala terhadap Ecopa untuk memperbaiki webhook yang terlewat. Reconcile tidak boleh menghidupkan lagi assignment yang sudah dicabut tanpa bukti dari sumber otoritatif. Definisikan perilaku saat Ecopa sementara tidak tersedia.
+- Tentukan pemilik identitas, alur registrasi/login, aturan assignment, dan sumber kebenaran nama/email sebelum integrasi dibuat.
+- Verifikasi signature callback atas raw body, validasi event dan subject, simpan credential dengan aman, serta terapkan event secara idempotent. Pencabutan akses harus berlaku pada sesi/token aktif.
+- Balas sukses hanya setelah event diterapkan atau dikenali sebagai pengulangan. Catat receipt sukses dan percobaan delivery secara terpisah; sediakan retry serta rekonsiliasi untuk event yang terlewat.
+- Tetapkan perilaku saat layanan identitas tidak tersedia. Mode lokal, bila disediakan, memakai autentikasi dan permission normal tanpa bypass.
 
 **Selesai bila:** replay event aman, urutan event yang tertunda dapat dipulihkan, secret tidak muncul pada respons/log, dan pencabutan akses langsung berlaku.
 
@@ -55,8 +54,8 @@ Bagian ini berlaku saat **mode terintegrasi Ecopa** aktif. Pada mode uji lokal b
 
 ### 5.1 Setup dan alerting
 
-- Dokumentasikan cara memasang pemanggil Laravel Scheduler pada OS/container, jadwal tiap tugas, timezone, serta kebutuhan queue worker bila job berjalan asinkron. Halaman Settings menampilkan instruksi setup yang sesuai deployment.
-- Jalankan heartbeat terjadwal dan tampilkan waktu terakhir, sehat/terlambat/tidak pernah berjalan. Untuk tugas penting, tampilkan status terakhir dan perkiraan waktu eksekusi berikutnya. Accounting saat ini memakai heartbeat tiap menit dan menganggapnya stale setelah 180 detik; child app menetapkan ambang berdasar jadwalnya.
+- Bila ada tugas terjadwal, dokumentasikan cara menjalankan scheduler sesuai framework dan OS/deployment, jadwal tiap tugas, timezone, serta kebutuhan queue worker bila job berjalan asinkron. Halaman Settings dapat menampilkan instruksi setup yang sesuai deployment.
+- Jalankan heartbeat terjadwal dan tampilkan waktu terakhir, sehat/terlambat/tidak pernah berjalan. Untuk tugas penting, tampilkan status terakhir dan perkiraan waktu eksekusi berikutnya. Ambang keterlambatan ditetapkan berdasar jadwal aplikasi.
 - Tampilkan peringatan in-app untuk scheduler mati, job gagal, atau job overdue. **Usulan untuk review:** notifikasi eksternal dan eskalasi insiden ditambahkan bila ada kanal operasional yang disepakati.
 - Cegah eksekusi tumpang tindih dan duplikasi pada deployment multi-server. Job harus aman diulang dan tidak boleh memperoleh hak domain lebih luas daripada aksi yang diwakilinya.
 
@@ -73,17 +72,18 @@ Bagian ini berlaku saat **mode terintegrasi Ecopa** aktif. Pada mode uji lokal b
 
 ## 6. SPA dan tabbed page
 
-- Halaman interaktif memakai shell aplikasi bersama: autentikasi, workspace/entity aktif, navigasi, state loading/error, dan permission efektif. Saat workspace berganti, kosongkan state yang terikat pada workspace lama dan muat ulang data serta hak akses untuk workspace baru.
-- Settings dapat menggunakan section/tab dalam satu halaman seperti Accounting. Tab User & Roles, Role Management, Integration, dan Cron hanya ditampilkan jika relevan dan berizin. Tab aktif boleh dicerminkan dalam URL agar deep link, refresh, back/forward browser, dan kembali dari halaman detail tetap masuk ke konteks yang tepat.
-- Perubahan tab tidak boleh mencampur data dua workspace atau meninggalkan form yang dapat disimpan terhadap workspace lama. Definisikan perilaku untuk draft belum disimpan, pemuatan lambat, serta tab yang aksesnya dicabut saat sesi berjalan.
+- Halaman interaktif memakai shell aplikasi bersama: autentikasi, scope data aktif bila ada, navigasi, state loading/error, dan permission efektif. Saat scope berganti, kosongkan state yang terikat pada scope lama dan muat ulang data serta hak akses.
+- Settings dapat menggunakan section/tab dalam satu halaman. Tab User & Roles, Role Management, Integration, dan Cron hanya ditampilkan jika relevan dan berizin. Tab aktif boleh dicerminkan dalam URL agar deep link, refresh, back/forward browser, dan kembali dari halaman detail tetap masuk ke konteks yang tepat.
+- Perubahan tab tidak boleh mencampur data dua scope atau meninggalkan form yang dapat disimpan terhadap scope lama. Definisikan perilaku untuk draft belum disimpan, pemuatan lambat, serta tab yang aksesnya dicabut saat sesi berjalan.
 - Detail dan edit objek yang sama menggunakan satu form utama dengan mode edit/read-only berdasar permission dan status record. Endpoint tetap memeriksa setiap mutasi. Modal dipakai untuk konfirmasi atau pilihan terbatas, bukan editor paralel.
 - Sediakan state tab yang aksesibel: label, fokus keyboard, penanda aktif, dan relasi tab-panel yang benar. Navigasi tetap dapat digunakan ketika JavaScript lambat atau API sedang gagal, sejauh arsitektur aplikasi mengizinkan.
+- **Indikator state aktif pada kontrol daftar (wajib bila halaman memakai filter):** setiap kontrol filter pada halaman/tabel daftar menampilkan penanda yang jelas saat filter sedang aktif, misalnya titik merah kecil di pojok kanan atas ikon filter atau badge jumlah filter aktif, sehingga pengguna segera tahu daftar sedang terfilter. Penanda memiliki `aria-label`/teks alternatif yang menyebut keadaan atau jumlah filter aktif (misal "Filter, 2 aktif"), hilang ketika filter direset, dan tidak menggantikan otorisasi atau scope data. Terapkan prinsip yang sama pada sort atau pencarian lanjutan yang mengubah hasil daftar bila ada. **Tetapkan satu gaya penanda sebagai standar aplikasi** (titik merah atau badge angka) agar konsisten antar halaman. Akunta sudah memakai pola ini — titik merah `journal-filter-active-dot` pada `apps/accounting-web/src/routes/journals/+page.svelte` dan badge jumlah pada `akun/+page.svelte`; samakan menjadi satu gaya untuk app baru.
 
 ### 6.1 Pemulihan preferensi dan riwayat kerja setelah browser ditutup
 
-- Simpan pilihan tampilan yang memang merupakan preferensi user, termasuk light/dark mode dan tema/warna workspace bila tersedia. Perubahan berlaku segera; saat browser dibuka lagi pada hari berikutnya, pilihan terakhir diterapkan sebelum atau saat shell aplikasi tampil agar tidak berkedip ke tema default. Accounting Web saat ini menyimpan color mode di `localStorage` dan tema warna berdasarkan workspace.
+- Simpan pilihan tampilan yang memang merupakan preferensi user, termasuk light/dark mode dan tema/warna workspace bila tersedia. Perubahan berlaku segera; saat browser dibuka lagi pada hari berikutnya, pilihan terakhir diterapkan sebelum atau saat shell aplikasi tampil agar tidak berkedip ke tema default.
 - Simpan daftar tab aplikasi yang masih terbuka, urutannya, dan tab aktif saat user membuka, berpindah, menutup, atau mengubah tab. Setelah browser ditutup dan dibuka lagi pada perangkat/browser yang sama, pulihkan tab yang masih terbuka beserta tab aktif terakhir. Tab yang sengaja ditutup tidak muncul kembali. Riwayat ini adalah state navigasi, bukan salinan isi halaman.
-- Pisahkan riwayat tab menurut child app, user, dan workspace/entity. Saat login sebagai user lain atau berpindah workspace, jangan tampilkan tab maupun data milik scope sebelumnya. Preferensi global seperti dark mode boleh tetap berlaku pada browser yang sama; preferensi khusus workspace mengikuti workspace terkait.
+- Pisahkan riwayat tab menurut aplikasi, user, dan workspace/entity bila ada. Saat login sebagai user lain atau berpindah workspace, jangan tampilkan tab maupun data milik scope sebelumnya. Preferensi global seperti dark mode boleh tetap berlaku pada browser yang sama; preferensi khusus workspace mengikuti workspace terkait.
 - Setelah login dan sebelum memulihkan tiap tab, validasi ulang sesi, assignment, permission efektif, keberadaan route/record, serta scope entity. Buang tab yang sudah tidak boleh diakses atau tidak valid. Jika tab aktif terakhir tidak dapat dipulihkan, buka tab lain yang valid atau halaman awal yang diizinkan. Jangan memulihkan data rahasia, respons API, token, isi form sensitif, atau draft transaksi dari penyimpanan browser hanya untuk membuka tab.
 - Settings dapat mengingat section/tab terakhir bila user kembali ke Settings, selama izin section tersebut masih berlaku. Deep link yang secara eksplisit dipilih user tetap diutamakan atas riwayat lokal. Untuk form dengan perubahan belum disimpan, tampilkan peringatan saat menutup tab/navigasi; penyimpanan draft lintas sesi memerlukan aturan domain dan keamanan tersendiri.
 - Jika penyimpanan browser tidak tersedia, penuh, atau korup, aplikasi tetap dapat digunakan dengan preferensi default dan tab awal yang aman. Jangan menganggap `localStorage` sebagai sumber otorisasi ataupun sinkronisasi antar perangkat; kebutuhan lintas perangkat harus diputuskan dan dirancang terpisah.

@@ -19,6 +19,8 @@
   import { taxProvisionApi, type TaxProvision } from '$lib/api/tax-provision.js';
   import TaxProvisionPanel from '$lib/components/fiscal/TaxProvisionPanel.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
+  import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
+  import { readOnlyNotice } from '$lib/utils/permission-feedback.js';
   import { formatDate, formatDateTime } from '$lib/utils/date.js';
   import { period } from '$lib/stores/period.svelte.js';
 
@@ -586,14 +588,15 @@
                       : 'color: rgb(84 122 89) !important'}
                     >{formatRupiah(row.positive_adjustment)}</span
                   >
-                  <button
-                    type="button"
-                    class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
-                    title="Tambah koreksi positif"
-                    disabled={!canManage}
-                    aria-label="Tambah koreksi positif untuk {row.name}"
-                    onclick={() => openQuickAdjustment(row.account_id, 'positive')}>+</button
-                  >
+                  {#if canManage}
+                    <button
+                      type="button"
+                      class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
+                      title="Tambah koreksi positif"
+                      aria-label="Tambah koreksi positif untuk {row.name}"
+                      onclick={() => openQuickAdjustment(row.account_id, 'positive')}>+</button
+                    >
+                  {/if}
                 </td>
                 <td class="group px-4 py-3 text-right font-mono">
                   <span
@@ -603,14 +606,15 @@
                       : 'color: rgb(124 89 103) !important'}
                     >{formatRupiah(row.negative_adjustment)}</span
                   >
-                  <button
-                    type="button"
-                    class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
-                    title="Tambah koreksi negatif"
-                    disabled={!canManage}
-                    aria-label="Tambah koreksi negatif untuk {row.name}"
-                    onclick={() => openQuickAdjustment(row.account_id, 'negative')}>+</button
-                  >
+                  {#if canManage}
+                    <button
+                      type="button"
+                      class="ml-1 rounded px-1.5 font-sans text-sm font-bold text-primary opacity-0 transition group-hover:opacity-100 focus:opacity-100 hover:bg-primary-light"
+                      title="Tambah koreksi negatif"
+                      aria-label="Tambah koreksi negatif untuk {row.name}"
+                      onclick={() => openQuickAdjustment(row.account_id, 'negative')}>+</button
+                    >
+                  {/if}
                 </td>
                 <td class="px-4 py-3 text-right font-mono font-semibold">
                   {formatRupiah(row.final_amount)}
@@ -701,7 +705,7 @@
                     : `Dibuat oleh ${item.created_by_name ?? 'pengguna'}`}</span
                 ></td
               ><td class="px-4 py-3 text-right"
-                >{#if item.status === 'approved'}<button
+                >{#if item.status === 'approved' || !canManage}<button
                     type="button"
                     class="mr-2 text-xs font-semibold text-primary"
                     onclick={() => openEdit(item)}>Lihat Detail</button
@@ -786,6 +790,13 @@
               pada {formatDateTime(editing.approved_at)}{/if}.
           {/if}
         </div>
+      {/if}
+      {#if editing && editing.status !== 'approved' && !canManage}
+        <PermissionNotice
+          class="mt-3"
+          testId="fiscal-adjustment-read-only-notice"
+          message={readOnlyNotice('mengedit koreksi Fiskal')}
+        />
       {/if}
       {#if formError}
         <div class="mt-4 rounded-md border border-danger bg-danger-light p-3 text-sm text-danger">

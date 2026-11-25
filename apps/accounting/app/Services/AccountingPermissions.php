@@ -10,6 +10,7 @@ use Akunta\Rbac\Models\User;
 use Akunta\Rbac\Models\UserAppAssignment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class AccountingPermissions
 {
@@ -49,7 +50,32 @@ class AccountingPermissions
 
     public function roleDefaults(Entity $entity, string $code): array
     {
-        return $this->customRoles($entity)[$code]['defaults'] ?? $this->defaults($code);
+        if (isset($this->customRoles($entity)[$code])) {
+            return $this->customRoles($entity)[$code]['defaults'];
+        }
+        if ($code === 'accountant') {
+            return $this->defaults('operator');
+        }
+
+        $codes = $this->defaults($code);
+        if (! in_array($code, config('accounting_permissions.read_roles'), true)) {
+            return $codes;
+        }
+
+        $legacy = DB::table('role_permissions')
+            ->join('roles', 'roles.id', '=', 'role_permissions.role_id')
+            ->join('permissions', 'permissions.id', '=', 'role_permissions.permission_id')
+            ->join('apps', 'apps.id', '=', 'permissions.app_id')
+            ->where('roles.code', $code)
+            ->where(fn ($query) => $query->whereNull('roles.tenant_id')->orWhere('roles.tenant_id', $entity->tenant_id))
+            ->where('apps.code', 'accounting')
+            ->pluck('permissions.code')->all();
+        $codes = array_merge($codes, $legacy, ['account.read', 'period.read', 'journal.read', 'template.read', 'recurring.read', 'report.read', 'dashboard.read', 'attachment.read', 'automapping.read']);
+        if (in_array($code, ['accountant_assistant', 'tax_officer'], true)) {
+            $codes = array_merge($codes, ['attachment.upload', 'attachment.delete']);
+        }
+
+        return array_values(array_intersect(array_column($this->catalog(), 'code'), array_unique($codes)));
     }
 
     private function assignments(User $user, Entity $entity): Collection
@@ -188,7 +214,9 @@ class AccountingPermissions
             'name' => $name, 'description' => match ($code) {
                 'supervisor' => 'Review, persetujuan, dan pengawasan akuntansi.',
                 'operator' => 'Input dan pengajuan jurnal untuk direview.',
-                default => 'Pemeriksaan data Fiskal dengan akses baca saja.',
+                'inspector' => 'Pemeriksaan data Fiskal dengan akses baca saja.',
+                'accountant' => 'Input dan pengajuan jurnal seperti Operator.',
+                default => 'Role Accounting dengan izin yang dapat diatur per workspace.',
             },
         ])->all();
         $definitions = array_merge($definitions, $this->customRoles($entity));
