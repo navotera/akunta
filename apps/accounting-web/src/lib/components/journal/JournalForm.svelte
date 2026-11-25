@@ -140,6 +140,8 @@
   const canWithdrawReview = $derived(
     submittedUploadLocked && Boolean(onCancelReview) && can('journal.submit'),
   );
+  const resubmitting = $derived(initial?.status === 'rejected');
+  const canPostOrSubmit = $derived(can('journal.submit') || (!resubmitting && can('journal.post')));
   const formLocked = $derived(
     readOnly ||
       (!templateMode &&
@@ -212,6 +214,11 @@
   let handledAttachmentResetToken = $state(0);
   let pendingJournalMode = $state<JournalMode | null>(null);
   let periodError = $state<string | null>(null);
+  let errorBanner = $state<HTMLDivElement>();
+
+  $effect(() => {
+    if (resubmitting && serverErrors?.submit) errorBanner?.focus();
+  });
 
   $effect(() => {
     if (attachmentResetToken === handledAttachmentResetToken) return;
@@ -730,6 +737,9 @@
         <div
           class="xl:col-span-12 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger"
           data-testid="form-banner"
+          bind:this={errorBanner}
+          tabindex="-1"
+          role="alert"
         >
           {attachmentError ??
             fieldError('number') ??
@@ -745,6 +755,9 @@
         >
           <span class="font-semibold">Catatan review:</span>
           {initial.review_note}
+          {#if resubmitting && can('journal.submit') && !readOnly}
+            <p class="mt-1">Setelah memperbarui data atau lampiran, pilih Ajukan Kembali.</p>
+          {/if}
         </div>
       {/if}
 
@@ -1202,7 +1215,7 @@
         >
           Revisi
         </button>
-      {:else if !readOnly && !templateMode && allowPosting && (initial || can('journal.create')) && (can('journal.post') || can('journal.submit'))}
+      {:else if !readOnly && !templateMode && allowPosting && (initial || can('journal.create')) && canPostOrSubmit}
         <button
           type="button"
           onclick={handlePosting}
@@ -1211,7 +1224,11 @@
           class="rounded-md bg-[#0F172A] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50 disabled:cursor-not-allowed"
           data-testid="posting-jurnal"
         >
-          {!can('journal.post') && can('journal.submit') ? 'Ajukan Review' : 'Posting Jurnal'}
+          {resubmitting
+            ? 'Ajukan Kembali'
+            : can('journal.post')
+              ? 'Posting Jurnal'
+              : 'Ajukan Review'}
         </button>
       {/if}
       {#if canWithdrawReview}
@@ -1226,7 +1243,7 @@
           Batalkan Review
         </button>
       {/if}
-      {#if (templateMode || !readOnly) && onDelete && can(templateMode ? 'template.delete' : 'journal.delete') && (templateMode ? !!template : ['draft', 'posted'].includes(initial?.status ?? ''))}
+      {#if (templateMode || !readOnly) && onDelete && can(templateMode ? 'template.delete' : 'journal.delete') && (templateMode ? !!template : ['draft', 'rejected', 'posted'].includes(initial?.status ?? ''))}
         <button
           type="button"
           onclick={() => void onDelete?.()}

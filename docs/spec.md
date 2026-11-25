@@ -844,9 +844,17 @@ sebagai Diajukan, `submitted` sebagai Di review, `posted` sebagai Tersimpan, dan
 `rejected` sebagai Perlu Revisi. Jurnal Tersimpan terkunci bagi accountant;
 Supervisor/admin dapat melakukan koreksi melalui jalur update yang terotorisasi.
 
-Jurnal draft yang dihapus operator/accountant tidak langsung dihapus permanen.
-Jurnal dipindahkan ke tab `Trashed`, tetap dapat dipulihkan sebagai `draft`, dan
-dihapus permanen oleh scheduler setelah 30 hari sejak `deleted_at`.
+Operator dapat memilih **Ajukan Kembali** dari form jurnal Perlu Revisi. Jurnal
+kembali ke Di review (`submitted`) bila akun, nilai, metadata jurnal, atau
+lampirannya berubah sejak permintaan revisi terakhir. Sistem memeriksa izin
+`journal.submit`, periode terbuka, kelayakan akun, dan keseimbangan jurnal saat
+pengajuan. Catatan revisi tetap tersedia di jejak audit.
+
+Pengguna dengan izin `journal.delete` dapat menghapus jurnal Draft atau Perlu
+Revisi pada periode terbuka. Jurnal dipindahkan ke tab `Trashed`, dapat dipulihkan
+sebagai `draft`, dan dihapus permanen oleh scheduler setelah 30 hari sejak
+`deleted_at`. Pengajuan ulang dan penghapusan berlaku per jurnal dalam buku yang
+dipilih. Untuk jurnal Di review, batalkan pengajuan terlebih dahulu sesuai izin.
 
 ### 8.7.1 Pemetaan entitas sumber Auto Mapping
 

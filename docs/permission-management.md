@@ -141,6 +141,10 @@ role lain yang juga dipegang user tersebut.
 
 ## Batas yang tetap berlaku
 
+- Pengajuan ulang jurnal Perlu Revisi memakai `journal.submit`, dan perubahan
+  sebelum pengajuan memakai `journal.update` serta izin lampiran yang relevan.
+  `journal.delete` mengizinkan pemindahan jurnal Draft atau Perlu Revisi ke
+  Trashed pada periode terbuka. Kedua operasi memakai grant workspace aktif.
 - Jurnal Tersimpan tetap read-only untuk Operator. Grant journal.update tidak
   melewati pemeriksaan status dan level Supervisor/admin pada record Tersimpan.
   Pengeditan jurnal Di review memerlukan journal.review dan journal.update.

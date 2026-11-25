@@ -123,7 +123,17 @@ class AttachmentController extends Controller
                 $metadata = null;
             }
 
-            [$attachment] = DB::transaction(function () use ($data, $entity, $pairedJournal, $filename, $mimeType, $size, $disk, $path, $checksum, $metadata): array {
+            $attachment = DB::transaction(function () use ($request, $data, $entity, $pairedJournal, $filename, $mimeType, $size, $disk, $path, $checksum, $metadata): Attachment {
+                $parentIds = [$data['attachable_id']];
+                if ($pairedJournal) {
+                    $parentIds[] = $pairedJournal->id;
+                    Journal::where('entity_id', $entity->id)->whereIn('id', $parentIds)
+                        ->orderBy('id')->lockForUpdate()->get();
+                }
+                foreach ($parentIds as $parentId) {
+                    $this->authorizeParent($request, $entity->id, $data['attachable_type'], $parentId, true, true);
+                }
+
                 $attributes = [
                     'attachable_type' => $data['attachable_type'],
                     'entity_id' => $entity->id,
@@ -149,7 +159,14 @@ class AttachmentController extends Controller
                     ]);
                 }
 
-                return [$attachment];
+                if ($attachment->attachable_type === Journal::class) {
+                    $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
+                    if ($pairedJournal) {
+                        $this->auditAttachment($pairedJournal->id, $entity->id, 'Lampiran dipetakan dari jurnal pasangan');
+                    }
+                }
+
+                return $attachment;
             });
         } catch (Throwable $exception) {
             if ($storedPaths !== []) {
@@ -157,13 +174,6 @@ class AttachmentController extends Controller
             }
 
             throw $exception;
-        }
-
-        if ($attachment->attachable_type === Journal::class) {
-            $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
-            if ($pairedJournal) {
-                $this->auditAttachment($pairedJournal->id, $entity->id, 'Lampiran dipetakan dari jurnal pasangan');
-            }
         }
 
         return response()->json(['data' => $this->serialize($attachment)], 201);
@@ -186,12 +196,15 @@ class AttachmentController extends Controller
     {
         $entity = $this->resolveEntity($request);
         $attachment = Attachment::where('entity_id', $entity->id)->findOrFail($id);
-        $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true);
-        $attachment->delete();
+        DB::transaction(function () use ($request, $entity, $attachment): void {
+            $this->authorizeParent($request, $entity->id, $attachment->attachable_type, $attachment->attachable_id, true, true);
+            $attachment = Attachment::where('entity_id', $entity->id)->lockForUpdate()->findOrFail($attachment->id);
+            $attachment->delete();
 
-        if ($attachment->attachable_type === Journal::class) {
-            $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
-        }
+            if ($attachment->attachable_type === Journal::class) {
+                $this->auditAttachment($attachment->attachable_id, $entity->id, 'Lampiran changed/deleted');
+            }
+        });
 
         return response()->json(null, 204);
     }
@@ -256,11 +269,11 @@ class AttachmentController extends Controller
         ], Auth::id());
     }
 
-    private function authorizeParent(Request $request, string $entityId, string $type, string $id, bool $write): void
+    private function authorizeParent(Request $request, string $entityId, string $type, string $id, bool $write, bool $lock = false): void
     {
         $user = $request->user();
         if ($type === Journal::class) {
-            $journal = Journal::query()->where('entity_id', $entityId)->find($id);
+            $journal = Journal::query()->where('entity_id', $entityId)->when($lock, fn ($query) => $query->lockForUpdate())->find($id);
             if (! $journal) {
                 throw ValidationException::withMessages(['attachable_id' => 'Parent journal not found in this tenant.']);
             }
@@ -270,7 +283,7 @@ class AttachmentController extends Controller
             abort_if($isInspector && $journal->journal_mode !== Journal::MODE_FISCAL, 403);
             abort_unless($user?->hasPermission($write ? 'journal.update' : 'journal.read', $entityId), 403);
             if ($write) {
-                $journal->assertPeriodOpen();
+                $journal->assertPeriodOpen($lock);
                 abort_if($journal->status === Journal::STATUS_REVERSED, 403, 'Lampiran jurnal yang sudah dibalik bersifat read-only.');
                 if ($journal->status === Journal::STATUS_POSTED) {
                     abort_unless($permissions->canManage($user, $entity)

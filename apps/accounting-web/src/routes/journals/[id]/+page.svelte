@@ -13,6 +13,7 @@
   import { templateApi, type JournalTemplateSummary } from '$lib/api/template.js';
   import { ApiError } from '$lib/api/client.js';
   import { formatMessageDates } from '$lib/utils/date.js';
+  import Decimal from 'decimal.js';
 
   const JOURNAL_ATTACHABLE_TYPE = 'App\\Models\\Journal';
 
@@ -44,6 +45,7 @@
   let attachmentResetToken = $state(0);
   let serverErrors = $state<Record<string, string[]> | null>(null);
   let serverMessage = $state<string | null>(null);
+  const uploadedFiles = new WeakSet<File>();
   let accountsRequest = 0;
   let isSupervisor = $derived(
     Boolean(
@@ -98,6 +100,16 @@
       (deletionAccountId ? !canReplaceAccount : detail?.status === 'submitted' && !reviewMode),
   );
   const canManageJournalAttachments = $derived(!formReadOnly && can('journal.update'));
+  const canDeleteJournal = $derived(
+    Boolean(
+      detail &&
+      !deletionAccountId &&
+      !journalPeriodClosed &&
+      can('journal.delete') &&
+      (['draft', 'rejected'].includes(detail.status) ||
+        (detail.status === 'posted' && isSupervisor)),
+    ),
+  );
 
   async function refreshAccounts() {
     const request = ++accountsRequest;
@@ -128,11 +140,50 @@
   }
 
   async function uploadAttachments(updated: JournalDetail, files: File[], mirrorToPaired = false) {
-    await Promise.all(
-      files.map((file) =>
-        attachmentApi.upload(JOURNAL_ATTACHABLE_TYPE, updated.id, file, null, null, mirrorToPaired),
-      ),
-    );
+    for (const file of files) {
+      if (uploadedFiles.has(file)) continue;
+      const attachment = await attachmentApi.upload(
+        JOURNAL_ATTACHABLE_TYPE,
+        updated.id,
+        file,
+        null,
+        null,
+        mirrorToPaired,
+      );
+      uploadedFiles.add(file);
+      if (can('attachment.read')) savedAttachments = [attachment, ...savedAttachments];
+    }
+  }
+
+  function revisionFormChanged(journal: JournalDetail, payload: FormPayload): boolean {
+    const normalized = (value: string | null) => value?.trim() || null;
+    const fields = [
+      'transaction_code',
+      'journal_mode',
+      'type',
+      'date',
+      'memo',
+      'reference',
+    ] as const;
+    if (fields.some((field) => normalized(journal[field]) !== normalized(payload[field]))) {
+      return true;
+    }
+
+    return (['entries_debit', 'entries_credit'] as const).some((side) => {
+      const saved = journal[side];
+      const edited = payload[side];
+      return (
+        saved.length !== edited.length ||
+        edited.some((row, index) => {
+          const prior = saved[index];
+          return (
+            row.account_id !== prior.account_id ||
+            !new Decimal(row.amount).equals(prior.amount) ||
+            normalized(row.memo) !== normalized(prior.memo)
+          );
+        })
+      );
+    });
   }
 
   async function deleteAttachment(attachment: Attachment): Promise<void> {
@@ -209,29 +260,33 @@
 
   async function postingJurnal(payload: FormPayload) {
     if (!detail) return;
+    const resubmitting = detail.status === 'rejected';
+    if (resubmitting && !can('journal.submit')) return;
     saving = true;
     serverErrors = null;
     serverMessage = null;
     try {
-      const updated = can('journal.update')
-        ? await journalApi.update(detail.id, {
-            transaction_code: payload.transaction_code,
-            journal_mode: payload.journal_mode,
-            type: payload.type,
-            date: payload.date,
-            memo: payload.memo,
-            reference: payload.reference,
-            entries_debit: payload.entries_debit,
-            entries_credit: payload.entries_credit,
-          })
-        : detail;
+      const updated =
+        can('journal.update') && (!resubmitting || revisionFormChanged(detail, payload))
+          ? await journalApi.update(detail.id, {
+              transaction_code: payload.transaction_code,
+              journal_mode: payload.journal_mode,
+              type: payload.type,
+              date: payload.date,
+              memo: payload.memo,
+              reference: payload.reference,
+              entries_debit: payload.entries_debit,
+              entries_credit: payload.entries_credit,
+            })
+          : detail;
       if (can('journal.update'))
         await uploadAttachments(
           updated,
           payload.attachments,
           !detail.input_group_id && payload.journal_mode === 'both',
         );
-      if (!can('journal.post') && can('journal.submit')) {
+      if (resubmitting && payload.attachments.length > 0) attachmentResetToken += 1;
+      if (resubmitting || (!can('journal.post') && can('journal.submit'))) {
         await journalApi.submit(updated.id);
       } else {
         await journalApi.post(updated.id);
@@ -344,17 +399,7 @@
   }
 
   async function deleteJournal() {
-    if (!detail) return;
-    const canDelete = detail.status === 'draft' || (detail.status === 'posted' && isSupervisor);
-    if (!canDelete) return;
-    if (
-      !window.confirm(
-        detail.status === 'posted'
-          ? 'Pindahkan jurnal Tersimpan ke Trashed?'
-          : 'Hapus jurnal draft ini?',
-      )
-    )
-      return;
+    if (!detail || !canDeleteJournal || !window.confirm('Pindahkan jurnal ini ke Trashed?')) return;
 
     saving = true;
     serverErrors = null;
@@ -526,9 +571,7 @@
     !reviewMode
       ? cancelReview
       : undefined}
-    onDelete={!deletionAccountId && !formReadOnly && can('journal.delete')
-      ? deleteJournal
-      : undefined}
+    onDelete={canDeleteJournal ? deleteJournal : undefined}
     onCancel={cancel}
     auditTrail={detail.audit_trail}
   />
