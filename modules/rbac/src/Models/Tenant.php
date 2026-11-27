@@ -25,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $ecopa_organization_id  Ecopa organisation (1:1) that owns this tenant
  * @property string|null $ecopa_organization_slug
  * @property \Illuminate\Support\Carbon|null $ecopa_organization_linked_at
+ * @property \Illuminate\Support\Carbon|null $onboarding_completed_at Workspace wizard finished for this tenant
  */
 class Tenant extends Model
 {
@@ -46,6 +47,7 @@ class Tenant extends Model
         'audit_retention_days' => 'integer',
         'provisioned_at' => 'datetime',
         'ecopa_organization_linked_at' => 'datetime',
+        'onboarding_completed_at' => 'datetime',
     ];
 
     protected $attributes = [

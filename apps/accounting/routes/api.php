@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Spa\FakeDataController;
 use App\Http\Controllers\Api\Spa\FiscalAdjustmentController;
 use App\Http\Controllers\Api\Spa\InstallationOnboardingController;
 use App\Http\Controllers\Api\Spa\OnboardingController;
+use App\Http\Controllers\Api\Spa\OrganizationOnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
 use App\Http\Controllers\Api\Spa\PermissionManagementController;
 use App\Http\Controllers\Api\Spa\PlatformUsageController;
@@ -206,6 +207,8 @@ Route::middleware(['web', 'auth:sanctum', EstablishTenantContext::class, Enforce
         Route::delete('coa-templates/{id}', [CoaTemplateController::class, 'destroy']);
         Route::post('onboarding/bookkeeping-mode', [OnboardingController::class, 'bookkeepingMode']);
         Route::post('onboarding/apply-coa', [OnboardingController::class, 'applyCoa']);
+        Route::get('organization-onboarding/status', [OrganizationOnboardingController::class, 'status']);
+        Route::post('organization-onboarding/workspace', [OrganizationOnboardingController::class, 'workspace']);
         Route::get('installation-onboarding/status', [InstallationOnboardingController::class, 'status']);
         Route::post('installation-onboarding/entity', [InstallationOnboardingController::class, 'entity'])
             ->middleware('platform.owner');

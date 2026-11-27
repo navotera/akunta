@@ -74,6 +74,10 @@ final class EcopaOrganizationLinker
      */
     public function organizationMayEnter(string $organizationId): bool
     {
+        if (config('tenancy.multi_organization')) {
+            return true;
+        }
+
         $linked = Tenant::query()->whereNotNull('ecopa_organization_id');
 
         return ! $linked->exists()
@@ -199,7 +203,12 @@ final class EcopaOrganizationLinker
      */
     public function linkNewTenant(Tenant $tenant, array $organization, string $source): bool
     {
-        if (Tenant::query()->whereNotNull('ecopa_organization_id')->exists()) {
+        // Single-organisation mode links only one tenant; multi-organisation mode links one per organisation.
+        $alreadyLinked = Tenant::query()->whereNotNull('ecopa_organization_id');
+        if (config('tenancy.multi_organization')) {
+            $alreadyLinked->where('ecopa_organization_id', $organization['id']);
+        }
+        if ($alreadyLinked->exists()) {
             return false;
         }
 

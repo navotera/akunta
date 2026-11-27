@@ -14,6 +14,15 @@ return [
 
     'jwt_claim' => env('TENANT_JWT_CLAIM', 'tenant_id'),
 
+    // Ecopa multi-organisation. While false (default) the installation behaves as a
+    // single organisation: once a tenant is linked to an Ecopa organisation, users of
+    // any other organisation are refused at login. Switch it on only after the
+    // two-organisation isolation tests (stage 8) pass AND Ecopa's "multi-organization
+    // ready" switch is on for Akunta. With it on, an Organization Owner of a new
+    // organisation gets the create-workspace wizard and members see "contact your
+    // Organization Owner" until the workspace exists.
+    'multi_organization' => (bool) env('AKUNTA_MULTI_ORGANIZATION', false),
+
     'db_prefix' => env('TENANT_DB_PREFIX', 'tenant_'),
 
     'provisioner' => [

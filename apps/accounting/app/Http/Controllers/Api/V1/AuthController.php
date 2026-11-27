@@ -8,6 +8,7 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
 use App\Http\Controllers\Controller;
 use App\Services\AccountingPermissions;
+use App\Services\OrganizationEntryState;
 use App\Services\EcopaIntegrationService;
 use App\Services\WorkspaceActivityService;
 use App\Support\PlatformOwner;
@@ -184,6 +185,10 @@ class AuthController extends Controller
             'is_sso_admin' => session('ecopa.app_role') === 'admin',
             'is_platform_admin' => $isPlatformOwner,
             'is_admin' => session('ecopa.app_role') === 'admin' || $user->hasPermission('workspace.manage'),
+            // Where this person stands in their organisation's setup (entry flows 1-3); null without an Ecopa organisation.
+            'organization' => ($entry = app(OrganizationEntryState::class)->for($user))['organization'] === null
+                ? null
+                : ['id' => $entry['organization']['id'], 'name' => $entry['organization']['name'], 'state' => $entry['state']],
             'is_impersonating' => session()->has('impersonator_id'),
             'impersonator_id' => session('impersonator_id'),
         ];

@@ -22,6 +22,9 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EstablishTenantContext
 {
+    /** Paths open to a session whose organisation has no tenant yet. */
+    private const TENANTLESS_PATHS = ['api/v1/me', 'api/v1/spa/organization-onboarding/*'];
+
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
@@ -33,6 +36,20 @@ class EstablishTenantContext
         if ($tenantId === null && DB::table('tenants')->doesntExist()) {
             // A fresh installation has no tenant yet (installation wizard): nothing to leak.
             return $next($request);
+        }
+        // An organisation without a tenant yet (flows 2 and 3 of the entry flows): the
+        // session may only ask where it stands and, as an Organization Owner, create the
+        // workspace. Everything runs in a context that matches no row.
+        if ($tenantId === null
+            && RequestTenant::sessionOrganizationId() !== null
+            && $request->is(...self::TENANTLESS_PATHS)) {
+            TenantContext::set(RequestTenant::NO_TENANT);
+
+            try {
+                return $next($request);
+            } finally {
+                TenantContext::clear();
+            }
         }
         if ($tenantId === null) {
             return response()->json([

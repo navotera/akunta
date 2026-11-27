@@ -191,6 +191,11 @@ role lain yang juga dipegang user tersebut.
   workspace dengan template tidak melewati izin ini. Template milik tenant:
   organisasi lain tidak dapat melihat atau mengubahnya. Branding aplikasi (nama dan
   logo) hanya untuk Platform Owner (`platform.owner`, bukan permission katalog).
+- Wizard workspace organisasi (2026-11-27, tahap 7): `organization-onboarding/workspace`
+  hanya untuk admin Ecopa organisasi itu (bukan permission katalog) dan hanya selama
+  organisasi belum punya tenant; Organization Owner menjadi admin tenant barunya saja
+  lewat assignment app-wide ber-tenant. Anggota tidak mendapat wizard. Tidak ada kode
+  permission baru dan tidak ada perubahan default role.
 
 ## Penyimpanan dan kontrak
 

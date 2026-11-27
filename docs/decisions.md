@@ -1848,6 +1848,39 @@ Aturan penegakan:
     WebP maksimum 1 MB (SVG ditolak). Nama dan logo entitas, serta warna tema
     workspace, tetap data workspace milik OO (endpoint workspace yang sudah ada) —
     keputusan pemilik 2026-11-27, jadi A4 pada inventaris tahap 2 tetap OO.
+- *Diimplementasikan 2026-11-27 (tahap 7 prompt agent):* tiga alur masuk per
+  organisasi (kontrak Ecopa "Tenant onboarding flows"), diputuskan dari klaim
+  `organization` bertanda tangan di session, bukan dari e-mail atau pilihan bebas.
+  Status ada di `OrganizationEntryState` dan dikirim di `/api/v1/me` sebagai
+  `organization.state`:
+  - `ready`: workspace organisasi siap dan orang itu dapat bekerja (alur 1 untuk PO
+    dan user lama; alur 3 untuk anggota yang punya role).
+  - `needs_workspace` / `needs_setup`: admin (Organization Owner) organisasi tanpa
+    tenant, atau tenant yang wizard-nya belum selesai: diarahkan ke `/onboarding`
+    (alur 2). Anggota **tidak pernah** melihat wizard.
+  - `workspace_missing`: "Workspace organisasi Anda belum disiapkan. Hubungi
+    Organization Owner." (anggota; juga saat wizard OO belum selesai).
+  - `no_role`: "Hubungi Organization Owner untuk mendapatkan peran." (workspace siap,
+    anggota belum punya role).
+  - Wizard OO: `POST /api/v1/spa/organization-onboarding/workspace` membuat **satu
+    baris tenant** (status aktif, `ecopa_organization_id` dari klaim, tanpa database
+    fisik; `TenantProvisioner` tidak dipanggil), entity pertama, akun dasar, dan
+    assignment app-wide ber-tenant dengan preset `admin`: OO mengelola tenant itu
+    saja. Hanya untuk `app_role = admin`, 409 bila organisasi sudah punya tenant,
+    403 untuk anggota. Langkah berikutnya memakai ulang endpoint onboarding yang ada
+    (mode buku, COA, periode) dan halaman `/onboarding` yang sama; PO tetap memakai
+    endpoint instalasi (`installation-onboarding/*`, PO-only) untuk organisasi default.
+  - Sesi organisasi tanpa tenant memakai konteks `RequestTenant::NO_TENANT` yang
+    tidak cocok dengan baris mana pun (bukan konteks kosong yang tidak menyaring) dan
+    hanya boleh memanggil `/me` dan `organization-onboarding/*`; selainnya 403.
+  - Onboarding kini status per tenant (`tenants.onboarding_completed_at`, migration
+    `2026_11_29_000100`, menyalin flag instalasi lama ke tenant yang sudah ada); flag
+    lama hanya dibaca sebelum ada tenant atau untuk tenant tunggal tanpa nilai sendiri.
+  - Gerbang login: aturan sementara "hanya satu organisasi tertaut" kini dikendalikan
+    `config('tenancy.multi_organization')` (env `AKUNTA_MULTI_ORGANIZATION`, **default
+    false**). Selama false perilaku tidak berubah: organisasi kedua ditolak di login
+    dan wizard OO tidak dapat dipakai. Nyalakan hanya setelah tes isolasi tahap 8
+    lulus dan saklar "multi-organization ready" Ecopa untuk Akunta dinyalakan.
 - Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
   tanpa assignment lokal hanya memperoleh workspace **dalam tenant
   organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar

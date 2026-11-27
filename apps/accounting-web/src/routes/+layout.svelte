@@ -2,6 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
   import AppShell from '$lib/components/shell/AppShell.svelte';
   import Toaster from '$lib/components/ui/Toaster.svelte';
@@ -9,6 +10,7 @@
   import WorkspaceRouter from '$lib/components/shell/WorkspaceRouter.svelte';
   import { palette } from '$lib/stores/palette.svelte.js';
   import { branding } from '$lib/stores/branding.svelte.js';
+  import { MEMBER_MESSAGES } from '$lib/api/organization-onboarding.js';
   import ZeroValueStyler from '$lib/components/ui/ZeroValueStyler.svelte';
 
   let { children } = $props();
@@ -18,6 +20,24 @@
 
   // Routes that render without the app shell (auth, landing).
   const bareRoutes = ['/login', '/', '/onboarding'];
+
+  // Entry flows (stage 7): an organisation owner without a (finished) workspace goes to the
+  // wizard; a member sees whom to contact and never the wizard.
+  const entryState = $derived(auth.user?.organization?.state ?? null);
+  const memberMessage = $derived(
+    entryState === 'workspace_missing' || entryState === 'no_role'
+      ? MEMBER_MESSAGES[entryState]
+      : null,
+  );
+
+  $effect(() => {
+    if (
+      (entryState === 'needs_workspace' || entryState === 'needs_setup') &&
+      $page.url.pathname !== '/onboarding'
+    ) {
+      void goto('/onboarding', { replaceState: true });
+    }
+  });
 
   function hasNoWorkspaceAccess(): boolean {
     return Boolean(auth.user && !auth.user.is_sso_admin && auth.user.tenants.length === 0);
@@ -37,7 +57,7 @@
   <main class="min-h-screen">
     {@render children?.()}
   </main>
-{:else if hasNoWorkspaceAccess()}
+{:else if memberMessage || hasNoWorkspaceAccess()}
   <main class="flex min-h-screen items-center justify-center bg-page-bg px-6 py-12">
     <section class="w-full max-w-lg text-center" aria-labelledby="no-workspace-title">
       <div
@@ -61,9 +81,11 @@
       <h1 id="no-workspace-title" class="mt-6 text-2xl font-semibold text-text-primary">
         Anda belum terhubung ke workspace
       </h1>
-      <p class="mx-auto mt-3 max-w-md text-sm leading-6 text-text-muted">
-        Akun Anda belum terhubung ke entitas atau workspace mana pun. Silakan hubungi Super Admin
-        untuk informasi lebih lanjut.
+      <p
+        class="mx-auto mt-3 max-w-md text-sm leading-6 text-text-muted"
+        data-testid="no-workspace-message"
+      >
+        {memberMessage ?? MEMBER_MESSAGES.no_role}
       </p>
     </section>
   </main>

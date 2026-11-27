@@ -20,6 +20,13 @@ use Illuminate\Support\Facades\DB;
  */
 final class RequestTenant
 {
+    /**
+     * TenantContext value for a signed-in session whose organisation has no tenant
+     * yet. It matches no row, so every scoped query answers "nothing" instead of
+     * running unscoped. (A ULID-shaped value no real tenant can have.)
+     */
+    public const NO_TENANT = '00000000000000000000000000';
+
     /** The Ecopa organisation id signed into the current session, if any. */
     public static function sessionOrganizationId(): ?string
     {

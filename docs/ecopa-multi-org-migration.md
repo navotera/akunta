@@ -238,6 +238,10 @@ mengikuti tenant user pemiliknya atau satu-satunya tenant. Bukti: test
 `tests/Feature/Tenancy/TenantColumnMigrationTest.php` (fixture v1 lengkap,
 migrasi dijalankan dua kali, SQLite dan PostgreSQL disposable).
 
+Stage 7 menambah `tenants.onboarding_completed_at` (migration `2026_11_29_000100`) dan menyalin flag instalasi lama ke
+setiap tenant yang sudah ada, sehingga tenant v1 tetap berstatus selesai setelah organisasi lain ditambahkan. Flag lama tidak
+dihapus.
+
 ## 7. Yang belum ada
 
 - Gladi penuh pada salinan production (tahap 10 prompt agent), termasuk

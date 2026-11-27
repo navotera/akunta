@@ -97,8 +97,10 @@ it('derives the tenant from the signed organisation, and a header can only pick 
 it('refuses a session whose organisation has no tenant instead of serving it unscoped', function () {
     $this->actingAs(($this->admin)('Admin Z'))->withSession(($this->session)('org-zzz'));
 
-    $this->getJson('/api/v1/me')->assertForbidden()->assertJsonPath('message', 'Workspace organisasi Anda belum disiapkan. Hubungi Organization Owner.');
-    $this->withHeader('X-Tenant-Slug', $this->entity_a->id)->getJson('/api/v1/spa/periods')->assertForbidden();
+    // It may ask where it stands (nothing visible, a state to show), but nothing else.
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonCount(0, 'data.tenants')->assertJsonPath('data.organization.state', 'needs_workspace');
+    $this->withHeader('X-Tenant-Slug', $this->entity_a->id)->getJson('/api/v1/spa/periods')
+        ->assertForbidden()->assertJsonPath('message', 'Workspace organisasi Anda belum disiapkan. Hubungi Organization Owner.');
 });
 
 it('lets an application-wide assignment act only inside its own tenant', function () {

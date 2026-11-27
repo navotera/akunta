@@ -261,6 +261,20 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
   e2e `branding-and-coa-templates.spec.ts` (4). Suite Accounting penuh: 705 lulus pada SQLite; test baru dan Tenancy/Auth lulus
   pada PostgreSQL.
 
+## Tahap 7 — alur masuk per organisasi (prompt agent)
+
+**Selesai 2026-11-27.** Rincian: `docs/decisions.md` (butir "Diimplementasikan 2026-11-27 (tahap 7…)").
+- Backend: `OrganizationEntryState`, `OrganizationOnboardingController`, `EstablishTenantContext` (sesi organisasi tanpa
+  tenant), `InstallationOnboardingService` per tenant + migration `2026_11_29_000100`, `organization` di `/me`,
+  flag `tenancy.multi_organization` (default mati) pada `EcopaOrganizationLinker`.
+- Frontend: `/onboarding` memakai ulang wizard yang ada (OO membuat workspace organisasi, PO tetap lewat endpoint instalasi),
+  layout mengarahkan OO ke wizard dan menampilkan pesan Member, dashboard tidak menanyakan status instalasi untuk OO
+  tanpa tenant.
+- Test: `tests/Feature/Tenancy/OrganizationEntryFlowsTest.php` (7: tiga alur, wizard tidak muncul untuk organisasi yang sudah
+  punya tenant, flag mati tetap menolak organisasi kedua, tanpa database fisik, migrasi flag lama), e2e
+  `organization-entry-flows.spec.ts` (3). Suite Accounting penuh: 712 lulus pada SQLite; test terkait lulus pada PostgreSQL.
+- Belum: tes isolasi dua organisasi menyeluruh (tahap 8) sebelum `AKUNTA_MULTI_ORGANIZATION` boleh dinyalakan.
+
 ## Acceptance criteria
 
 1. Platform Owner dan user lama melihat data yang sudah ada tanpa wizard (alur 1).
