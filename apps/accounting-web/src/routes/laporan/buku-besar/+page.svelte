@@ -16,15 +16,18 @@
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
-  function firstOfMonth(): string {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  // Local calendar date as YYYY-MM-DD. `toISOString()` converts to UTC, which shifts the
+  // date back a day in timezones ahead of UTC (e.g. WIB).
+  function localIso(d: Date): string {
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${month}-${day}`;
   }
 
   let accounts = $state<AccountOption[]>([]);
   let accountId = $state('');
-  let periodStart = $state(firstOfMonth());
-  let periodEnd = $state(new Date().toISOString().slice(0, 10));
+  let periodStart = $state(localIso(new Date(new Date().getFullYear(), 0, 1)));
+  let periodEnd = $state(localIso(new Date()));
   let report = $state<GeneralLedgerData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -363,7 +366,7 @@
       </thead>
       <tbody>
         <tr class="bg-page-bg/60 italic">
-          <td class="px-4 py-2" colspan="8">Saldo Awal ({report.period_start})</td>
+          <td class="px-4 py-2" colspan="8">Saldo Awal ({formatDate(report.period_start)})</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.opening)}</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.opening)}</td>
         </tr>
@@ -440,7 +443,7 @@
       </thead>
       <tbody>
         <tr class="bg-page-bg/60 italic">
-          <td class="px-4 py-2" colspan="6">Saldo Awal ({report.period_start})</td>
+          <td class="px-4 py-2" colspan="6">Saldo Awal ({formatDate(report.period_start)})</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.opening)}</td>
         </tr>
         {#each report.lines as l (l.line_id)}
