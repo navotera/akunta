@@ -1917,6 +1917,40 @@ Aturan penegakan:
     tahap 8 sebagai saklar rilis; ia baru dinyalakan pada tahap 10 bersama saklar "multi-organization
     ready" Ecopa. Test pengganti: `OrganizationEntryFlowsTest` (flag mati menolak organisasi kedua,
     flag nyala mengizinkan dan mengisolasi) dan sapuan di atas.
+- *Diimplementasikan 2026-11-27 (tahap 9 prompt agent, Row-Level Security):* lapisan ketiga
+  isolasi, **opt-in dan mati secara default**. Runbook: `docs/row-level-security.md`.
+  - Dua saklar independen: `php artisan akunta:rls enable|disable|status [--dry-run]` (policy
+    di 30 tabel milik tenant: `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `SELECT/INSERT/UPDATE/DELETE`
+    berdasarkan `tenant_id = app.tenant_id`) dan `AKUNTA_RLS=true` (aplikasi menyalin `TenantContext`
+    ke setting database). Kebijakan tanpa lapisan aplikasi = nol baris; sebaliknya = tanpa efek.
+    Urutan: database uji → staging → production **hanya atas perintah pemilik**; rollback:
+    `AKUNTA_RLS=false` lalu `akunta:rls disable`.
+  - Konteks ditulis sebagai setting **transaksi-lokal** (`set_config(..., true)`) oleh
+    `TenantAwarePostgresConnection`; statement di luar transaksi dibungkus transaksi sendiri.
+    Konteks tidak pernah menjadi setting sesi, sehingga koneksi persisten, worker antrean, dan
+    PgBouncer mode transaksi tidak membawa tenant satu pekerjaan ke pekerjaan lain. Biaya: beberapa
+    round-trip tambahan per statement di luar transaksi.
+  - Tanpa konteks = tanpa baris. Hanya dua pintu lintas tenant, keduanya hanya-baca dan eksplisit
+    di kode: `TenantContext::platformRead()` (pencarian tingkat instalasi sebelum konteks ada) dan
+    `TenantContext::without()` (agregat instalasi). Semua penulisan milik satu tenant. Policy
+    `roles` mengizinkan preset global (`tenant_id` NULL); `audit_log` append-only (tanpa policy
+    `UPDATE`/`DELETE`, entri tingkat platform boleh ditambahkan).
+  - Role database: aplikasi dan queue memakai role non-owner tanpa `BYPASSRLS`; migration dan
+    maintenance (`akunta:rls`, `ecopa:link-organization`, `ecopa:migration-report`) memakai role owner.
+  - Kode yang disesuaikan agar tidak bergantung pada bypass: `ResolvesTenant`, `TenantOwnership`,
+    `ApiTokenAuth`, `UserAccessRevoker`, `EcopaWebhookController`, `EcopaOrganizationLinker`,
+    `InstallationOnboardingController`, `EcopaController`.
+  - **Tidak didukung saat RLS menyala** (langkah owner dengan role owner): penautan data
+    pra-multi-organisasi saat login Platform Owner (`linkLegacyTenants`, kini dilewati; gunakan
+    `ecopa:link-organization` sebelum RLS menyala) dan grant webhook tanpa tenant pada instalasi
+    baru yang belum punya tenant.
+  - Bukti: `RowLevelSecurityTest` (PostgreSQL, role non-owner: nol baris tanpa konteks, tiap tenant
+    hanya barisnya di setiap tabel, penulisan lintas tenant ditolak, mode baca platform tidak
+    menulis, tidak ada konteks yang bocor ke pekerjaan berikutnya, preset role dan audit append-only,
+    perintah terjadwal di bawah role non-owner) dan **mode diagnostik seluruh suite**
+    (`AKUNTA_RLS_TEST_HTTP=1`: setiap request HTTP test berjalan sebagai role non-owner dengan
+    policy terpasang, termasuk dua sapuan tahap 8). Test yang memang tidak berlaku saat RLS menyala
+    dilewati dengan alasan tertulis (`skip(fn () => rlsHttpMode(), …)`).
 - Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
   tanpa assignment lokal hanya memperoleh workspace **dalam tenant
   organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar

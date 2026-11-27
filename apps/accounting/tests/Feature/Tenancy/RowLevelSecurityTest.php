@@ -52,6 +52,9 @@ function rowCounts($test): array
 it('installs, reports, and removes the policies, and says what it would do first', function () {
     expect(TenantRls::tables())->toContain('journals', 'journal_entries', 'user_app_assignments', 'audit_log', 'coa_templates');
 
+    // Start from "off" whatever an earlier test (the diagnostic HTTP mode installs them) left behind.
+    Artisan::call('akunta:rls', ['action' => 'disable']);
+
     Artisan::call('akunta:rls', ['action' => 'enable', '--dry-run' => true]);
     expect(Artisan::output())->toContain('ENABLE ROW LEVEL SECURITY')->toContain('CREATE POLICY rls_select_journals')
         ->and(collect(TenantRls::status())->every(fn ($s) => ! $s['enabled']))->toBeTrue();
@@ -176,4 +179,39 @@ it('treats global preset roles and platform-level audit entries as the policies 
             ->and(DB::table('audit_log')->delete())->toBe(0);
     });
     TenantContext::platformRead(fn () => expect(DB::table('audit_log')->where('id', $id)->exists())->toBeTrue());
+})->skip(fn () => ! TenantRls::supported(), 'PostgreSQL only');
+
+it('runs the scheduled commands as the non-owner role, tenant by tenant, without touching another tenant', function () {
+    becomeAppRole($this);
+    TenantContext::clear();
+
+    $outputs = [];
+    foreach ([
+        ['accounting:run-recurring', ['--date' => '2026-03-01', '--dry-run' => true]],
+        ['accounting:run-auto-reversals', []],
+        ['accounting:prune-trashed-journals', []],
+        ['accounting:prune-webhook-logs', []],
+        ['accounting:prune-cron-logs', []],
+        ['accounting:queue-workspace-purges', []],
+        ['accounting:scheduler-heartbeat', []],
+    ] as [$command, $options]) {
+        $exit = Artisan::call($command, $options);
+        $outputs[$command] = Artisan::output();
+        expect($exit)->toBe(0, "{$command}: {$outputs[$command]}");
+        // Whatever a command does, it leaves no tenant context behind for the next one.
+        expect(TenantContext::id())->toBeNull();
+    }
+
+    // The recurring run visits both organisations, and inside each one the database shows it that
+    // organisation's schedule only (one due schedule each, never the other's).
+    $blocks = collect(explode('Tenant ', $outputs['accounting:run-recurring']))->filter()
+        ->mapWithKeys(fn (string $block): array => [trim(strtok($block, "\n")) => $block]);
+    expect($blocks[$this->A->tenant->id])->toContain($this->A->recurring)->not->toContain($this->B->recurring)
+        ->and($blocks[$this->B->tenant->id])->toContain($this->B->recurring)->not->toContain($this->A->recurring)
+        ->and(substr_count($outputs['accounting:run-recurring'], 'recurring schedule(s) due'))->toBe(2)
+        ->and($outputs['accounting:run-auto-reversals'])->toContain($this->A->tenant->id)->toContain($this->B->tenant->id);
+
+    // A real run under the role also completes for every tenant and writes only inside its own.
+    expect(Artisan::call('accounting:run-recurring', ['--date' => '2026-03-01']))->toBe(0);
+    expect(TenantContext::platformRead(fn () => DB::table('journals')->whereNull('tenant_id')->count()))->toBe(0);
 })->skip(fn () => ! TenantRls::supported(), 'PostgreSQL only');

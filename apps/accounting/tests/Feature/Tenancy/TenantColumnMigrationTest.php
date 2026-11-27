@@ -18,6 +18,7 @@ use App\Models\WebhookSubscription;
 use App\Services\EcopaMigrationReport;
 use App\Support\Tenancy\TenantColumnMigrator;
 use App\Support\Tenancy\TenantOwnership;
+use App\Support\Tenancy\TenantRls;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,6 @@ use Illuminate\Support\Str;
  *
  * The stage-3 migrations are rolled back first so the data really is v1-shaped.
  */
-
 function v1Insert(string $table, array $row): string
 {
     $id = $row['id'] ?? (string) Str::ulid();
@@ -142,6 +142,11 @@ function buildV1Database(): array
 
 function rollBackToV1(): void
 {
+    // Row-Level Security policies depend on the tenant_id columns; they must go before the columns do.
+    if (TenantRls::supported()) {
+        Artisan::call('akunta:rls', ['action' => 'disable']);
+    }
+
     // Roll back exactly the stage-3 migrations (by file), whatever was added after them.
     Artisan::call('migrate:rollback', [
         '--path' => glob(database_path('migrations/2026_11_27_*.php')),
