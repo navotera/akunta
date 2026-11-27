@@ -184,6 +184,13 @@ role lain yang juga dipegang user tersebut.
   organisasi memperoleh role organisasi yang sedang ia masuki saja. Role Management
   hanya menampilkan assignment dan user menunggu milik organisasi aktor. Tidak ada
   kode permission baru dan tidak ada perubahan default role.
+- Template Bagan Akun organisasi (2026-11-27, tahap 6) memakai
+  `settings.coa_template.manage` yang sudah ada: melihat daftar, menyalin, menyimpan
+  dari Bagan Akun workspace, mengganti nama, dan menghapus. Tidak ada default role,
+  sehingga hanya Organization Owner (dan role kustom yang diberi izin ini). Membuat
+  workspace dengan template tidak melewati izin ini. Template milik tenant:
+  organisasi lain tidak dapat melihat atau mengubahnya. Branding aplikasi (nama dan
+  logo) hanya untuk Platform Owner (`platform.owner`, bukan permission katalog).
 
 ## Penyimpanan dan kontrak
 

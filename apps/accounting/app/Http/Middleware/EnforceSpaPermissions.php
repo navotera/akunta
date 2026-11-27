@@ -27,6 +27,7 @@ class EnforceSpaPermissions
         'AutoMappingController' => ['index' => 'automapping.read', 'show' => 'automapping.read', 'entityLinks' => 'automapping.read', 'createEntityLink' => 'automapping.entity_link.manage', 'deleteEntityLink' => 'automapping.entity_link.manage', 'saveRule' => 'automapping.manage', 'reprocess' => 'automapping.manage'],
         'FiscalAdjustmentController' => ['index' => 'fiscal.adjustment.read', 'show' => 'fiscal.adjustment.read', 'store' => 'fiscal.adjustment.manage', 'update' => 'fiscal.adjustment.manage', 'destroy' => 'fiscal.adjustment.manage', 'approve' => 'fiscal.adjustment.approve'],
         'TaxProvisionController' => ['show' => 'fiscal.tax_provision.read', 'preview' => 'fiscal.tax_provision.read', 'store' => 'fiscal.tax_provision.manage'],
+        'CoaTemplateController' => ['index' => 'settings.coa_template.manage', 'store' => 'settings.coa_template.manage', 'update' => 'settings.coa_template.manage', 'destroy' => 'settings.coa_template.manage'],
         'OnboardingController' => ['coaTemplates' => 'account.read', 'applyCoa' => 'settings.coa_template.manage', 'bookkeepingMode' => 'workspace.manage'],
         'FinancialPulseController' => ['show' => 'dashboard.read'],
         'RecentJournalsController' => ['index' => 'journal.read'],

@@ -246,6 +246,21 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
 - Belum (tahap berikutnya): wizard OO dan pesan Member (tahap 7); tes isolasi dua organisasi menyeluruh (tahap 8) yang menjadi
   syarat menghapus aturan sementara "hanya satu organisasi tertaut" di login; RLS (tahap 9).
 
+## Tahap 6 — template COA per organisasi dan branding global (prompt agent)
+
+**Selesai 2026-11-27.** Keputusan pemilik atas tiga pertanyaan (branding, cara mengubah template, izin) dan rinciannya ada di
+`docs/decisions.md` (butir "Diimplementasikan 2026-11-27 (tahap 6…)").
+- Template: migration `2026_11_28_000100` (`coa_templates`, `coa_template_accounts`), model `CoaTemplate`/`CoaTemplateAccount`,
+  `CoaTemplateRegistry` (bawaan + organisasi, kunci `org:{id}`), `ApplyCoaTemplateAction`, `CoaTemplateController`,
+  `coa_template_key` di `POST workspaces`; UI: Settings > Template Bagan Akun, tombol "Simpan sebagai template" di Bagan Akun,
+  pilihan template di form Workspace Baru.
+- Branding: migration `2026_11_28_000200` (`installation_settings`, global), `BrandingController`
+  (`GET /api/auth/branding` publik, `POST /api/v1/spa/platform/branding` PO), UI: Settings > Branding (PO), nama dan logo di shell
+  dan halaman login. Nama/logo entitas tetap milik OO.
+- Test: `OrganizationCoaTemplateSpaApiTest` (6), `BrandingSpaApiTest` (5), endpoint branding di dataset `PlatformOwnerBoundaryTest`,
+  e2e `branding-and-coa-templates.spec.ts` (4). Suite Accounting penuh: 705 lulus pada SQLite; test baru dan Tenancy/Auth lulus
+  pada PostgreSQL.
+
 ## Acceptance criteria
 
 1. Platform Owner dan user lama melihat data yang sudah ada tanpa wizard (alur 1).

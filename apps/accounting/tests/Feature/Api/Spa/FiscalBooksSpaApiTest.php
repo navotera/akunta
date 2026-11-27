@@ -178,8 +178,8 @@ it('keeps both books independent and applies approved corrections only to the fi
         ->assertJsonValidationErrors('status');
 
     expect(JournalEntry::count())->toBe($beforeEntries)
-        ->and($this->internalJournal->entries()->sum('debit'))->toEqual('20000000')
-        ->and($this->fiscalJournal->entries()->sum('debit'))->toEqual('10000000');
+        ->and((float) $this->internalJournal->entries()->sum('debit'))->toEqual(20000000.0)
+        ->and((float) $this->fiscalJournal->entries()->sum('debit'))->toEqual(10000000.0);
 
     $this->actingAs(User::findOrFail($this->taxUserId))
         ->withHeader('X-Tenant-Slug', $this->entity->id)

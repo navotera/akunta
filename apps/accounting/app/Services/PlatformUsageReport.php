@@ -36,7 +36,7 @@ final class PlatformUsageReport
      * allowlist: unknown (and every business) action is not reported.
      */
     public const SETTING_ACTION_PREFIXES = [
-        'workspace.', 'permission.', 'role.', 'auto_mapping.', 'webhook.', 'period.', 'recurring.', 'template.',
+        'workspace.', 'permission.', 'role.', 'auto_mapping.', 'webhook.', 'period.', 'recurring.', 'template.', 'coa_template.',
     ];
 
     private const TENANT_OF_ASSIGNMENT = 'COALESCE(uaa.tenant_id, ent.tenant_id)';

@@ -42,6 +42,7 @@ function platformOwnerEndpoints(): array
     return [
         'scheduler status' => ['GET', '/api/v1/spa/scheduler/status'],
         'platform usage' => ['GET', '/api/v1/spa/platform/usage'],
+        'branding update' => ['POST', '/api/v1/spa/platform/branding'],
         'Ecopa integration status' => ['GET', '/api/v1/spa/ecopa-integration'],
         'Ecopa webhook logs' => ['GET', '/api/v1/spa/ecopa-integration/webhook-logs'],
         'fake data overview' => ['GET', '/api/v1/spa/fake-data'],

@@ -51,6 +51,7 @@ final class TenantOwnership
         'journal_entries' => ['journals', 'journal_id'],
         'journal_template_lines' => ['journal_templates', 'template_id'],
         'webhook_deliveries' => ['webhook_subscriptions', 'subscription_id'],
+        'coa_template_accounts' => ['coa_templates', 'template_id'],
     ];
 
     /**
@@ -58,7 +59,7 @@ final class TenantOwnership
      * entity) and the append-only audit log (platform-level actions have none).
      * api_tokens have no entity at all. Their tenant comes from {@see tenantFor()}.
      */
-    public const RULE_BASED = ['webhook_subscriptions', 'api_tokens', 'audit_log'];
+    public const RULE_BASED = ['webhook_subscriptions', 'api_tokens', 'audit_log', 'coa_templates'];
 
     /** Tables that gain tenant_id in migration stage 3, in dependency order. */
     public static function tables(): array
@@ -104,6 +105,8 @@ final class TenantOwnership
             'webhook_subscriptions' => self::userTenant($attributes['created_by'] ?? null) ?? self::onlyTenant(),
             'api_tokens' => self::userTenant($attributes['user_id'] ?? null) ?? self::onlyTenant(),
             'audit_log' => self::aboutTenant($attributes),
+            // An organisation's own Chart-of-Accounts template: the organisation the request works for.
+            'coa_templates' => TenantContext::id() ?? self::onlyTenant(),
             default => null,
         };
     }

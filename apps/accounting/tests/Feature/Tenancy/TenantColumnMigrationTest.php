@@ -32,7 +32,6 @@ use Illuminate\Support\Str;
  *
  * The stage-3 migrations are rolled back first so the data really is v1-shaped.
  */
-const STAGE_3_MIGRATIONS = 7;
 
 function v1Insert(string $table, array $row): string
 {
@@ -143,7 +142,12 @@ function buildV1Database(): array
 
 function rollBackToV1(): void
 {
-    Artisan::call('migrate:rollback', ['--step' => STAGE_3_MIGRATIONS, '--force' => true]);
+    // Roll back exactly the stage-3 migrations (by file), whatever was added after them.
+    Artisan::call('migrate:rollback', [
+        '--path' => glob(database_path('migrations/2026_11_27_*.php')),
+        '--realpath' => true,
+        '--force' => true,
+    ]);
     TenantOwnership::flush();
     expect(Schema::hasColumn('journals', 'tenant_id'))->toBeFalse()
         ->and(Schema::hasColumn('audit_log', 'tenant_id'))->toBeFalse();

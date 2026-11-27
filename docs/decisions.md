@@ -1822,6 +1822,32 @@ Aturan penegakan:
     heartbeat scheduler adalah entri tingkat instalasi).
   - Aturan sementara "hanya satu organisasi tertaut" pada login tetap berlaku sampai
     tes isolasi tahap 8 lulus.
+- *Diimplementasikan 2026-11-27 (tahap 6 prompt agent; jawaban pemilik atas
+  pertanyaan branding, cara mengubah template, dan izin):*
+  - Template COA bawaan (7 file di `database/seed-data/coa-templates/`) tetap
+    global dan read-only. Template organisasi adalah tabel milik tenant
+    (`coa_templates`, `coa_template_accounts`, tenant-scoped): OO menyalin template
+    bawaan atau template organisasinya sendiri, atau menyimpan Bagan Akun sebuah
+    workspace sebagai template ("snapshot"). Tidak ada editor template baru:
+    perubahan dilakukan di editor Bagan Akun yang sudah ada lalu disimpan ulang
+    sebagai template. Organisasi lain tidak dapat melihat, mengubah, menyalin,
+    memakai, atau menghapusnya (404, bukan 403). Template diterapkan oleh
+    `ApplyCoaTemplateAction` yang sama (kunci `org:{id}`), saat onboarding maupun
+    saat membuat workspace (`coa_template_key` pada `POST workspaces`); template
+    hanya dapat diterapkan ke workspace organisasi yang sama.
+  - Izin: `settings.coa_template.manage` dipakai ulang untuk melihat/menyalin/
+    menyimpan/mengganti nama/menghapus template organisasi (tanpa kode permission
+    baru, default role tidak berubah: tanpa default sehingga OO). Membuat workspace
+    (`workspace.manage`) dengan `coa_template_key` tetap mensyaratkan izin template.
+  - Salinan template membuang kode ganda (kemunculan pertama menang), sama seperti
+    saat template diterapkan; template bawaan `retail` memiliki kode `1110` ganda.
+  - Branding: nama dan logo aplikasi satu untuk instalasi, hanya PO yang mengubah
+    (`POST /api/v1/spa/platform/branding`, `platform.owner`, audit platform
+    `platform.branding_updated`); dibaca publik di `GET /api/auth/branding` untuk
+    halaman login. Disimpan di tabel global `installation_settings`. Logo PNG/JPG/
+    WebP maksimum 1 MB (SVG ditolak). Nama dan logo entitas, serta warna tema
+    workspace, tetap data workspace milik OO (endpoint workspace yang sudah ada) —
+    keputusan pemilik 2026-11-27, jadi A4 pada inventaris tahap 2 tetap OO.
 - Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
   tanpa assignment lokal hanya memperoleh workspace **dalam tenant
   organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar

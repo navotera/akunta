@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\InboundWebhookController;
 use App\Http\Controllers\Api\Spa\AccountController;
 use App\Http\Controllers\Api\Spa\AttachmentController;
 use App\Http\Controllers\Api\Spa\AutoMappingController;
+use App\Http\Controllers\Api\Spa\BrandingController;
+use App\Http\Controllers\Api\Spa\CoaTemplateController;
 use App\Http\Controllers\Api\Spa\DocumentationNoteController;
 use App\Http\Controllers\Api\Spa\EcopaIntegrationController;
 use App\Http\Controllers\Api\Spa\EcopaWebhookLogController;
@@ -44,6 +46,8 @@ use Illuminate\Support\Facades\Route;
 */
 Route::middleware('web')->group(function () {
     Route::get('auth/integration-status', [EcopaIntegrationController::class, 'publicStatus']);
+    // Application name and logo: read before anyone signs in (login page).
+    Route::get('auth/branding', [BrandingController::class, 'show']);
     Route::post('auth/ecopa-registration', [EcopaIntegrationController::class, 'register'])
         ->middleware('throttle:5,1');
     Route::post('auth/ecopa-registration/cancel', [EcopaIntegrationController::class, 'cancel']);
@@ -184,6 +188,8 @@ Route::middleware(['web', 'auth:sanctum', EstablishTenantContext::class, Enforce
             ->middleware('platform.owner');
         Route::get('platform/usage', [PlatformUsageController::class, 'index'])
             ->middleware('platform.owner');
+        Route::post('platform/branding', [BrandingController::class, 'update'])
+            ->middleware('platform.owner');
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
         Route::post('role-management/assignments', [RoleManagementController::class, 'assign']);
@@ -194,6 +200,10 @@ Route::middleware(['web', 'auth:sanctum', EstablishTenantContext::class, Enforce
 
         Route::get('onboarding/status', [OnboardingController::class, 'status']);
         Route::get('onboarding/coa-templates', [OnboardingController::class, 'coaTemplates']);
+        Route::get('coa-templates', [CoaTemplateController::class, 'index']);
+        Route::post('coa-templates', [CoaTemplateController::class, 'store']);
+        Route::patch('coa-templates/{id}', [CoaTemplateController::class, 'update']);
+        Route::delete('coa-templates/{id}', [CoaTemplateController::class, 'destroy']);
         Route::post('onboarding/bookkeeping-mode', [OnboardingController::class, 'bookkeepingMode']);
         Route::post('onboarding/apply-coa', [OnboardingController::class, 'applyCoa']);
         Route::get('installation-onboarding/status', [InstallationOnboardingController::class, 'status']);

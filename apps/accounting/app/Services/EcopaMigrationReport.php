@@ -41,12 +41,13 @@ final class EcopaMigrationReport
         'auto_mapping_rules', 'auto_mapping_raw_data', 'auto_mapping_entity_links',
         'api_tokens', 'webhook_subscriptions', 'webhook_deliveries',
         'audit_log', 'fake_data_records', 'source_ref_registry', 'documentation_notes',
+        'coa_templates', 'coa_template_accounts',
     ];
 
     public const GLOBAL_TABLES = [
         'tenants', 'users', 'apps', 'permissions', 'role_permissions', 'social_accounts',
         'ecopa_config_integration', 'ecopa_webhook_receipts', 'ecopa_webhook_logs',
-        'cron_settings', 'cron_run_logs', 'platform_audit_log',
+        'cron_settings', 'cron_run_logs', 'platform_audit_log', 'installation_settings',
         // Sanctum SPA tokens belong to a (global) user; the organisation is decided
         // per request from the signed identity (stage 5), not from the token.
         'personal_access_tokens',

@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
   import AppShell from '$lib/components/shell/AppShell.svelte';
@@ -7,9 +8,13 @@
   import CommandPalette from '$lib/components/ui/CommandPalette.svelte';
   import WorkspaceRouter from '$lib/components/shell/WorkspaceRouter.svelte';
   import { palette } from '$lib/stores/palette.svelte.js';
+  import { branding } from '$lib/stores/branding.svelte.js';
   import ZeroValueStyler from '$lib/components/ui/ZeroValueStyler.svelte';
 
   let { children } = $props();
+
+  // Application name and logo (public: the login page shows them too).
+  onMount(() => void branding.load());
 
   // Routes that render without the app shell (auth, landing).
   const bareRoutes = ['/login', '/', '/onboarding'];
