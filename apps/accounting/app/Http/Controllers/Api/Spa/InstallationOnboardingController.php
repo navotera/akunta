@@ -10,6 +10,7 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
+use Akunta\Rbac\Support\TenantContext;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\EcopaOrganizationLinker;
@@ -79,39 +80,8 @@ class InstallationOnboardingController extends Controller
                 $this->organizationLinker->linkNewTenant($tenant, $organization, 'installation_onboarding');
             }
 
-            $entity = Entity::query()->create([
-                'tenant_id' => $tenant->id,
-                'name' => $data['name'],
-                'legal_form' => $data['legal_form'] ?? null,
-                'relation_type' => 'independent',
-            ]);
-
-            UserAppAssignment::query()->updateOrCreate([
-                'user_id' => $user->id,
-                'app_id' => $app->id,
-                'entity_id' => null,
-            ], [
-                'role_id' => $role->id,
-                'ecopa_role' => 'admin',
-                'assigned_at' => now(),
-                'revoked_at' => null,
-            ]);
-
-            $this->requiredAccounts->ensure($entity);
-            $this->auditLogger->record(
-                action: 'installation.entity_created',
-                resourceType: Entity::class,
-                resourceId: $entity->id,
-                entityId: $entity->id,
-                metadata: ['tenant_id' => $tenant->id, 'source' => 'integrated_ecopa_wizard'],
-            );
-
-            app(PlatformAuditLogger::class)->record('installation.entity_created', Entity::class, $entity->id, [
-                'tenant_id' => $tenant->id,
-                'name' => $entity->name,
-            ]);
-
-            return $entity;
+            // Everything below belongs to the tenant just created (Row-Level Security checks it).
+            return TenantContext::run($tenant->id, fn (): Entity => $this->createInitialWorkspace($tenant, $user, $role, $app, $data));
         });
 
         return response()->json(['data' => [
@@ -119,6 +89,44 @@ class InstallationOnboardingController extends Controller
             'tenant_id' => $entity->tenant_id,
             'name' => $entity->name,
         ]], 201);
+    }
+
+    /** @param  array{name: string, legal_form?: string|null}  $data */
+    private function createInitialWorkspace(Tenant $tenant, User $user, Role $role, RbacApp $app, array $data): Entity
+    {
+        $entity = Entity::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => $data['name'],
+            'legal_form' => $data['legal_form'] ?? null,
+            'relation_type' => 'independent',
+        ]);
+
+        UserAppAssignment::query()->updateOrCreate([
+            'user_id' => $user->id,
+            'app_id' => $app->id,
+            'entity_id' => null,
+        ], [
+            'role_id' => $role->id,
+            'ecopa_role' => 'admin',
+            'assigned_at' => now(),
+            'revoked_at' => null,
+        ]);
+
+        $this->requiredAccounts->ensure($entity);
+        $this->auditLogger->record(
+            action: 'installation.entity_created',
+            resourceType: Entity::class,
+            resourceId: $entity->id,
+            entityId: $entity->id,
+            metadata: ['tenant_id' => $tenant->id, 'source' => 'integrated_ecopa_wizard'],
+        );
+
+        app(PlatformAuditLogger::class)->record('installation.entity_created', Entity::class, $entity->id, [
+            'tenant_id' => $tenant->id,
+            'name' => $entity->name,
+        ]);
+
+        return $entity;
     }
 
     private function authorizeInstaller(Request $request): void

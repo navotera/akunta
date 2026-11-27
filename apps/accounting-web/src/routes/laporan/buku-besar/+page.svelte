@@ -10,21 +10,16 @@
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { sourceRefApi, type SourceRefRegistryItem } from '$lib/api/source-ref.js';
   import { formatRupiah } from '@akunta/ui';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getStartOfYearIso, getTodayIso } from '$lib/utils/date.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
-  function firstOfMonth(): string {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-  }
-
   let accounts = $state<AccountOption[]>([]);
   let accountId = $state('');
-  let periodStart = $state(firstOfMonth());
-  let periodEnd = $state(new Date().toISOString().slice(0, 10));
+  let periodStart = $state(getStartOfYearIso());
+  let periodEnd = $state(getTodayIso());
   let report = $state<GeneralLedgerData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -363,7 +358,7 @@
       </thead>
       <tbody>
         <tr class="bg-page-bg/60 italic">
-          <td class="px-4 py-2" colspan="8">Saldo Awal ({report.period_start})</td>
+          <td class="px-4 py-2" colspan="8">Saldo Awal ({formatDate(report.period_start)})</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.opening)}</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(fiscal.opening)}</td>
         </tr>
@@ -440,7 +435,7 @@
       </thead>
       <tbody>
         <tr class="bg-page-bg/60 italic">
-          <td class="px-4 py-2" colspan="6">Saldo Awal ({report.period_start})</td>
+          <td class="px-4 py-2" colspan="6">Saldo Awal ({formatDate(report.period_start)})</td>
           <td class="px-4 py-2 text-right font-mono tabnum">{formatRupiah(report.opening)}</td>
         </tr>
         {#each report.lines as l (l.line_id)}

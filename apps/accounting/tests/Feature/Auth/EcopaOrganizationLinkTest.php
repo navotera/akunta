@@ -150,7 +150,7 @@ it('links the legacy tenant to the default organisation on the Platform Owner lo
         ->assertRedirect('https://spa.example.test/dashboard');
     expect(DB::table('audit_log')->where('action', 'tenant.ecopa_organization_linked')->count())->toBe(1)
         ->and(Tenant::query()->count())->toBe(1);
-});
+})->skip(fn () => rlsHttpMode(), 'Adopting legacy data at login is an owner step (ecopa:link-organization); Row-Level Security forbids it to the application role.');
 
 it('keeps legacy users and their roles working after the link', function () {
     $legacy = legacyInstallation();
@@ -164,7 +164,7 @@ it('keeps legacy users and their roles working after the link', function () {
     expect(User::query()->count())->toBe(3)
         ->and($legacy['member']->assignments()->whereNull('revoked_at')->count())->toBe(2)
         ->and($legacy['member']->fresh()->canAccessTenant($legacy['entities'][0]))->toBeTrue();
-});
+})->skip(fn () => rlsHttpMode(), 'Adopting legacy data at login is an owner step (ecopa:link-organization); Row-Level Security forbids it to the application role.');
 
 it('still refuses a workspace the user cannot access when the session is not an Ecopa admin', function () {
     $legacy = legacyInstallation();
@@ -214,7 +214,7 @@ it('refuses users of another organisation once the default organisation is linke
 
     $this->assertGuest();
     expect(User::query()->where('email', 'admin@aba.example.test')->exists())->toBeFalse();
-});
+})->skip(fn () => rlsHttpMode(), 'Adopting legacy data at login is an owner step (ecopa:link-organization); Row-Level Security forbids it to the application role.');
 
 it('refuses to link a second organisation', function () {
     $legacy = legacyInstallation();

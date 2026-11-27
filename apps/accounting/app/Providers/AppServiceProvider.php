@@ -6,6 +6,7 @@ use Akunta\Audit\Models\AuditLog;
 use Akunta\Core\Hooks;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
+use Akunta\Rbac\Support\TenantContext;
 use Akunta\Rbac\Services\PermissionRegistry;
 use App\Models\Account;
 use App\Models\Branch;
@@ -24,11 +25,14 @@ use App\Services\AccountingPermissions;
 use App\Services\CronLogger;
 use App\Services\EcopaIntegrationService;
 use App\Services\WebhookDispatcher;
+use App\Database\TenantAwarePostgresConnection;
 use App\Support\Tenancy\TenantOwnership;
 use App\Tenancy\Contracts\TenantProvisioner;
 use App\Tenancy\PostgresTenantProvisioner;
 use App\Tenancy\SqliteTenantProvisioner;
+use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
@@ -39,6 +43,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // PostgreSQL Row-Level Security (stage 9): a connection that hands the TenantContext to the
+        // database as a transaction-local setting. Inert unless AKUNTA_RLS=true.
+        Connection::resolverFor('pgsql', fn ($connection, $database, $prefix, $config) => new TenantAwarePostgresConnection($connection, $database, $prefix, $config));
+
         $this->app->scoped(AccountingPermissions::class);
         $this->app->singleton(TenantProvisioner::class, function ($app) {
             $driver = $this->resolveProvisionerDriver($app);
@@ -74,6 +82,14 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('accounting.permission', fn (?User $user, string $code, Entity $entity): bool => app(AccountingPermissions::class)->allows($user, $code, $entity));
         Gate::define('permissions.manage', fn (?User $user, Entity $entity): bool => app(AccountingPermissions::class)->canManage($user, $entity));
         $this->registerTenantAttribution();
+        // Keep an open transaction's database-side context in step with the TenantContext.
+        TenantContext::onChange(function (): void {
+            foreach (DB::getConnections() as $connection) {
+                if ($connection instanceof TenantAwarePostgresConnection) {
+                    $connection->applyContext();
+                }
+            }
+        });
         $this->registerWebhookListeners();
         $this->registerCronLogger();
         $this->registerSettingsPermissions();

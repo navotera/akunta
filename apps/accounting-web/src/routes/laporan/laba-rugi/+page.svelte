@@ -12,16 +12,11 @@
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import { sourceFromName } from '$lib/components/reporting/sourceFromName.js';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getStartOfMonthIso, getTodayIso } from '$lib/utils/date.js';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
 
-  function firstOfMonth(): string {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-  }
-
-  let periodStart = $state(firstOfMonth());
-  let periodEnd = $state(new Date().toISOString().slice(0, 10));
+  let periodStart = $state(getStartOfMonthIso());
+  let periodEnd = $state(getTodayIso());
   let report = $state<IncomeStatementData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);

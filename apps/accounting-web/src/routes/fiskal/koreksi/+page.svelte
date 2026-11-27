@@ -21,12 +21,11 @@
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import { readOnlyNotice } from '$lib/utils/permission-feedback.js';
-  import { formatDate, formatDateTime } from '$lib/utils/date.js';
+  import { formatDate, formatDateTime, getStartOfYearIso, getTodayIso } from '$lib/utils/date.js';
   import { period } from '$lib/stores/period.svelte.js';
 
-  const now = new Date();
-  let periodStart = $state(`${now.getFullYear()}-01-01`);
-  let periodEnd = $state(now.toISOString().slice(0, 10));
+  let periodStart = $state(getStartOfYearIso());
+  let periodEnd = $state(getTodayIso());
   let items = $state<FiscalAdjustment[]>([]);
   let accounts = $state<Account[]>([]);
   let internalAccounts = $state<Account[]>([]);
@@ -57,7 +56,7 @@
   let form = $state({
     journal_id: '',
     account_id: '',
-    date: now.toISOString().slice(0, 10),
+    date: getTodayIso(),
     direction: 'positive' as 'positive' | 'negative',
     amount: '',
     reason: '',
@@ -99,7 +98,7 @@
     form = {
       journal_id: '',
       account_id: '',
-      date: now.toISOString().slice(0, 10),
+      date: getTodayIso(),
       direction: 'positive',
       amount: '',
       reason: '',

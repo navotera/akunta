@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\EcopaOrganizationLinker;
 use App\Services\InstallationOnboardingService;
 use App\Support\PlatformOwner;
+use App\Support\Tenancy\TenantRls;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
@@ -51,7 +52,10 @@ class EcopaController extends EcopaAuthController
         $platformAdmin = ($claims['platform_admin'] ?? false) === true;
         $linker = app(EcopaOrganizationLinker::class);
 
-        if ($platformAdmin && $organization !== null) {
+        // Linking pre-multi-organisation data rewrites rows of the tenant it adopts. That is a
+        // one-time owner/maintenance step (`ecopa:link-organization`); with Row-Level Security
+        // on, the application role cannot do it, and by then it has long been done.
+        if ($platformAdmin && $organization !== null && ! TenantRls::enabled()) {
             $linker->linkLegacyTenants($organization, 'platform_admin_login');
         }
 

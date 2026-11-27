@@ -23,6 +23,14 @@ return [
     // Organization Owner" until the workspace exists.
     'multi_organization' => (bool) env('AKUNTA_MULTI_ORGANIZATION', false),
 
+    // PostgreSQL Row-Level Security (stage 9). The policies themselves are installed with
+    // `php artisan akunta:rls enable`; this switch makes the application hand its tenant
+    // context to the database (transaction-local `app.tenant_id`). Leave both off until the
+    // owner enables them in stages: test -> staging -> production.
+    'rls' => [
+        'enabled' => (bool) env('AKUNTA_RLS', false),
+    ],
+
     'db_prefix' => env('TENANT_DB_PREFIX', 'tenant_'),
 
     'provisioner' => [
