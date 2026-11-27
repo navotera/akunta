@@ -30,6 +30,8 @@ export interface AuthUser {
     last_activity_at: string | null;
   }>;
   is_sso_admin: boolean;
+  /** Ecopa Platform Owner (or standalone installation super admin); false while impersonating. */
+  is_platform_admin: boolean;
   is_admin: boolean;
   is_impersonating?: boolean;
   impersonator_id?: string | null;

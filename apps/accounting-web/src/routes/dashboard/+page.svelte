@@ -70,10 +70,10 @@
     try {
       const onboarding = await installationOnboardingApi.status();
       if (!onboarding.completed) {
-        if (auth.user?.is_sso_admin) {
+        if (auth.user?.is_platform_admin) {
           goto('/onboarding', { replaceState: true });
         } else {
-          error = 'Setup Akunta belum diselesaikan. Minta admin Ecopa menyelesaikan onboarding.';
+          error = 'Setup Akunta belum diselesaikan. Minta Platform Owner menyelesaikan onboarding.';
         }
         return;
       }

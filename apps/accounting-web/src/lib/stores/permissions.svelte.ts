@@ -46,6 +46,15 @@ export function workspaceHome(entityId = tenant.id): string {
   return '/settings';
 }
 
+/**
+ * Installation-level settings (scheduler, Ecopa integration, native Fake Data,
+ * workspace purge, installation wizard) belong to the Platform Owner only.
+ * The backend refuses them for everyone else; this only hides the UI.
+ */
+export function isPlatformOwner(): boolean {
+  return Boolean(auth.user?.is_platform_admin);
+}
+
 export function canManagePermissions(): boolean {
   const current = auth.user?.tenants.find((item) => item.id === tenant.id);
   return (

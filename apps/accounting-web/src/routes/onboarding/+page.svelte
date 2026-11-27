@@ -40,9 +40,9 @@
       return;
     }
     if (auth.user?.tenants.length === 0) {
-      if (!auth.user.is_sso_admin) {
+      if (!auth.user.is_platform_admin) {
         error =
-          'Entitas Akunta belum tersedia. Minta admin Ecopa menyelesaikan onboarding pertama.';
+          'Entitas Akunta belum tersedia. Minta Platform Owner menyelesaikan onboarding pertama.';
       }
       step = 0;
       return;
@@ -173,7 +173,7 @@
     </div>
   {/if}
 
-  {#if step === 0 && auth.user?.is_sso_admin}
+  {#if step === 0 && auth.user?.is_platform_admin}
     <section
       class="rounded-lg border border-border-default bg-card-bg p-5"
       data-testid="entity-onboarding-step"

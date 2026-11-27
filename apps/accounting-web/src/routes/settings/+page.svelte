@@ -4,7 +4,11 @@
   import { page } from '$app/stores';
   import { ApiError } from '$lib/api/client.js';
   import PermissionManagement from '$lib/components/settings/RoleManagement.svelte';
-  import { can, canManagePermissions, isFiscalInspector } from '$lib/stores/permissions.svelte.js';
+  import {
+    canManagePermissions,
+    isFiscalInspector,
+    isPlatformOwner,
+  } from '$lib/stores/permissions.svelte.js';
   import {
     ecopaIntegrationApi,
     type EcopaIntegrationStatus,
@@ -24,6 +28,7 @@
     getDateFormat,
     setDateFormat,
   } from '$lib/utils/date.js';
+  import PlatformUsagePanel from '$lib/components/settings/PlatformUsagePanel.svelte';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -234,29 +239,18 @@
   let currentWorkspaceIsFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
-  let canManageFakeData = $derived(
-    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
-      ? can('settings.fake_data.manage')
-      : Boolean(
-          auth.user?.is_sso_admin ||
-          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
-        ),
-  );
-  let canManageCron = $derived(
-    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
-      ? can('settings.cron.manage')
-      : Boolean(
-          auth.user?.is_sso_admin ||
-          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
-        ),
-  );
+  // Installation-level sections are Platform Owner only (backend enforced).
+  let platformOwner = $derived(isPlatformOwner());
+  let canManageFakeData = $derived(platformOwner);
+  let canManageCron = $derived(platformOwner);
   let showFakeDataSettings = $derived(currentWorkspaceIsFake && canManageFakeData);
   let visibleSections = $derived(
     sections.filter(
       (section) =>
         (section.id !== 'fake-data' || showFakeDataSettings) &&
         (section.id !== 'permissions' || canManagePermissions()) &&
-        (section.id !== 'cron' || canManageCron),
+        (section.id !== 'cron' || canManageCron) &&
+        (section.id !== 'integration' || platformOwner),
     ),
   );
 
@@ -284,7 +278,7 @@
     activeSection = section;
     if (section === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (section === 'users' && isAdmin) void loadRoleManagement();
-    if (section === 'integration' && isAdmin) void loadEcopaWebhookLogs();
+    if (section === 'integration' && platformOwner) void loadEcopaWebhookLogs();
     if (section !== 'entity-profile') return;
 
     const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
@@ -323,7 +317,7 @@
     if ($page.url.searchParams.get('section') === 'cron') activeSection = 'cron';
     if ($page.url.searchParams.get('section') === 'fake-data' && showFakeDataSettings)
       activeSection = 'fake-data';
-    await loadEcopaIntegration();
+    if (platformOwner) await loadEcopaIntegration();
     dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
     const activeWorkspace = tenant.available.find((item) => item.id === tenant.id);
@@ -334,7 +328,7 @@
     }
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
-    if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
+    if (platformOwner && activeSection === 'integration') void loadEcopaWebhookLogs();
     if (activeSection === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (canManageCron) {
       void loadSchedulerHealth();
@@ -814,7 +808,7 @@
   }
 
   async function loadEcopaWebhookLogs() {
-    if (!isAdmin) return;
+    if (!platformOwner) return;
     ecopaWebhookLogsLoading = true;
     ecopaWebhookLogsError = null;
     try {
@@ -1424,7 +1418,7 @@
                     >
                       {workspaceRestoring === workspaceItem.id ? 'Memulihkan…' : 'Restore'}
                     </button>
-                    {#if !workspaceItem.is_fake_data}
+                    {#if !workspaceItem.is_fake_data && platformOwner}
                       <button
                         type="button"
                         class="inline-flex items-center gap-1.5 rounded-md border border-danger px-3 py-2 text-xs font-semibold text-danger transition hover:bg-danger-light disabled:cursor-wait disabled:opacity-60"
@@ -3017,6 +3011,10 @@
             </div>
           {/if}
         </div>
+
+        {#if platformOwner}
+          <PlatformUsagePanel />
+        {/if}
       {/if}
     </section>
   </div>
