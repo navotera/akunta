@@ -113,6 +113,13 @@ $env:DB_CONNECTION='pgsql'; $env:DB_DATABASE='akunta_rls'; $env:AKUNTA_RLS_TEST_
 php vendor/bin/pest
 ```
 
+## 7a. Urutan rollback migration dan RLS
+
+Policy bergantung pada kolom `tenant_id`. Selama policy terpasang, rollback migration yang menghapus kolom itu
+gagal (`cannot drop column tenant_id ... other objects depend on it`). Matikan dulu: `AKUNTA_RLS=false`, lalu
+`php artisan akunta:rls disable`, baru rollback. Test yang membuang kolom (`TenantColumnMigrationTest`) melakukan
+`akunta:rls disable` lebih dulu karena mode diagnostik suite memasang policy.
+
 ## 8. Checklist rilis RLS (eksekusi production hanya atas perintah pemilik)
 
 1. Backup + uji restore (runbook migrasi §3 tahap 1).

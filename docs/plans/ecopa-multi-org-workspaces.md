@@ -301,6 +301,51 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
   dulu) dan grant webhook tanpa tenant pada instalasi kosong.
 - Production hanya atas perintah pemilik. Sisa: gladi migrasi dan penyalaan `AKUNTA_MULTI_ORGANIZATION` (tahap 10).
 
+## Tahap 10 — gladi migrasi dan rilis (prompt agent)
+
+**Gladi selesai 2026-11-27; eksekusi production BELUM dilakukan dan hanya atas perintah eksplisit pemilik.** Checklist
+rilis: `docs/release-readiness-multi-org.md`. Prosedur: `docs/ecopa-multi-org-migration.md` §4a.
+
+Laporan gladi (PostgreSQL 16 sekali pakai; DB v1 dibuat dengan build v1 asli `b05f1df`: 1 tenant, 3 entity, 8 user
+(PO, admin lama, Supervisor, Operator, Inspector, nonaktif, akun lokal tanpa identitas Ecopa, tanpa akses), 9 assignment,
+15.144 jurnal dan 30.288 entry di kedua buku dan semua status, 48 lampiran berkas nyata, koreksi fiskal, template,
+recurring, webhook, token API, audit). Perintah: `bash scripts/migration-rehearsal.sh`.
+
+| Langkah | Hasil | Durasi |
+|---|---|---|
+| `pg_dump -Fc` (928.732 byte, SHA-256 dicatat di log) | lulus | 0,6 s |
+| Uji restore ke database sekali pakai (12 tabel kunci) | jumlah baris identik | 9,1 s |
+| Snapshot sebelum: `ecopa:migration-report` dan laporan dengan build v1 | lulus | 1,4 s + 2,0 s |
+| Maintenance mode on | lulus | 0,9 s |
+| `migrate --force` (seluruh migration v2) | lulus | 7,3 s |
+| `ecopa:link-organization --dry-run` / nyata | lulus (1 tenant tertaut ke `org-default`) | 1,1 s / 1,3 s |
+| `ecopa:migration-report --compare --check-files` | tidak ada perbedaan; 48 lampiran, 0 hilang | 1,5 s |
+| Laporan Neraca Saldo, Neraca, Laba Rugi per entity, buku Intern dan Fiskal | **identik** dengan v1 (3 entity) | 2,4 s |
+| Ulang `migrate`, `link`, `compare` | tanpa perubahan | 1,1 s, 1,1 s, 1,5 s |
+| Smoke test per jenis user (`tests/Rehearsal`, 5 test, 49 asersi) | lulus | 3,7 s |
+| Maintenance mode off | lulus | 0,9 s |
+
+Selisih: nol. Kontrol negatif: pembanding laporan memberi exit 1 pada as-of yang berbeda; pembanding migrasi memberi
+exit 1 bila total uang atau jurnal berubah (test `EcopaMigrationReportTest`).
+
+Temuan gladi dan perbaikan:
+1. `ecopa:migration-report --compare` menggagalkan migrasi yang benar karena empat tabel yang dibuat migration itu
+   sendiri (`coa_templates`, `coa_template_accounts`, `installation_settings`, `platform_audit_log`) tidak ada di snapshot
+   sebelum. Kini tabel baru yang masih kosong bukan selisih; tabel baru yang berisi tetap dilaporkan (test baru).
+2. Fixture gladi pertama tidak mencatat flag onboarding v1 (`installation_onboarding_completed_at`), sehingga admin lama
+   tampil `needs_setup`. Itu artefak fixture, bukan regresi: instalasi v1 yang sudah dipakai memiliki flag itu (atau
+   backfill `2026_08_31_000760`), dan migration tahap 7 menyalinnya ke tenant. Fixture diperbaiki; smoke test kini memastikan
+   Platform Owner dan admin lama tidak melihat `needs_setup` atau `needs_workspace`.
+3. Alat gladi: `scripts/migration-rehearsal.sh`, `scripts/report-snapshot.php` (juga membaca build v1 lewat `--root`),
+   `tests/Rehearsal/PostMigrationSmokeTest.php` (di luar suite biasa; hanya-baca, dibatalkan lewat transaksi).
+   Klaim Platform Owner disimulasikan di dalam transaksi seperti login pertama setelah rilis.
+4. Pada beberapa run awal koneksi ke database gladi diputus oleh proses lain di klaster yang sama
+   ("terminating connection due to administrator command"); pelakunya tidak teridentifikasi. Gladi diulang pada database
+   dengan nama unik dan lulus. Bukan perilaku aplikasi.
+
+Belum dibuktikan: data production sungguhan, jumlah user dan volume production, dan alur Platform Owner login SSO nyata
+terhadap Ecopa (smoke test memakai sesi yang disimulasikan). Lakukan pada gladi dengan salinan production.
+
 ## Acceptance criteria
 
 1. Platform Owner dan user lama melihat data yang sudah ada tanpa wizard (alur 1).

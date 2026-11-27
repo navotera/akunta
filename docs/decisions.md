@@ -1951,6 +1951,14 @@ Aturan penegakan:
     (`AKUNTA_RLS_TEST_HTTP=1`: setiap request HTTP test berjalan sebagai role non-owner dengan
     policy terpasang, termasuk dua sapuan tahap 8). Test yang memang tidak berlaku saat RLS menyala
     dilewati dengan alasan tertulis (`skip(fn () => rlsHttpMode(), …)`).
+- *Diimplementasikan 2026-11-27 (tahap 10 prompt agent, gladi migrasi dan checklist rilis):* gladi penuh pada salinan
+  sekali pakai (build v1 asli, 15.144 jurnal) lulus dengan selisih nol; laporan di
+  `docs/plans/ecopa-multi-org-workspaces.md`, checklist di `docs/release-readiness-multi-org.md`. Keputusan: (1) gladi
+  dijalankan oleh `apps/accounting/scripts/migration-rehearsal.sh`, yang menolak berjalan tanpa
+  `AKUNTA_REHEARSAL_CONFIRM` = nama database; (2) snapshot laporan "sebelum" diambil dengan build v1; (3) tabel yang
+  dibuat migration itu sendiri dan masih kosong bukan selisih pada `ecopa:migration-report`; (4) `AKUNTA_MULTI_ORGANIZATION`
+  dan `AKUNTA_RLS` tetap mati saat rilis dan saklar Ecopa "multi-organization ready" tetap mati sampai production lulus;
+  (5) eksekusi di production hanya atas perintah eksplisit pemilik.
 - Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
   tanpa assignment lokal hanya memperoleh workspace **dalam tenant
   organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar
