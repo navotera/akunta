@@ -6,6 +6,7 @@ namespace App\Services;
 
 use Akunta\Core\Contracts\AuditLogger;
 use Akunta\Rbac\Models\Tenant;
+use Akunta\Rbac\Support\TenantContext;
 use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -179,7 +180,7 @@ final class EcopaOrganizationLinker
                 'ecopa_organization_linked_at' => now(),
             ])->save();
 
-            $this->auditLogger->record(
+            TenantContext::run($tenant->id, fn () => $this->auditLogger->record(
                 action: 'tenant.ecopa_organization_linked',
                 resourceType: Tenant::class,
                 resourceId: $tenant->id,
@@ -189,7 +190,7 @@ final class EcopaOrganizationLinker
                     'source' => $source,
                     'assignments_backfilled' => $backfilled,
                 ],
-            );
+            ));
 
             return $result(self::STATUS_LINKED, $tenant, $backfilled);
         });
@@ -218,7 +219,8 @@ final class EcopaOrganizationLinker
             'ecopa_organization_linked_at' => now(),
         ])->save();
 
-        $this->auditLogger->record(
+        // The audit entry of a tenant belongs to that tenant (Row-Level Security checks it).
+        TenantContext::run($tenant->id, fn () => $this->auditLogger->record(
             action: 'tenant.ecopa_organization_linked',
             resourceType: Tenant::class,
             resourceId: $tenant->id,
@@ -227,7 +229,7 @@ final class EcopaOrganizationLinker
                 'ecopa_organization_slug' => $organization['slug'],
                 'source' => $source,
             ],
-        );
+        ));
 
         return true;
     }
@@ -260,6 +262,13 @@ final class EcopaOrganizationLinker
 
     /** @return array<string, int> */
     public function counts(): array
+    {
+        // An installation-level comparison across every tenant: the explicit read-only platform path.
+        return TenantContext::platformRead(fn (): array => $this->countTables());
+    }
+
+    /** @return array<string, int> */
+    private function countTables(): array
     {
         $counts = [];
         // Append-only logs are excluded: linking writes its own audit entry.

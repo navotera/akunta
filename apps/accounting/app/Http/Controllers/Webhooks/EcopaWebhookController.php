@@ -8,6 +8,7 @@ use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
+use Akunta\Rbac\Support\TenantContext;
 use App\Exceptions\EcopaRegistrationException;
 use App\Http\Controllers\Controller;
 use App\Models\EcopaWebhookReceipt;
@@ -289,7 +290,7 @@ class EcopaWebhookController extends Controller
         }
 
         if (empty($assignmentSubject['entity_id'])) {
-            return $this->onAppWideAssignment($user, $assignmentSubject, $tenant);
+            return $this->inTenant($tenant, fn (): array => $this->onAppWideAssignment($user, $assignmentSubject, $tenant));
         }
 
         return $this->onAssignment('assignment.granted', $assignmentSubject);
@@ -351,7 +352,7 @@ class EcopaWebhookController extends Controller
         $tenant = $this->tenantFor($subject);
         $unattributed = $tenant === null && $this->isUnattributedLegacyEvent($subject);
         if ($user && $app && ($tenant !== null || $unattributed)) {
-            UserAppAssignment::query()
+            $this->inTenant($tenant, fn () => UserAppAssignment::query()
                 ->withoutGlobalScopes()
                 ->where('user_id', $user->id)
                 ->where('app_id', $app->id)
@@ -360,7 +361,7 @@ class EcopaWebhookController extends Controller
                     : $query->where('tenant_id', $tenant->id)
                         ->when(TenantOwnership::onlyTenant() === $tenant->id, fn ($q) => $q->orWhereNull('tenant_id')))
                 ->whereNull('revoked_at')
-                ->update(['revoked_at' => now(), 'ecopa_role' => null]);
+                ->update(['revoked_at' => now(), 'ecopa_role' => null]));
             $this->accessRevoker->revokeSessionsAndTokens($user, $tenant?->id);
         }
 
@@ -445,12 +446,12 @@ class EcopaWebhookController extends Controller
             );
         }
 
-        $existing = Entity::withoutGlobalScopes()->whereKey($id)->value('tenant_id');
+        $existing = TenantContext::platformRead(fn () => Entity::withoutGlobalScopes()->whereKey($id)->value('tenant_id'));
         if ($existing !== null && (string) $existing !== $tenant->id) {
             return $this->rejected('entity_tenant_mismatch', 'Entity sudah dimiliki organisasi lain di Akunta.');
         }
 
-        Entity::withoutGlobalScopes()->updateOrCreate(
+        TenantContext::run($tenant->id, fn () => Entity::withoutGlobalScopes()->updateOrCreate(
             ['id' => $id],
             array_filter([
                 'tenant_id' => $tenant->id,
@@ -458,7 +459,7 @@ class EcopaWebhookController extends Controller
                 'npwp' => $subject['npwp'] ?? null,
                 'address' => is_array($subject['address'] ?? null) ? $subject['address'] : null,
             ], fn (mixed $value): bool => $value !== null),
-        );
+        ));
 
         return ['status' => 'applied', 'code' => 'entity_mirrored'];
     }
@@ -486,7 +487,7 @@ class EcopaWebhookController extends Controller
             );
         }
 
-        $entityTenantId = Entity::withoutGlobalScopes()->whereKey($entityId)->value('tenant_id');
+        $entityTenantId = TenantContext::platformRead(fn () => Entity::withoutGlobalScopes()->whereKey($entityId)->value('tenant_id'));
         if ($entityTenantId === null) {
             return $this->pending(
                 'entity_not_synced',
@@ -502,6 +503,13 @@ class EcopaWebhookController extends Controller
             return $this->rejected('entity_tenant_mismatch', 'Entity bukan milik organisasi pada event ini.');
         }
 
+        // Everything below reads and writes this one organisation's rows.
+        return TenantContext::run($tenant->id, fn (): array => $this->applyAssignment($event, $subject, $user, $app, $entityId, $tenant, $appCode));
+    }
+
+    /** @return array<string, mixed> */
+    private function applyAssignment(string $event, array $subject, User $user, RbacApp $app, string $entityId, Tenant $tenant, string $appCode): array
+    {
         $row = UserAppAssignment::query()
             ->withoutGlobalScopes()
             ->where('user_id', $user->id)
@@ -559,6 +567,12 @@ class EcopaWebhookController extends Controller
     private function isUnattributedLegacyEvent(array $subject): bool
     {
         return data_get($subject, 'organization.id') === null && DB::table('tenants')->doesntExist();
+    }
+
+    /** Run $callback inside a tenant's context (writes belong to one tenant); without a tenant, as is. */
+    private function inTenant(?Tenant $tenant, callable $callback): mixed
+    {
+        return $tenant === null ? $callback() : TenantContext::run($tenant->id, $callback);
     }
 
     private function tenantFor(array $subject): ?Tenant

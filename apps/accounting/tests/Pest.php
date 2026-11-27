@@ -82,3 +82,9 @@ function platformOwnerSession(User $user, array $session = []): array
 
     return array_merge(['ecopa.app_role' => 'admin', 'ecopa.platform_admin' => true], $session);
 }
+
+/** Diagnostic mode (AKUNTA_RLS_TEST_HTTP=1): every HTTP request runs as the non-owner role under Row-Level Security. */
+function rlsHttpMode(): bool
+{
+    return env('AKUNTA_RLS_TEST_HTTP') === '1';
+}

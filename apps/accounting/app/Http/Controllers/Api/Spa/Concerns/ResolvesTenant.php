@@ -24,8 +24,11 @@ trait ResolvesTenant
             // another organisation is refused outright, not silently replaced
             // by this user's default one.
             $entity = Entity::find($tenantSlug);
+            // The existence check reads across tenants on purpose (a boolean only): with
+            // Row-Level Security the other organisation's workspace is invisible to this
+            // context, which must not turn "refused" into "fall back to the default".
             if ($entity === null && TenantContext::active()
-                && Entity::withoutGlobalScopes()->whereKey($tenantSlug)->exists()) {
+                && TenantContext::platformRead(fn (): bool => Entity::withoutGlobalScopes()->whereKey($tenantSlug)->exists())) {
                 throw ValidationException::withMessages(['tenant' => 'Tenant is not accessible.']);
             }
         }

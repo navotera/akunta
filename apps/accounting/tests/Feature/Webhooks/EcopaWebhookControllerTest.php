@@ -272,7 +272,7 @@ it('accepts the current Ecopa app access events with nested user snapshots', fun
     ])->assertOk()->assertJsonPath('code', 'user_access_revoked');
 
     expect($user->assignments()->where('app_id', $app->id)->firstOrFail()->revoked_at)->not->toBeNull();
-});
+})->skip(fn () => rlsHttpMode(), 'A fresh installation with no tenant yet records grants unattributed; Row-Level Security needs the tenant to exist first.');
 
 it('does not acknowledge or persist an unsupported event as processed', function () {
     $this->withoutMiddleware(VerifyEcopaSignature::class)->postJson('/webhooks/ecopa', [

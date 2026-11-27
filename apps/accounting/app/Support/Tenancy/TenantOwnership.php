@@ -132,14 +132,16 @@ final class TenantOwnership
             return null;
         }
 
-        $tenants = DB::table('user_app_assignments as uaa')
+        // Decided before any tenant context exists, so it reads across tenants on purpose:
+        // the explicit read-only platform path (and it returns tenant ids only).
+        $tenants = TenantContext::platformRead(fn () => DB::table('user_app_assignments as uaa')
             ->leftJoin('entities as ent', 'ent.id', '=', 'uaa.entity_id')
             ->where('uaa.user_id', $userId)
             ->selectRaw('COALESCE(uaa.tenant_id, ent.tenant_id) as tenant_id')
             ->distinct()
             ->pluck('tenant_id')
             ->filter()
-            ->values();
+            ->values());
 
         return $tenants->count() === 1 ? (string) $tenants->first() : null;
     }
@@ -163,7 +165,8 @@ final class TenantOwnership
             return self::$cache[$key];
         }
 
-        $tenant = DB::table($parentTable)->where('id', $id)->value('tenant_id');
+        // Which tenant owns this parent row? Asked before (or without) a context: explicit platform read.
+        $tenant = TenantContext::platformRead(fn () => DB::table($parentTable)->where('id', $id)->value('tenant_id'));
         if ($tenant === null) {
             // Not cached: the parent may be created (or backfilled) a moment later.
             return null;
