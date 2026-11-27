@@ -162,6 +162,28 @@ role lain yang juga dipegang user tersebut.
 - Pengelolaan permission, assignment role, kredensial integrasi, serta
   penghapusan workspace tidak dapat didelegasikan lewat matriks ini.
   Pengaturan permission tidak dapat dilakukan saat impersonation aktif.
+- Pengaturan tingkat instalasi hanya untuk **Platform Owner** (2026-11-26) dan
+  bukan permission katalog: status Cron & Scheduler, status dan log webhook
+  integrasi Ecopa, wizard instalasi, dataset PT. Fake Data (preview, Restore,
+  impor dan hapus data latihan), serta hapus permanen workspace. Statusnya
+  berasal dari `App\Support\PlatformOwner` (klaim Ecopa `platform_admin`, atau
+  super admin instalasi pada mode standalone), tidak dari role mana pun, dan
+  tidak berlaku saat impersonation. Kode `settings.cron.manage` dan
+  `settings.fake_data.manage` dihapus dari katalog: tidak lagi dapat diberikan
+  ke role, dan override atau snapshot role kustom yang masih mencantumkannya
+  diabaikan tanpa diubah. Payload `/api/v1/me` memuat `is_platform_admin`;
+  `can_manage_cron` dan `can_manage_fake_data` per workspace kini mengikuti
+  status tersebut.
+  Ringkasan penggunaan per organisasi (`GET /api/v1/spa/platform/usage`,
+  2026-11-26) juga hanya untuk PO: agregat tanpa isi transaksi, dengan Organization
+  Owner, role kustom berizin penuh, dan impersonation ditolak 403. Tidak ada kode
+  permission baru dan tidak ada perubahan default role.
+- Cakupan organisasi (2026-11-27, tahap 5). Hak admin Ecopa hanya berlaku di
+  organisasi pada session, bukan di seluruh instalasi. Assignment app-wide (tanpa
+  entity) hanya berlaku di tenant miliknya, sehingga satu orang yang berada di dua
+  organisasi memperoleh role organisasi yang sedang ia masuki saja. Role Management
+  hanya menampilkan assignment dan user menunggu milik organisasi aktor. Tidak ada
+  kode permission baru dan tidak ada perubahan default role.
 
 ## Penyimpanan dan kontrak
 
