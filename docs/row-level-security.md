@@ -15,7 +15,7 @@ production — dan production **hanya atas perintah pemilik**.
 
 | Saklar | Cara | Efek |
 |---|---|---|
-| Kebijakan | `php artisan akunta:rls enable` (rollback: `disable`; `status`; `--dry-run`) | `ENABLE` + `FORCE ROW LEVEL SECURITY` dan empat policy per tabel milik tenant (30 tabel). Tidak membaca atau mengubah data. |
+| Kebijakan | `php artisan akunta:rls enable` (rollback: `disable`; `status`; `--dry-run`) | `ENABLE` + `FORCE ROW LEVEL SECURITY` dan empat policy per tabel milik tenant (29 tabel). Tidak membaca atau mengubah data. |
 | Lapisan aplikasi | `AKUNTA_RLS=true` (`config('tenancy.rls.enabled')`) | Aplikasi menyalin `TenantContext` ke setting transaksi-lokal `app.tenant_id` untuk setiap statement. |
 
 Kebijakan tanpa lapisan aplikasi = aplikasi melihat nol baris. Lapisan aplikasi tanpa
@@ -70,6 +70,27 @@ Setting hilang saat transaksi selesai, sehingga koneksi persisten, worker antrea
 tenant, dan PgBouncer mode transaksi tidak dapat membawa konteks satu tenant ke pekerjaan
 berikutnya. (PgBouncer mode transaksi tetap memerlukan konfigurasi prepared statement tersendiri;
 itu di luar RLS.)
+
+### Biaya performa (diukur 2026-11-27)
+
+PostgreSQL 16 sekali pakai, data v1 hasil migrasi (3 entity, 15.144 jurnal, 30.288 entry), median 9 run, role aplikasi
+non-owner. Pembanding: role owner tanpa RLS. Role non-owner tanpa policy sama dengan pembanding (selisih di bawah derau).
+
+| Beban | Tanpa RLS | RLS menyala |
+|---|---|---|
+| Neraca Saldo 3 entity (agregat 30 rb baris entry) | sekitar 60 ms | sekitar 75 ms (+25%) |
+| Satu halaman daftar jurnal (3 statement) | sekitar 6 ms | sekitar 9 ms (+3 ms) |
+| 200 statement kecil berturut-turut di luar transaksi | sekitar 137 ms | sekitar 265 ms (sekitar +0,6 ms per statement) |
+| 200 statement kecil dalam satu transaksi | sekitar 138 ms | sekitar 148 ms (+5%) |
+
+- Biaya tetap per statement di luar transaksi adalah BEGIN, penulisan konteks, dan COMMIT (satu round trip tiap
+  langkah); di dalam transaksi konteks hanya ditulis sekali. Kode yang memanggil banyak query kecil di luar transaksi
+  paling terdampak.
+- Biaya laporan turun dari sekitar 4x menjadi +25% karena nilainya di-cast ke `bpchar` (policy juga membaca setting lewat
+  sub-select agar dievaluasi sekali per query, tetapi pengaruh utamanya kecocokan tipe) agar sama dengan tipe kolom `tenant_id` (`character(26)`). Tanpa
+  kecocokan tipe, PostgreSQL mengubah kolom menjadi `text`, kehilangan statistiknya, dan memilih nested loop yang lambat.
+  Pasang ulang policy (`akunta:rls enable`) pada database yang sudah memakai versi lama.
+- Pengukuran satu mesin dengan data kecil; ulangi di staging sebelum menyalakan RLS di production.
 
 ## 5. Jalur lintas tenant yang eksplisit
 

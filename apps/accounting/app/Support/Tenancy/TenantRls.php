@@ -56,9 +56,12 @@ final class TenantRls
         ));
     }
 
-    private const MATCH = "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')";
+    // The settings are read through a sub-select so PostgreSQL evaluates them ONCE per query (an InitPlan)
+    // instead of once per row. The value is cast to bpchar because tenant_id is character(26): comparing it with
+    // text would cast the COLUMN, hide its statistics from the planner and push it into slow nested-loop plans.
+    private const MATCH = "tenant_id = (select NULLIF(current_setting('app.tenant_id', true), '')::bpchar)";
 
-    private const PLATFORM = "current_setting('app.platform_read', true) = 'on'";
+    private const PLATFORM = "(select current_setting('app.platform_read', true)) = 'on'";
 
     /** @return list<string> the statements that put one table under RLS (idempotent) */
     public static function enableStatements(string $table): array

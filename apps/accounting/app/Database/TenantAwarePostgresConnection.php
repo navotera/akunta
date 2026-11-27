@@ -56,9 +56,13 @@ class TenantAwarePostgresConnection extends PostgresConnection
         $this->applying = true;
         try {
             // Straight through PDO: no recursion into run(), and the context itself is not query-logged.
-            $this->getPdo()
-                ->prepare("select set_config('app.tenant_id', ?, true), set_config('app.platform_read', ?, true)")
-                ->execute([TenantContext::id() ?? '', TenantContext::platform() ? 'on' : 'off']);
+            // One round trip: both values are quoted by the driver, not interpolated by hand.
+            $pdo = $this->getPdo();
+            $pdo->query(sprintf(
+                "select set_config('app.tenant_id', %s, true), set_config('app.platform_read', %s, true)",
+                $pdo->quote(TenantContext::id() ?? ''),
+                $pdo->quote(TenantContext::platform() ? 'on' : 'off'),
+            ))->closeCursor();
         } finally {
             $this->applying = false;
         }
