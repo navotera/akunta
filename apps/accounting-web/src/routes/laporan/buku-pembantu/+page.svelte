@@ -13,18 +13,13 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getStartOfMonthIso, getTodayIso } from '$lib/utils/date.js';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
-
-  function firstOfMonth(): string {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-  }
 
   let pair = $state(''); // "source_app:ref_type"
   let knownPairs = $state<{ value: string; label: string }[]>([]);
-  let periodStart = $state(firstOfMonth());
-  let periodEnd = $state(new Date().toISOString().slice(0, 10));
+  let periodStart = $state(getStartOfMonthIso());
+  let periodEnd = $state(getTodayIso());
   let rows = $state<SourceRefAggregateRow[]>([]);
   let fiscalRows = $state<SourceRefAggregateRow[]>([]);
   let meta = $state<SourceRefAggregateMeta | null>(null);

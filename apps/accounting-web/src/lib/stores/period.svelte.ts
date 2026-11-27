@@ -1,4 +1,5 @@
 import { periodApi, type Period } from '$lib/api/period.js';
+import { getTodayIso } from '$lib/utils/date.js';
 
 const STORAGE_KEY = 'akunta.active_period_id';
 
@@ -26,7 +27,7 @@ function write(id: string | null): void {
 }
 
 function todayCovers(p: Period): boolean {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayIso();
   return p.start_date <= today && today <= p.end_date;
 }
 

@@ -10,24 +10,16 @@
   import { accountApi, type AccountOption } from '$lib/api/account.js';
   import { sourceRefApi, type SourceRefRegistryItem } from '$lib/api/source-ref.js';
   import { formatRupiah } from '@akunta/ui';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getStartOfYearIso, getTodayIso } from '$lib/utils/date.js';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
   import AccountCombobox from '$lib/components/ui/AccountCombobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
-  // Local calendar date as YYYY-MM-DD. `toISOString()` converts to UTC, which shifts the
-  // date back a day in timezones ahead of UTC (e.g. WIB).
-  function localIso(d: Date): string {
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${d.getFullYear()}-${month}-${day}`;
-  }
-
   let accounts = $state<AccountOption[]>([]);
   let accountId = $state('');
-  let periodStart = $state(localIso(new Date(new Date().getFullYear(), 0, 1)));
-  let periodEnd = $state(localIso(new Date()));
+  let periodStart = $state(getStartOfYearIso());
+  let periodEnd = $state(getTodayIso());
   let report = $state<GeneralLedgerData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);

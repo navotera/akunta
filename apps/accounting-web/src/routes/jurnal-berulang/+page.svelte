@@ -15,7 +15,7 @@
   import { ApiError } from '$lib/api/client.js';
   import Combobox from '$lib/components/ui/Combobox.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import { notifyPermissionDenied, readOnlyNotice } from '$lib/utils/permission-feedback.js';
 
@@ -34,7 +34,7 @@
     name: '',
     frequency: 'monthly',
     day: 1,
-    start_date: new Date().toISOString().slice(0, 10),
+    start_date: getTodayIso(),
   });
   let formErrors = $state<Record<string, string[]> | null>(null);
   let saving = $state(false);
@@ -82,7 +82,7 @@
       name: '',
       frequency: 'monthly',
       day: 1,
-      start_date: new Date().toISOString().slice(0, 10),
+      start_date: getTodayIso(),
     };
     formErrors = null;
   }
