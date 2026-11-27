@@ -289,6 +289,18 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
 - Suite Accounting penuh: 725+ lulus pada SQLite; PostgreSQL disposable lulus.
 - Sisa sebelum rilis: RLS (tahap 9), gladi migrasi dan penyalaan `AKUNTA_MULTI_ORGANIZATION` (tahap 10).
 
+## Tahap 9 — PostgreSQL Row-Level Security (prompt agent)
+
+**Selesai 2026-11-27, opt-in dan mati secara default.** Runbook: `docs/row-level-security.md`; keputusan dan bukti:
+`docs/decisions.md` (butir "Diimplementasikan 2026-11-27 (tahap 9…)").
+- `akunta:rls enable|disable|status [--dry-run]` memasang policy di 30 tabel; `AKUNTA_RLS=true` menyalakan lapisan aplikasi
+  (`TenantAwarePostgresConnection`, setting transaksi-lokal `app.tenant_id`). Pintu lintas tenant hanya
+  `TenantContext::platformRead()` / `without()` (hanya-baca).
+- Tes: `RowLevelSecurityTest` (role non-owner) dan mode diagnostik seluruh suite `AKUNTA_RLS_TEST_HTTP=1`.
+- Tidak didukung saat RLS menyala: penautan legacy saat login PO (gunakan `ecopa:link-organization` dengan role owner lebih
+  dulu) dan grant webhook tanpa tenant pada instalasi kosong.
+- Production hanya atas perintah pemilik. Sisa: gladi migrasi dan penyalaan `AKUNTA_MULTI_ORGANIZATION` (tahap 10).
+
 ## Acceptance criteria
 
 1. Platform Owner dan user lama melihat data yang sudah ada tanpa wizard (alur 1).
