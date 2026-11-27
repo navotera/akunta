@@ -1562,7 +1562,401 @@ dahulu, dan jumlah record sebelum = sesudah.
    queue/recurring, lampiran, dan cache.
 4. Aktifkan RLS bertahap (test → staging → production) dengan role database
    aplikasi non-owner.
-5. Setelah semua hijau, Platform Admin Ecopa menyalakan **multi-organization
+5. Setelah semua hijau, Platform Owner Ecopa menyalakan **multi-organization
    ready** untuk Akunta. Sebelum itu, production tidak boleh menerima tenant
    atau organisasi kedua.
 6. Jalur silo hanya saat ada kontrak yang memerlukannya.
+
+### Amendment 2026-11-19 — penautan data lama ke organisasi default Ecopa (alur 1)
+
+Tenant yang ada sebelum Ecopa multi-organisasi milik organisasi default Ecopa.
+`tenants.ecopa_organization_id` (unik, + slug dan waktu tautan) diisi hanya dari
+sumber tepercaya: login SSO bertanda tangan dengan `platform_admin = true`
+(rumah Platform Owner selalu organisasi default) atau perintah operator
+`ecopa:link-organization`. Tidak ada tebakan dari email, nama, atau "tenant
+pertama". Penautan hanya menambah metadata dan mengisi
+`user_app_assignments.tenant_id`; jumlah tenant, entity, user, role,
+assignment, dan jurnal diperiksa sama sebelum dan sesudah, lalu dicatat di audit
+(`tenant.ecopa_organization_linked`). Bila ada lebih dari satu tenant lama,
+penautan otomatis tidak dilakukan; operator memilih dengan `--tenant`.
+
+Sampai scoping per organisasi (langkah 2 dan seterusnya) selesai, hanya satu
+organisasi yang boleh tertaut: penautan organisasi kedua ditolak, dan setelah
+tertaut login dari organisasi lain ditolak 403. Login tanpa klaim `organization`
+dan instalasi yang belum tertaut berperilaku seperti sebelumnya. Wizard
+onboarding instalasi menautkan tenant barunya ke organisasi installer bila
+belum ada tenant tertaut. Assignment baru mewarisi `tenant_id` dari entity,
+role tenant, atau satu-satunya tenant; aturan transisi ini diganti
+`TenantContext` pada langkah 2.
+
+Admin Ecopa (`app_role = admin`) tanpa assignment lokal sudah memperoleh semua
+workspace melalui `User::getTenants()` dan `AccountingPermissions`; resolusi
+workspace SPA (`ResolvesTenant`) kini mengikuti aturan yang sama, sehingga
+Platform Owner dapat memakai data workspace lama. Batas organisasinya dijaga
+oleh penolakan login organisasi lain di atas sampai scoping per organisasi
+selesai.
+
+## Locked 2026-11-19 — Platform Owner, Organization Owner, dan Member di Akunta
+
+**Status:** dikunci atas jawaban pemilik produk (2026-11-19). Implementasi
+mengikuti `docs/plans/ecopa-multi-org-workspaces.md`.
+
+Penamaan (diubah pemilik 2026-11-19): **Platform Owner (PO)**, dahulu Platform Admin, dan
+**Organization Owner (OO)**, dahulu Organization Admin. Hanya label yang berubah; klaim dan field
+Ecopa tetap `platform_admin`, `app_role`, dan `ecopa_role`.
+
+Akunta mengenal tiga lapis akses dari Ecopa. Lapis ini berada **di atas**
+role lokal Accounting per entity (Supervisor, Operator, Inspector Fiskal,
+role kustom), bukan penggantinya.
+
+| Lapis | Sumber | Wewenang di Akunta |
+|---|---|---|
+| Platform Owner (PO) | klaim `platform_admin = true` di token bertanda tangan | Pengaturan instalasi + admin di organisasi default |
+| Organization Owner (OO) | `app_role = admin` dan `platform_admin` bukan true | Admin semua workspace dalam tenant organisasinya saja |
+| Member | App Access dari OO | Hanya izin dari role lokal yang diberikan OO |
+
+Keputusan:
+
+1. **PO tidak melihat data bisnis organisasi lain.** PO adalah anggota dan
+   admin organisasi default (Ecopa ADR-014), jadi ia memakai data lama di
+   tenant default. Jurnal, laporan, user, dan role organisasi lain tertutup
+   sepenuhnya, sesuai keputusan shared database. Akses support lintas tenant
+   tetap memerlukan keputusan terpisah.
+2. **Log untuk PO = metadata dan agregat per organisasi**: login terakhir,
+   jumlah user aktif, jumlah jurnal/periode, error, status webhook dan antrean.
+   Tanpa isi transaksi, tanpa melonggarkan scope `audit_log`. Dibaca lewat
+   jalur platform yang eksplisit.
+3. **Menu dan endpoint hanya untuk PO**: scheduler/cron, email keluar, queue
+   dan worker, integrasi Ecopa (`ecopa_config_integration`, webhook logs,
+   reconcile, registrasi), retensi log, purge workspace, backup, feature flag,
+   dataset native `PT. Fake Data`, dan **branding** (satu branding untuk
+   seluruh instalasi).
+4. **Dikelola OO per organisasi**: workspace/entity, periode, Role Management
+   dan assignment role lokal, **API token dan webhook outbound**, Auto Mapping,
+   recurring, pengaturan workspace, serta **template COA kustom**. Template
+   bawaan (Indonesian 4-digit, Technology & IT) tetap tersedia read-only untuk
+   semua organisasi dan dapat disalin OO menjadi template organisasinya.
+5. **Member tanpa role lokal** tidak mempunyai izin apa pun (keputusan
+   2026-08-28 tetap) dan melihat pesan untuk menghubungi Organization Owner.
+   Member tidak pernah melihat wizard.
+6. **Dua wizard.** Wizard PO: registrasi integrasi dan setup tingkat
+   instalasi. Wizard OO: membuat workspace organisasi (alur 2). PO juga OO di
+   organisasi default, jadi PO dapat menjalankan keduanya. Menggantikan
+   "onboarding oleh admin Ecopa pertama" pada keputusan 2026-08-28.
+7. **Mode standalone**: super admin instalasi = PO; satu tenant default; admin
+   tenant itu = OO. Pemisahan menu global tetap berlaku.
+8. **Pencabutan status PO**: Ecopa menambahkan `platform_admin` ke payload
+   `user.updated` (penambahan kompatibel pada
+   `CHILD_APP_INTEGRATION_STANDARD.md`). Akunta memutus sesi dan token user
+   saat nilainya berubah. Sampai kontrak itu ada, status PO hanya diperbarui
+   saat login ulang.
+   *Diimplementasikan 2026-11-26 (tahap 1 prompt agent):*
+   - Nilai terakhir disimpan di kolom aditif `users.ecopa_platform_admin`
+     (boolean nullable; NULL = belum pernah dilaporkan = bukan PO). Dipilih
+     karena paling kecil: Akunta tidak punya tabel identitas Ecopa terpisah,
+     dan `users.main_tier_user_id` sudah menjadi kunci identitas Ecopa.
+   - Login SSO menyimpan nilai klaim yang sama dengan
+     `session('ecopa.platform_admin')`. Setiap payload `user.*` yang membawa
+     `platform_admin` boolean memperbarui nilai tersimpan; payload tanpa field
+     tidak mengubah apa pun. Bila status efektif berubah, Akunta mengakhiri
+     login lokal user itu (sesi database, token Sanctum, remember-me token)
+     melalui `UserAccessRevoker::endLoginSessions`. Token API integrasi dan
+     role/assignment bisnis tidak disentuh. NULL → false disimpan tanpa
+     memutus sesi, karena sesi tanpa nilai tersimpan tidak pernah membawa hak PO.
+   - Production memakai `SESSION_DRIVER=redis`, sehingga sesi tidak dapat
+     dihapus per user dari tabel `sessions`. Middleware web
+     `EndStalePlatformOwnerSession` membandingkan klaim di session dengan
+     nilai tersimpan pada setiap request dan me-logout sesi yang tidak cocok
+     (401 untuk SPA). Saat impersonation, pembandingnya adalah impersonator,
+     pemilik klaim SSO. Sesi tanpa klaim (login lokal) tidak terpengaruh.
+
+Aturan penegakan:
+
+- PO hanya dikenali dari klaim `platform_admin` bertanda tangan (disimpan di
+  session saat login). Jangan membedakan PO dan OO dari `app_role`.
+- PO **tidak** dipetakan ke preset `super_admin` atau role mana pun di tabel
+  `roles`. Hak platform tidak masuk katalog Permission Management, tidak dapat
+  diberikan ke role kustom, dan tidak terbawa saat impersonation.
+- Endpoint platform ditolak 403 untuk non-PO walaupun menunya tersembunyi.
+- Perubahan setting tingkat instalasi dicatat di audit tingkat platform
+  terpisah, karena `audit_log` milik tenant mewajibkan `tenant_id`.
+- *Diimplementasikan 2026-11-26 (tahap 2 prompt agent; inventaris disetujui
+  pemilik dengan semua usulan default):*
+  - Sumber status tunggal `App\Support\PlatformOwner`. Mode Ecopa: klaim
+    session `ecopa.platform_admin` **dan** `users.ecopa_platform_admin` true.
+    Mode standalone (integrasi belum `on`): super admin instalasi, yaitu
+    assignment Accounting aktif yang berlaku untuk seluruh aplikasi dengan role
+    preset `super_admin` (P1).
+  - Middleware `platform.owner` (403 untuk non-PO) pada: `scheduler/status`,
+    `ecopa-integration`, `ecopa-integration/webhook-logs`, semua
+    `fake-data/*` (A3: impor/hapus data latihan ikut PO),
+    `installation-onboarding/entity`, dan `workspaces/{id}/permanent`.
+    Redirect SSO ke `/onboarding` hanya untuk PO.
+  - A1: `settings.cron.manage` dan `settings.fake_data.manage` dihapus dari
+    katalog dan registry permission; baris lama di tabel `permissions` dan
+    override tersimpan dibiarkan, tetapi diabaikan.
+  - A2: registrasi Ecopa tanpa login hanya selama integrasi belum
+    dikonfigurasi; setelah itu wajib PO. Registrasi `pending` hanya dapat
+    dibatalkan oleh sesi browser yang memulainya atau oleh PO.
+  - A4: logo workspace tetap milik OO sampai keputusan branding di tahap 6.
+  - A5: tabel global aditif `platform_audit_log` (tanpa `tenant_id`, append-only,
+    nilai berkunci rahasia disamarkan) mencatat `ecopa.registration_requested`,
+    `ecopa.registration_cancelled`, `installation.entity_created`, dan
+    `workspace.purge_requested`. Tabel ini global, bukan milik tenant.
+- *Diimplementasikan 2026-11-26 (tahap 3 prompt agent; metrik dan tiga default
+  disetujui pemilik):* ringkasan penggunaan per organisasi untuk PO di
+  `GET /api/v1/spa/platform/usage` (middleware `platform.owner`, tanpa tenant
+  context, tampil di Settings › Integration). Hanya `COUNT`/`MAX`/`GROUP BY`
+  (`App\Services\PlatformUsageReport`) dengan allowlist field: login terakhir,
+  jumlah user aktif, workspace aktif/arsip, jurnal per bulan (6 bulan, per buku,
+  tanpa jurnal terhapus), status webhook Ecopa dan jenis aksi pengaturan OO
+  (30 hari), serta antrean dan kegagalan cron tingkat instalasi. Tidak ada
+  nomor, memo, nilai, nama akun, nama atau e-mail user, actor, IP, maupun
+  metadata audit. Workspace `is_fake_data` tidak dihitung. Aksi pengaturan
+  memakai allowlist prefiks (`workspace.`, `permission.`, `role.`,
+  `auto_mapping.`, `webhook.`, `period.`, `recurring.`, `template.`); aksi
+  bisnis tidak dilaporkan.
+  - Q1: kolom aditif `ecopa_webhook_logs.ecopa_organization_id` (nullable,
+    diisi dari `subject.organization.id`, atau dari `admins[].organization.id`
+    bila semuanya satu organisasi). Log lama tetap `NULL` dan dihitung sebagai
+    "tanpa organisasi".
+  - Q2: error server dan antrean hanya tingkat instalasi (`failed_jobs`, `jobs`,
+    `cron_run_logs`); tidak ada tabel error per organisasi baru.
+  - Q3: jendela 30 hari untuk webhook dan aktivitas pengaturan, 6 bulan
+    kalender untuk jurnal.
+  - Setiap pembukaan dicatat di `platform_audit_log` sebagai
+    `platform.usage_viewed`. Pada tahap 9 (RLS) laporan ini wajib memakai jalur
+    lintas-tenant yang eksplisit.
+- *Diimplementasikan 2026-11-27 (tahap 4 prompt agent; daftar tabel dan lima
+  usulan untuk tabel ambigu disetujui pemilik):* `tenant_id` pada seluruh tabel
+  milik tenant, enam migration aditif dan idempotent
+  (`2026_11_27_000100`–`000600`) dengan langkah bersama di
+  `App\Support\Tenancy\TenantColumnMigrator`. Urutannya: kolom nullable →
+  backfill hanya baris NULL → berhenti dan menyebut id baris bila masih ada yang
+  tanpa tenant (tidak ada tebakan) → NOT NULL → composite foreign key.
+  - Sumber kebenaran tunggal "tabel → induk": `App\Support\Tenancy\TenantOwnership`
+    (dipakai migration, trait model `BelongsToTenant`, dan `ecopa:migration-report`).
+  - Via `entity_id`: accounts, periods, journals, attachments, journal_templates,
+    recurring_journals, fiscal_adjustments, tax_provisions, tax_codes, branches,
+    cost_centers, projects, auto_mapping_rules, auto_mapping_raw_data,
+    documentation_notes, source_ref_registry, fake_data_records. Anak:
+    journal_entries (journal), journal_template_lines (template),
+    webhook_deliveries (subscription). `tax_codes` dan `documentation_notes`
+    ternyata per entity (entity_id NOT NULL), jadi milik tenant.
+  - Tabel ambigu (1) `api_tokens`: tenant dari assignment user pemilik bila semua
+    assignment-nya sepakat pada satu tenant; selain itu hanya instalasi satu tenant
+    yang terisi otomatis, sisanya menghentikan migration. (2)
+    `personal_access_tokens` (Sanctum) adalah tabel global: token milik user
+    global, organisasi ditentukan per request (tahap 5), bukan dari kolom di
+    token; dikeluarkan dari `TENANT_OWNED_TABLES`. (3) `audit_log`: tenant dari
+    entity atau dari tenant yang menjadi resource entri; NULL sah dan permanen
+    untuk aksi tingkat platform. Kolom diisi lewat migration dengan role owner
+    tanpa mengubah action, resource, actor, metadata, atau waktu; FK ke `tenants`
+    tidak cascade. Entri baru diatribusikan oleh listener `AuditLog::creating`
+    di `AppServiceProvider`. (4) `webhook_subscriptions`: via entity; yang
+    global (tanpa entity) mengikuti tenant pembuatnya, atau satu-satunya tenant.
+    (5) Composite FK `(tenant_id, entity_id|journal_id|template_id|subscription_id)`
+    ke induk dengan unique `(tenant_id, id)`.
+  - Portabilitas: PostgreSQL (production) mendapat FK ke `tenants`, NOT NULL,
+    unique, dan composite FK. SQLite (test dan instalasi standalone) mendapat
+    kolom nullable dan index biasa, karena SQLite hanya dapat menambah FK dengan
+    membangun ulang tabel, yang ditolak FK-nya sendiri bila tabel berisi data.
+    Konsistensi di SQLite dibuktikan oleh trait dan `ecopa:migration-report`.
+  - Model yang terdampak memakai `BelongsToTenant`: `tenant_id` terisi saat
+    create dari induknya, nilai eksplisit dipertahankan, kolom disembunyikan dari
+    serialisasi sehingga payload API tidak berubah. Scope query per tenant ada di
+    tahap 5, bukan di trait ini. Penulisan massal yang melewati event model
+    (mis. `JournalVolumeSeeder`) wajib menyertakan `tenant_id` sendiri.
+  - `EcopaOrganizationLinker::counts()` kini memeriksa semua tabel milik tenant
+    (kecuali log append-only); `ecopa:migration-report` memeriksa kesesuaian
+    tenant terhadap induk yang tepat untuk setiap tabel.
+- *Diimplementasikan 2026-11-27 (tahap 5 prompt agent):* `TenantContext` dan
+  scoping per organisasi.
+  - Konteks (`Akunta\Rbac\Support\TenantContext`) ditentukan dari identitas
+    terautentikasi, tidak pernah dari header: klaim `organization` bertanda tangan
+    di session -> `tenants.ecopa_organization_id`; token API -> tenant pemilik
+    token; sesi standalone/tanpa klaim -> tenant yang disepakati semua assignment
+    user, atau satu-satunya tenant. Middleware `EstablishTenantContext` (route SPA
+    dan `/me`) menolak 403 sesi yang tenant-nya tidak dapat ditentukan, kecuali
+    instalasi tanpa satu pun tenant (wizard instalasi). `ApiTokenAuth` memasang
+    konteks dari token. `X-Tenant-Slug` hanya memilih workspace di dalam tenant itu;
+    workspace organisasi lain ditolak (422), bukan diganti workspace default.
+  - Global scope: `TenantScope` pada `Entity` dan 22 model bisnis (lewat trait
+    `BelongsToTenant`), `AssignmentTenantScope` pada `UserAppAssignment`
+    (assignment hanya berlaku di tenant-nya; assignment tanpa tenant hanya dihormati
+    pada instalasi satu tenant), `SharedOrTenantScope` pada `Role` (preset global +
+    role tenant sendiri). Tanpa konteks (artisan, seeder) tidak ada penyaringan;
+    jalur lintas-tenant yang disengaja memakai `TenantContext::without()` dan
+    laporan penggunaan PO memakainya. Query builder mentah ke tabel milik tenant
+    diberi filter konteks lewat `TenantOwnership::restrict()` (pertahanan berlapis;
+    caller tetap memfilter `entity_id` yang sudah diotorisasi).
+  - Hak admin Ecopa (`app_role = admin`) adalah hak di satu organisasi: organisasi
+    pada session (`RequestTenant::isSessionAdminOf`). Berlaku untuk
+    `User::getTenants/canAccessTenant`, `accessibleEntityIdsFromTenantWide`,
+    `AccountingPermissions::canManage`, dan `ResolvesTenant`. Role Management hanya
+    menampilkan assignment dan user menunggu milik tenant aktor.
+  - Webhook: tenant dari `subject.organization.id` (atau `admins[].organization.id`);
+    tanpa organisasi hanya dipakai satu-satunya tenant. Fallback
+    `Tenant::query()->first()` dihapus dan tenant tidak pernah dibuat dari webhook.
+    Organisasi tanpa tenant: identitas disimpan, tanpa assignment
+    (`organization_not_provisioned`; event `entity.*` menunggu/pending). Event
+    pencabutan hanya mencabut akses dan token tenant yang disebut. Entity tidak
+    dapat dipindah antar organisasi (`entity_tenant_mismatch`). Satu pengecualian:
+    instalasi tanpa satu pun tenant dan payload tanpa organisasi mencatat grant
+    app-wide tanpa tenant (diadopsi saat tenant tunggal ada).
+  - `ecopa:reconcile` ditulis ulang per organisasi dengan `GET /api/users` dan
+    `GET /api/apps/{slug}/accesses` (endpoint lama tidak ada di Ecopa): hanya
+    memberi atau mencabut assignment app-wide di tenant organisasi user, tidak
+    membuat tenant atau user, tidak menyentuh role, gagal secara terlihat bila
+    Ecopa tidak dapat dibaca.
+  - Pekerjaan terjadwal (`accounting:run-recurring`, `run-auto-reversals`,
+    `queue-workspace-purges`, `prune-trashed-journals`) mengiterasi tenant dengan
+    konteks masing-masing (`EachTenant`); satu tenant gagal tidak menghentikan yang
+    lain. Job antrean (`ProcessAutoMappingRawData`, `DeliverWebhookJob`,
+    `PurgeArchivedWorkspace`) membawa `tenantId` di payload dan berjalan dalam
+    konteks itu (`RunInTenant`).
+  - Namespace: `journals.idempotency_key` kini unik per `(tenant_id, key)`
+    (migration `2026_11_27_000700`); lampiran baru disimpan di
+    `attachments/{tenant}/{entity}/...` (baris lama tetap pada path tersimpan);
+    key cache data tenant memakai `TenantCache::key()` (belum ada cache data tenant;
+    heartbeat scheduler adalah entri tingkat instalasi).
+  - Aturan sementara "hanya satu organisasi tertaut" pada login tetap berlaku sampai
+    tes isolasi tahap 8 lulus.
+- *Diimplementasikan 2026-11-27 (tahap 6 prompt agent; jawaban pemilik atas
+  pertanyaan branding, cara mengubah template, dan izin):*
+  - Template COA bawaan (7 file di `database/seed-data/coa-templates/`) tetap
+    global dan read-only. Template organisasi adalah tabel milik tenant
+    (`coa_templates`, `coa_template_accounts`, tenant-scoped): OO menyalin template
+    bawaan atau template organisasinya sendiri, atau menyimpan Bagan Akun sebuah
+    workspace sebagai template ("snapshot"). Tidak ada editor template baru:
+    perubahan dilakukan di editor Bagan Akun yang sudah ada lalu disimpan ulang
+    sebagai template. Organisasi lain tidak dapat melihat, mengubah, menyalin,
+    memakai, atau menghapusnya (404, bukan 403). Template diterapkan oleh
+    `ApplyCoaTemplateAction` yang sama (kunci `org:{id}`), saat onboarding maupun
+    saat membuat workspace (`coa_template_key` pada `POST workspaces`); template
+    hanya dapat diterapkan ke workspace organisasi yang sama.
+  - Izin: `settings.coa_template.manage` dipakai ulang untuk melihat/menyalin/
+    menyimpan/mengganti nama/menghapus template organisasi (tanpa kode permission
+    baru, default role tidak berubah: tanpa default sehingga OO). Membuat workspace
+    (`workspace.manage`) dengan `coa_template_key` tetap mensyaratkan izin template.
+  - Salinan template membuang kode ganda (kemunculan pertama menang), sama seperti
+    saat template diterapkan; template bawaan `retail` memiliki kode `1110` ganda.
+  - Branding: nama dan logo aplikasi satu untuk instalasi, hanya PO yang mengubah
+    (`POST /api/v1/spa/platform/branding`, `platform.owner`, audit platform
+    `platform.branding_updated`); dibaca publik di `GET /api/auth/branding` untuk
+    halaman login. Disimpan di tabel global `installation_settings`. Logo PNG/JPG/
+    WebP maksimum 1 MB (SVG ditolak). Nama dan logo entitas, serta warna tema
+    workspace, tetap data workspace milik OO (endpoint workspace yang sudah ada) —
+    keputusan pemilik 2026-11-27, jadi A4 pada inventaris tahap 2 tetap OO.
+- *Diimplementasikan 2026-11-27 (tahap 7 prompt agent):* tiga alur masuk per
+  organisasi (kontrak Ecopa "Tenant onboarding flows"), diputuskan dari klaim
+  `organization` bertanda tangan di session, bukan dari e-mail atau pilihan bebas.
+  Status ada di `OrganizationEntryState` dan dikirim di `/api/v1/me` sebagai
+  `organization.state`:
+  - `ready`: workspace organisasi siap dan orang itu dapat bekerja (alur 1 untuk PO
+    dan user lama; alur 3 untuk anggota yang punya role).
+  - `needs_workspace` / `needs_setup`: admin (Organization Owner) organisasi tanpa
+    tenant, atau tenant yang wizard-nya belum selesai: diarahkan ke `/onboarding`
+    (alur 2). Anggota **tidak pernah** melihat wizard.
+  - `workspace_missing`: "Workspace organisasi Anda belum disiapkan. Hubungi
+    Organization Owner." (anggota; juga saat wizard OO belum selesai).
+  - `no_role`: "Hubungi Organization Owner untuk mendapatkan peran." (workspace siap,
+    anggota belum punya role).
+  - Wizard OO: `POST /api/v1/spa/organization-onboarding/workspace` membuat **satu
+    baris tenant** (status aktif, `ecopa_organization_id` dari klaim, tanpa database
+    fisik; `TenantProvisioner` tidak dipanggil), entity pertama, akun dasar, dan
+    assignment app-wide ber-tenant dengan preset `admin`: OO mengelola tenant itu
+    saja. Hanya untuk `app_role = admin`, 409 bila organisasi sudah punya tenant,
+    403 untuk anggota. Langkah berikutnya memakai ulang endpoint onboarding yang ada
+    (mode buku, COA, periode) dan halaman `/onboarding` yang sama; PO tetap memakai
+    endpoint instalasi (`installation-onboarding/*`, PO-only) untuk organisasi default.
+  - Sesi organisasi tanpa tenant memakai konteks `RequestTenant::NO_TENANT` yang
+    tidak cocok dengan baris mana pun (bukan konteks kosong yang tidak menyaring) dan
+    hanya boleh memanggil `/me` dan `organization-onboarding/*`; selainnya 403.
+  - Onboarding kini status per tenant (`tenants.onboarding_completed_at`, migration
+    `2026_11_29_000100`, menyalin flag instalasi lama ke tenant yang sudah ada); flag
+    lama hanya dibaca sebelum ada tenant atau untuk tenant tunggal tanpa nilai sendiri.
+  - Gerbang login: aturan sementara "hanya satu organisasi tertaut" kini dikendalikan
+    `config('tenancy.multi_organization')` (env `AKUNTA_MULTI_ORGANIZATION`, **default
+    false**). Selama false perilaku tidak berubah: organisasi kedua ditolak di login
+    dan wizard OO tidak dapat dipakai. Nyalakan hanya setelah tes isolasi tahap 8
+    lulus dan saklar "multi-organization ready" Ecopa untuk Akunta dinyalakan.
+- *Diimplementasikan 2026-11-27 (tahap 8 prompt agent, gerbang keamanan):* tes isolasi
+  dua organisasi lengkap (`tests/Feature/Tenancy/TwoOrganization*Test.php`). Fixture:
+  organisasi A dan B, masing-masing dengan Organization Owner, Member, Inspector, user
+  menunggu, workspace, periode, akun, jurnal dua buku (+ draft), lampiran (berkas nyata di
+  path ber-tenant), koreksi fiskal, template dan baris, jurnal berulang, aturan dan data mentah
+  auto-mapping, catatan, kode pajak, subscription webhook (per workspace dan global), token API,
+  template COA organisasi, dan role kustom. Bukti:
+  - Sapuan seluruh route SPA (128) dengan owner, member, dan inspector B: id dan workspace A di
+    path, body, dan query, dan workspace A di header. Hasil tidak boleh sukses untuk sumber daya
+    A dan respons tidak boleh memuat marker data A. Fingerprint seluruh baris milik tenant A
+    (semua tabel, akses, user, dan berkas) harus identik sebelum dan sesudah. Kontrol positif
+    membuktikan sapuan mendeteksi kebocoran (sapuan terhadap data B sendiri penuh pelanggaran).
+  - Sapuan seluruh route token API (24) dengan token B; daftar token B hanya data B.
+  - Webhook Ecopa organisasi B (termasuk satu orang yang berada di dua organisasi) tidak dapat
+    mengubah grant, entity, assignment, atau token A.
+  - Dispatch webhook, job antrean, perintah terjadwal, lampiran (id, upload, path berprefiks
+    tenant), key cache, Role Management, Permission Management, dan Platform Owner organisasi
+    lain (PO bukan jendela ke organisasi lain).
+  - Temuan dan perbaikan: (1) **kebocoran nyata**: `POST /api/v1/webhooks` tidak memvalidasi
+    `entity_id`, sehingga token organisasi B dapat memasang subscription pada workspace A dan
+    menerima event jurnal A; kini entity harus berada di tenant token (422) dan tenant diisi dari
+    token. (2) `WebhookDispatcher` memilih subscription global tanpa batas tenant eksplisit; kini
+    event hanya sampai ke subscription tenant workspace-nya, apa pun konteksnya, dan tanpa tenant
+    tidak dikirim ke siapa pun. Test lama yang mengabadikan "subscription global menerima semua"
+    (termasuk tenant lain) diperbarui. (3) Pagar tulis di `BelongsToTenant`: selama konteks tenant
+    aktif, membuat baris milik tenant lain ditolak (`AuthorizationException`, 403), apa pun yang
+    dilakukan controller; `tenant_id` juga tidak dapat di-mass-assign.
+  - Pengecualian sapuan yang disengaja dan beralasan: route yang terikat identitas atau instalasi,
+    bukan workspace (status setup orang itu, status instalasi tenant sendiri, daftar aplikasi
+    Ecopa, status integrasi dan log webhook Ecopa, status scheduler, ringkasan penggunaan);
+    marker memastikan tidak satu pun memuat konten tenant.
+  - Aturan sementara login "hanya satu organisasi tertaut" digantikan oleh
+    `tenancy.multi_organization` (tahap 7). Keputusan: flag **tetap ada dan tetap mati** setelah
+    tahap 8 sebagai saklar rilis; ia baru dinyalakan pada tahap 10 bersama saklar "multi-organization
+    ready" Ecopa. Test pengganti: `OrganizationEntryFlowsTest` (flag mati menolak organisasi kedua,
+    flag nyala mengizinkan dan mengisolasi) dan sapuan di atas.
+- Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
+  tanpa assignment lokal hanya memperoleh workspace **dalam tenant
+  organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar
+  selama satu organisasi tertaut, dan diganti pada langkah `TenantContext`.
+
+## Locked 2026-11-19 — migrasi data v1 ke v2 (multi-organisasi) tanpa kehilangan data
+
+**Status:** dikunci atas permintaan pemilik produk (2026-11-19). Runbook,
+daftar tabel, dan query verifikasi: `docs/ecopa-multi-org-migration.md`.
+
+v1 = Akunta single-organisasi; v2 = Akunta multi-organisasi (tenant =
+organisasi Ecopa). Semua data v1 menjadi milik organisasi default Ecopa.
+
+1. **Definisi terdaftar.** `users` tetap global. User v1 terdaftar di
+   organisasi default bila tenant v1 tertaut ke `organization.id` default dan
+   setiap assignment user (app-wide maupun per entity, dengan atau tanpa role)
+   ber-`tenant_id` tenant itu. Keanggotaan organisasi tetap bersumber dari
+   Ecopa (`sub` → organisasi default); Akunta mencocokkannya sebelum migrasi.
+2. **Tidak ada akses baru.** Migrasi tidak membuat user, assignment, atau
+   role. User tanpa assignment tidak diberi assignment; ia dilaporkan sebagai
+   kategori tersendiri. Role, entity, `ecopa_role`, masa berlaku, `revoked_at`,
+   dan `disabled_at` tidak berubah.
+3. **Aditif dan idempotent.** Kolom nullable → backfill hanya baris `NULL`
+   dari induknya → verifikasi → `NOT NULL` dan composite foreign key. Tanpa
+   menghapus atau mengubah nilai bisnis. Baris tanpa induk yang jelas
+   menghentikan migrasi, bukan ditebak.
+4. **Organisasi default tanpa tebakan.** Diambil dari login PO bertanda tangan
+   atau `ecopa:link-organization` (dengan `--dry-run` lebih dulu). Lebih dari
+   satu tenant lama → operator memilih `--tenant`.
+5. **Urutan wajib:** rekonsiliasi identitas dengan Ecopa → latihan di salinan
+   production → backup + uji restore → maintenance mode, scheduler dan worker
+   berhenti → penautan organisasi → `tenant_id` di seluruh tabel milik tenant →
+   verifikasi → smoke test per kategori user → buka kembali.
+6. **Bukti tidak ada data hilang.** Snapshot sebelum dan sesudah harus sama
+   untuk: jumlah baris per tabel, jumlah per entity, `SUM(debit)/SUM(credit)`
+   per entity dan buku, jumlah koreksi fiskal, keanggotaan dan role tiap user,
+   serta file lampiran. Nol baris `tenant_id IS NULL` dan nol baris yang tenant-
+   nya berbeda dari entity induk. Laporan Neraca Saldo, Neraca, dan Laba Rugi
+   per entity identik dengan v1.
+7. **Rollback** memakai restore dump, bukan `down()`. `down()` hanya
+   menghapus kolom tambahan.
+8. Saklar Ecopa **multi-organization ready** untuk Akunta tetap mati sampai
+   migrasi, scoping per organisasi, dan test isolasi dua tenant lulus.

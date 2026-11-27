@@ -4,7 +4,15 @@
   import { page } from '$app/stores';
   import { ApiError } from '$lib/api/client.js';
   import PermissionManagement from '$lib/components/settings/RoleManagement.svelte';
-  import { can, canManagePermissions, isFiscalInspector } from '$lib/stores/permissions.svelte.js';
+  import BrandingSettings from '$lib/components/settings/BrandingSettings.svelte';
+  import OrganizationCoaTemplates from '$lib/components/settings/OrganizationCoaTemplates.svelte';
+  import { onboardingApi, type CoaTemplate } from '$lib/api/onboarding.js';
+  import {
+    can,
+    canManagePermissions,
+    isFiscalInspector,
+    isPlatformOwner,
+  } from '$lib/stores/permissions.svelte.js';
   import {
     ecopaIntegrationApi,
     type EcopaIntegrationStatus,
@@ -24,6 +32,7 @@
     getDateFormat,
     setDateFormat,
   } from '$lib/utils/date.js';
+  import PlatformUsagePanel from '$lib/components/settings/PlatformUsagePanel.svelte';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { auth } from '$lib/stores/auth.svelte.js';
@@ -59,7 +68,9 @@
     | 'fake-data'
     | 'users'
     | 'permissions'
-    | 'integration';
+    | 'integration'
+    | 'branding'
+    | 'coa-templates';
 
   const sections: Array<{ id: SettingSection; label: string; description: string; icon: string }> =
     [
@@ -80,6 +91,13 @@
         icon: '✓',
       },
       { id: 'integration', label: 'Integration', description: 'Koneksi dengan Ecopa', icon: '↔' },
+      { id: 'branding', label: 'Branding', description: 'Nama dan logo aplikasi', icon: 'B' },
+      {
+        id: 'coa-templates',
+        label: 'Template Bagan Akun',
+        description: 'Template COA organisasi',
+        icon: 'T',
+      },
       {
         id: 'fake-data',
         label: 'Fake Data & Pemulihan',
@@ -170,6 +188,9 @@
   let editingWorkspace = $state<WorkspaceRecord | null>(null);
   let workspaceName = $state('');
   let workspaceCode = $state('');
+  // Optional Chart-of-Accounts template for a NEW workspace (built-in or the organisation's own).
+  let coaTemplateKey = $state('');
+  let coaTemplateOptions = $state<CoaTemplate[]>([]);
   let workspaceActive = $state(true);
   let workspaceTheme = $state('blue');
   let workspaceLogo = $state<File | null>(null);
@@ -234,29 +255,20 @@
   let currentWorkspaceIsFake = $derived(
     tenant.available.find((item) => item.id === tenant.id)?.is_fake_data ?? false,
   );
-  let canManageFakeData = $derived(
-    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
-      ? can('settings.fake_data.manage')
-      : Boolean(
-          auth.user?.is_sso_admin ||
-          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_fake_data,
-        ),
-  );
-  let canManageCron = $derived(
-    auth.user?.tenants.find((item) => item.id === tenant.id)?.permissions
-      ? can('settings.cron.manage')
-      : Boolean(
-          auth.user?.is_sso_admin ||
-          auth.user?.tenants.find((item) => item.id === tenant.id)?.can_manage_cron,
-        ),
-  );
+  // Installation-level sections are Platform Owner only (backend enforced).
+  let platformOwner = $derived(isPlatformOwner());
+  let canManageFakeData = $derived(platformOwner);
+  let canManageCron = $derived(platformOwner);
   let showFakeDataSettings = $derived(currentWorkspaceIsFake && canManageFakeData);
   let visibleSections = $derived(
     sections.filter(
       (section) =>
         (section.id !== 'fake-data' || showFakeDataSettings) &&
         (section.id !== 'permissions' || canManagePermissions()) &&
-        (section.id !== 'cron' || canManageCron),
+        (section.id !== 'cron' || canManageCron) &&
+        (section.id !== 'integration' || platformOwner) &&
+        (section.id !== 'branding' || platformOwner) &&
+        (section.id !== 'coa-templates' || can('settings.coa_template.manage')),
     ),
   );
 
@@ -284,7 +296,7 @@
     activeSection = section;
     if (section === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (section === 'users' && isAdmin) void loadRoleManagement();
-    if (section === 'integration' && isAdmin) void loadEcopaWebhookLogs();
+    if (section === 'integration' && platformOwner) void loadEcopaWebhookLogs();
     if (section !== 'entity-profile') return;
 
     const activeWorkspace = workspaceRecords.find((item) => item.id === tenant.id);
@@ -323,7 +335,7 @@
     if ($page.url.searchParams.get('section') === 'cron') activeSection = 'cron';
     if ($page.url.searchParams.get('section') === 'fake-data' && showFakeDataSettings)
       activeSection = 'fake-data';
-    await loadEcopaIntegration();
+    if (platformOwner) await loadEcopaIntegration();
     dateFormat = getDateFormat(tenant.id);
     themeColor = getWorkspaceTheme(tenant.id);
     const activeWorkspace = tenant.available.find((item) => item.id === tenant.id);
@@ -334,7 +346,7 @@
     }
     if (isAdmin) void loadWorkspaces();
     if (isAdmin && activeSection === 'users') void loadRoleManagement();
-    if (isAdmin && activeSection === 'integration') void loadEcopaWebhookLogs();
+    if (platformOwner && activeSection === 'integration') void loadEcopaWebhookLogs();
     if (activeSection === 'fake-data' && showFakeDataSettings) void loadFakeData();
     if (canManageCron) {
       void loadSchedulerHealth();
@@ -708,6 +720,13 @@
   function openWorkspaceForm(workspaceItem?: WorkspaceRecord, modal = true) {
     if (!isAdmin) return;
     editingWorkspace = workspaceItem ?? null;
+    coaTemplateKey = '';
+    if (!workspaceItem && can('settings.coa_template.manage')) {
+      void onboardingApi
+        .coaTemplates()
+        .then((options) => (coaTemplateOptions = options))
+        .catch(() => (coaTemplateOptions = []));
+    }
     workspaceName = workspaceItem?.name ?? '';
     workspaceCode = workspaceItem?.workspace_code ?? '';
     workspaceActive = workspaceItem?.is_active ?? true;
@@ -754,6 +773,7 @@
         const created = await workspaceApi.create({
           tenant_id: tenantId,
           name: workspaceName.trim(),
+          coa_template_key: coaTemplateKey || undefined,
           workspace_code: workspaceCode.trim() || undefined,
           is_active: workspaceActive,
           theme_color: workspaceTheme,
@@ -814,7 +834,7 @@
   }
 
   async function loadEcopaWebhookLogs() {
-    if (!isAdmin) return;
+    if (!platformOwner) return;
     ecopaWebhookLogsLoading = true;
     ecopaWebhookLogsError = null;
     try {
@@ -1424,7 +1444,7 @@
                     >
                       {workspaceRestoring === workspaceItem.id ? 'Memulihkan…' : 'Restore'}
                     </button>
-                    {#if !workspaceItem.is_fake_data}
+                    {#if !workspaceItem.is_fake_data && platformOwner}
                       <button
                         type="button"
                         class="inline-flex items-center gap-1.5 rounded-md border border-danger px-3 py-2 text-xs font-semibold text-danger transition hover:bg-danger-light disabled:cursor-wait disabled:opacity-60"
@@ -1536,6 +1556,23 @@
                   placeholder="Opsional"
                 />
               </label>
+              {#if !editingWorkspace && coaTemplateOptions.length > 0}
+                <label class="mt-4 block">
+                  <span class="mb-1 block text-sm font-semibold">Template Bagan Akun</span>
+                  <select
+                    class="w-full rounded-md border border-border-default px-3 py-2 text-sm"
+                    bind:value={coaTemplateKey}
+                    data-testid="workspace-coa-template"
+                  >
+                    <option value="">Tanpa template (akun dasar saja)</option>
+                    {#each coaTemplateOptions as option (option.key)}
+                      <option value={option.key}>
+                        {option.label}{option.key.startsWith('org:') ? ' (organisasi)' : ''}
+                      </option>
+                    {/each}
+                  </select>
+                </label>
+              {/if}
               <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label class="block">
                   <span class="mb-1 block text-sm font-semibold">Theme color</span>
@@ -2869,6 +2906,11 @@
         {#if roleManagementMessage}
           <p class="mt-3 text-sm text-text-muted" role="status">{roleManagementMessage}</p>
         {/if}
+      {:else if activeSection === 'branding' && platformOwner}
+        <h2 class="text-lg font-bold">Branding</h2>
+        <BrandingSettings />
+      {:else if activeSection === 'coa-templates' && can('settings.coa_template.manage')}
+        <OrganizationCoaTemplates />
       {:else}
         <h2 class="text-lg font-bold">Integration with Ecopa</h2>
         <p class="mt-1 text-sm text-text-muted">
@@ -3017,6 +3059,10 @@
             </div>
           {/if}
         </div>
+
+        {#if platformOwner}
+          <PlatformUsagePanel />
+        {/if}
       {/if}
     </section>
   </div>

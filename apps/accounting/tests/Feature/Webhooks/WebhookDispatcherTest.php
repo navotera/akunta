@@ -21,7 +21,8 @@ it('matches an exact event name', function () {
         'event' => 'journal.posted', 'url' => 'https://example.test/hook', 'secret' => 's',
     ]);
 
-    $count = app(WebhookDispatcher::class)->dispatch('journal.posted', ['x' => 1]);
+    // An event is always about a workspace: it reaches the subscriptions of that workspace's tenant.
+    $count = app(WebhookDispatcher::class)->dispatch('journal.posted', ['x' => 1], $this->entity->id);
 
     expect($count)->toBe(1)
         ->and(WebhookDelivery::count())->toBe(1);
@@ -34,14 +35,14 @@ it('matches glob-style event patterns', function () {
         'event' => 'journal.*', 'url' => 'https://example.test/hook', 'secret' => 's',
     ]);
 
-    $a = app(WebhookDispatcher::class)->dispatch('journal.posted', []);
-    $b = app(WebhookDispatcher::class)->dispatch('journal.voided', []);
-    $c = app(WebhookDispatcher::class)->dispatch('payroll.posted', []); // mismatched
+    $a = app(WebhookDispatcher::class)->dispatch('journal.posted', [], $this->entity->id);
+    $b = app(WebhookDispatcher::class)->dispatch('journal.voided', [], $this->entity->id);
+    $c = app(WebhookDispatcher::class)->dispatch('payroll.posted', [], $this->entity->id); // mismatched
 
     expect($a)->toBe(1)->and($b)->toBe(1)->and($c)->toBe(0);
 });
 
-it('honors entity scoping — global subscription receives all', function () {
+it('honors entity scoping — a global subscription receives every workspace of its own tenant, and no other tenant\'s', function () {
     Bus::fake();
     WebhookSubscription::create([
         'event' => '*', 'url' => 'https://example.test/g', 'secret' => 's', 'entity_id' => null,
@@ -49,8 +50,12 @@ it('honors entity scoping — global subscription receives all', function () {
     $other = Tenant::create(['name' => 'PT O', 'slug' => 'o-'.uniqid()]);
     $otherEntity = Entity::create(['tenant_id' => $other->id, 'name' => 'O']);
 
+    $sibling = Entity::create(['tenant_id' => $this->entity->tenant_id, 'name' => 'W2']);
+
     expect(app(WebhookDispatcher::class)->dispatch('journal.posted', [], $this->entity->id))->toBe(1);
-    expect(app(WebhookDispatcher::class)->dispatch('journal.posted', [], $otherEntity->id))->toBe(1);
+    expect(app(WebhookDispatcher::class)->dispatch('journal.posted', [], $sibling->id))->toBe(1);
+    // Another organisation's workspace is not this subscription's business (stage 8).
+    expect(app(WebhookDispatcher::class)->dispatch('journal.posted', [], $otherEntity->id))->toBe(0);
 });
 
 it('skips subscriptions scoped to a different entity', function () {

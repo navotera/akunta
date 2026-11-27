@@ -67,13 +67,21 @@
       return;
     }
 
+    // An organisation owner whose workspace is missing or unfinished belongs in the wizard; asking
+    // the installation status first would be refused for an organisation without a tenant.
+    const entryState = auth.user?.organization?.state;
+    if (entryState === 'needs_workspace' || entryState === 'needs_setup') {
+      await goto('/onboarding', { replaceState: true });
+      return;
+    }
+
     try {
       const onboarding = await installationOnboardingApi.status();
       if (!onboarding.completed) {
-        if (auth.user?.is_sso_admin) {
+        if (auth.user?.is_platform_admin || auth.user?.is_sso_admin) {
           goto('/onboarding', { replaceState: true });
         } else {
-          error = 'Setup Akunta belum diselesaikan. Minta admin Ecopa menyelesaikan onboarding.';
+          error = 'Workspace organisasi Anda belum disiapkan. Hubungi Organization Owner.';
         }
         return;
       }

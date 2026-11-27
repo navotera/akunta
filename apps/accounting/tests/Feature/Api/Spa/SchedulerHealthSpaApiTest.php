@@ -58,6 +58,7 @@ it('reports missing scheduler heartbeats and failed scheduled jobs', function ()
     ]);
 
     $this->actingAs($this->user)
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/scheduler/status')
         ->assertOk()
@@ -94,6 +95,7 @@ it('reports a healthy heartbeat and successful scheduled job', function () {
     ]);
 
     $this->actingAs($this->user)
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/scheduler/status')
         ->assertOk()
@@ -103,3 +105,15 @@ it('reports a healthy heartbeat and successful scheduled job', function () {
 
     Carbon::setTestNow();
 });
+
+it('refuses a legacy settings.cron.manage grant or an Organization Owner without Platform Owner status', function (array $session) {
+    // The fixture role still carries the old settings.cron.manage permission.
+    $this->actingAs($this->user)
+        ->withSession($session)
+        ->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/scheduler/status')
+        ->assertForbidden();
+})->with([
+    'delegated permission only' => [[]],
+    'Organization Owner' => [['ecopa.app_role' => 'admin', 'ecopa.platform_admin' => false]],
+]);

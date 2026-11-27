@@ -1,5 +1,7 @@
 import { api } from './client.js';
 
+import type { OrganizationEntry } from './organization-onboarding.js';
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -30,7 +32,11 @@ export interface AuthUser {
     last_activity_at: string | null;
   }>;
   is_sso_admin: boolean;
+  /** Ecopa Platform Owner (or standalone installation super admin); false while impersonating. */
+  is_platform_admin: boolean;
   is_admin: boolean;
+  /** Where this person stands in their Ecopa organisation's setup; null without an organisation. */
+  organization?: OrganizationEntry | null;
   is_impersonating?: boolean;
   impersonator_id?: string | null;
 }

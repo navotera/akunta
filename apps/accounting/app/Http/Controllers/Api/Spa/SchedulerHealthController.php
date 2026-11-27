@@ -46,13 +46,7 @@ class SchedulerHealthController extends Controller
 
     public function index(Request $request, SchedulerStatus $schedulerStatus): JsonResponse
     {
-        $entity = $this->resolveEntity($request);
-        abort_unless(
-            session('ecopa.app_role') === 'admin'
-                || $request->user()?->hasPermission('settings.cron.manage', $entity->id),
-            403,
-            'Anda tidak memiliki akses untuk melihat status scheduler.',
-        );
+        // Platform Owner only: enforced by the `platform.owner` route middleware.
 
         $logs = CronRunLog::query()
             ->latest('started_at')

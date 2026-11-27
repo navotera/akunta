@@ -7,10 +7,10 @@
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
   import BalanceSheetTable from '$lib/components/reporting/BalanceSheetTable.svelte';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
 
-  let asOf = $state(new Date().toISOString().slice(0, 10));
+  let asOf = $state(getTodayIso());
   let report = $state<BalanceSheetData | null>(null);
   let journalMode = $state<BookToggleValue>('internal');
   let isInspector = $derived(isFiscalInspector());

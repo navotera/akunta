@@ -9,10 +9,10 @@
   import { formatRupiah } from '@akunta/ui';
   import ReportShell from '$lib/components/reporting/ReportShell.svelte';
   import DateInput from '$lib/components/ui/DateInput.svelte';
-  import { formatDate } from '$lib/utils/date.js';
+  import { formatDate, getTodayIso } from '$lib/utils/date.js';
   import BookToggle, { type BookToggleValue } from '$lib/components/reporting/BookToggle.svelte';
 
-  let asOf = $state(new Date().toISOString().slice(0, 10));
+  let asOf = $state(getTodayIso());
   let report = $state<TrialBalanceData | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);

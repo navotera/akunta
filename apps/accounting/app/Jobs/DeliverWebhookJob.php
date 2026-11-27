@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use Akunta\Rbac\Support\TenantContext;
+use App\Jobs\Middleware\RunInTenant;
+use App\Support\Tenancy\TenantOwnership;
 use App\Models\WebhookDelivery;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -36,7 +39,19 @@ class DeliverWebhookJob implements ShouldQueue
     /** @var int[] backoff schedule in seconds (Laravel uses last for further attempts) */
     public array $backoff = [10, 30, 120, 300, 900];
 
-    public function __construct(public string $deliveryId) {}
+    /** Tenant the delivery belongs to, carried in the payload (see RunInTenant). */
+    public ?string $tenantId;
+
+    public function __construct(public string $deliveryId)
+    {
+        $this->tenantId = TenantContext::id() ?? TenantOwnership::parentTenant('webhook_deliveries', $deliveryId);
+    }
+
+    /** @return list<object> */
+    public function middleware(): array
+    {
+        return [new RunInTenant];
+    }
 
     public function handle(): void
     {

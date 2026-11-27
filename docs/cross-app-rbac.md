@@ -129,7 +129,7 @@ GET /api/users/{id}/assignments
 | GET | `/api/entities` | list entities; pagination + `?since=` filter |
 | GET | `/api/entities/{id}` | fetch one |
 | GET | `/api/users/{id}/assignments` | list `(entity_id, app_code, ecopa_role)` for one user |
-| GET | `/api/apps/{code}/assignments` | list assignments scoped to one app — for nightly reconcile |
+| GET | `/api/apps/{code}/assignments` | list assignments scoped to one app — historical; `ecopa:reconcile` now uses `/api/apps/{slug}/accesses` + `/api/users` per organisation (see docs/decisions.md, stage 5) |
 | POST | `/api/webhooks/subscribe` | tier-2/3 app registers webhook URL + secret |
 
 Auth: Ecopa machine-to-machine token (already exists). Calls are HMAC-signed.

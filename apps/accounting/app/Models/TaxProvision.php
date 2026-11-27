@@ -6,12 +6,14 @@ namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TaxProvision extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     protected $fillable = [

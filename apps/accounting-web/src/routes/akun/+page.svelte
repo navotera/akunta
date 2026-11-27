@@ -7,6 +7,7 @@
   import { auth } from '$lib/stores/auth.svelte.js';
   import { can } from '$lib/stores/permissions.svelte.js';
   import { accountApi, type Account, type AccountInput } from '$lib/api/account.js';
+  import { coaTemplateApi } from '$lib/api/coa-templates.js';
   import { ApiError } from '$lib/api/client.js';
   import type { AccountDeletionContext } from '$lib/api/journal.js';
   import CoaTreeNode from '$lib/components/coa/CoaTreeNode.svelte';
@@ -23,6 +24,29 @@
   }
 
   let items = $state<Account[]>([]);
+  // "Simpan sebagai template": snapshot of this workspace's Chart of Accounts for the organisation.
+  let templateFormOpen = $state(false);
+  let templateName = $state('');
+  let templateBusy = $state(false);
+  let templateMessage = $state<string | null>(null);
+  let templateError = $state<string | null>(null);
+
+  async function saveAsTemplate() {
+    if (!templateName.trim() || templateBusy) return;
+    templateBusy = true;
+    templateError = null;
+    templateMessage = null;
+    try {
+      const created = await coaTemplateApi.create({ name: templateName.trim(), source: 'entity' });
+      templateMessage = `Template "${created.name}" tersimpan (${created.accounts_count} akun).`;
+      templateName = '';
+      templateFormOpen = false;
+    } catch (caught) {
+      templateError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      templateBusy = false;
+    }
+  }
   let viewMode = $state<ViewMode>('list');
   let treeSearch = $state('');
   let collapsedAccounts = $state<string[]>([]);
@@ -423,17 +447,73 @@
       <h1 class="text-2xl font-bold">Bagan Akun</h1>
       <p class="text-sm text-text-muted">{items.length} akun</p>
     </div>
-    {#if can('account.create')}
-      <button
-        type="button"
-        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
-        onclick={openCreate}
-        data-testid="account-create"
-      >
-        + Akun Baru
-      </button>
-    {/if}
+    <div class="flex items-center gap-2">
+      {#if can('settings.coa_template.manage')}
+        <button
+          type="button"
+          class="rounded-md border border-border-default px-4 py-2 text-sm font-semibold hover:border-primary hover:text-primary"
+          onclick={() => (templateFormOpen = !templateFormOpen)}
+          data-testid="coa-save-template"
+        >
+          Simpan sebagai template
+        </button>
+      {/if}
+      {#if can('account.create')}
+        <button
+          type="button"
+          class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active"
+          onclick={openCreate}
+          data-testid="account-create"
+        >
+          + Akun Baru
+        </button>
+      {/if}
+    </div>
   </header>
+
+  {#if templateFormOpen}
+    <form
+      class="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-border-default bg-card-bg p-4"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void saveAsTemplate();
+      }}
+    >
+      <label class="min-w-64 flex-1">
+        <span class="mb-1 block text-xs font-semibold">Nama template organisasi</span>
+        <input
+          class="w-full rounded-md border border-border-default px-3 py-2 text-sm"
+          bind:value={templateName}
+          maxlength="120"
+          required
+          data-testid="coa-template-name"
+        />
+      </label>
+      <button
+        type="submit"
+        class="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-active disabled:opacity-60"
+        disabled={templateBusy || !templateName.trim()}
+        data-testid="coa-template-submit"
+      >
+        {templateBusy ? 'Menyimpan…' : 'Simpan'}
+      </button>
+      <p class="w-full text-xs text-text-muted">
+        Menyimpan salinan seluruh akun workspace ini sebagai template organisasi. Hanya organisasi
+        Anda yang dapat memakainya.
+      </p>
+    </form>
+  {/if}
+  {#if templateError}
+    <p
+      class="mb-3 rounded-md border border-danger bg-danger-light p-3 text-sm text-danger"
+      role="alert"
+    >
+      {templateError}
+    </p>
+  {/if}
+  {#if templateMessage}
+    <p class="mb-3 text-sm text-paid" role="status">{templateMessage}</p>
+  {/if}
 
   <!-- Tabs + list controls -->
   <div class="mb-3 flex flex-wrap items-center justify-between gap-3">

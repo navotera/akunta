@@ -12,7 +12,7 @@
   import AjaxAccountCombobox from '$lib/components/ui/AjaxAccountCombobox.svelte';
   import PermissionNotice from '$lib/components/ui/PermissionNotice.svelte';
   import { tenant } from '$lib/stores/tenant.svelte.js';
-  import { formatDate, formatDateTime } from '$lib/utils/date.js';
+  import { formatDate, formatDateTime, getTodayIso } from '$lib/utils/date.js';
   import { formatRupiah } from '@akunta/ui';
 
   let raw = $state<AutoMappingRaw | null>(null);
@@ -848,7 +848,7 @@
                   <div class="text-[11px] font-semibold text-[#4b5675]">Tanggal Jurnal</div>
                   <div class="mt-1 text-[13px] text-[#252f4a]">
                     {useTodayDate
-                      ? formatDate(new Date().toISOString().slice(0, 10))
+                      ? formatDate(getTodayIso())
                       : previewDateValue(mapping.date_field)}
                   </div>
                 </div>

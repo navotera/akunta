@@ -4,19 +4,24 @@ namespace App\Models;
 
 use Akunta\Rbac\Models\App as RbacApp;
 use Akunta\Rbac\Models\User;
+use App\Models\Concerns\BelongsToTenant;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class ApiToken extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     public const PREFIX = 'akt_';
 
     protected $fillable = [
         'name',
+        'tenant_id',
         'token_hash',
         'user_id',
         'app_id',
@@ -40,6 +45,13 @@ class ApiToken extends Model
      */
     public static function issue(array $attributes): array
     {
+        // A token belongs to one tenant: given explicitly, or the one its user belongs to
+        // (or the only tenant of a single-tenant installation). Never guessed beyond that.
+        $attributes['tenant_id'] ??= TenantOwnership::tenantFor('api_tokens', $attributes);
+        if ($attributes['tenant_id'] === null) {
+            throw new InvalidArgumentException('Tenant token tidak dapat ditentukan; sebutkan tenant_id secara eksplisit.');
+        }
+
         $plain = self::generatePlain();
         $token = self::create(array_merge($attributes, [
             'token_hash' => self::hashPlain($plain),

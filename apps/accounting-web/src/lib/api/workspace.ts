@@ -69,6 +69,8 @@ export const workspaceApi = {
 
 export interface WorkspaceInput {
   name: string;
+  /** Optional: apply a built-in or organisation Chart-of-Accounts template to a new workspace. */
+  coa_template_key?: string;
   workspace_code?: string;
   is_active?: boolean;
   theme_color?: string;

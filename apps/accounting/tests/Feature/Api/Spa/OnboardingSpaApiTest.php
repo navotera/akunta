@@ -9,6 +9,7 @@ use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\Account;
 use App\Models\EcopaConfigIntegration;
+use Illuminate\Support\Facades\DB;
 use App\Models\User as AccountingUser;
 
 beforeEach(function () {
@@ -65,7 +66,7 @@ it('applies a CoA template and creates accounts', function () {
     expect(Account::where('entity_id', $this->entity->id)->count())->toBeGreaterThan(0);
 });
 
-it('completes onboarding globally and prevents a second wizard run', function () {
+it('completes onboarding for the tenant and prevents a second wizard run', function () {
     $headers = ['X-Tenant-Slug' => $this->entity->id];
 
     $this->actingAs($this->user)
@@ -104,9 +105,8 @@ it('completes onboarding globally and prevents a second wizard run', function ()
         ->assertOk()
         ->assertJsonPath('data.completed', true);
 
-    expect(EcopaConfigIntegration::query()
-        ->where('name', 'installation_onboarding_completed_at')
-        ->value('value'))->not->toBeNull();
+    // Completion is recorded on the tenant (stage 7), not as one installation-wide flag.
+    expect(DB::table('tenants')->where('id', $this->entity->tenant_id)->value('onboarding_completed_at'))->not->toBeNull();
 
     EcopaConfigIntegration::query()
         ->where('name', 'installation_onboarding_completed_at')
@@ -125,7 +125,7 @@ it('completes onboarding globally and prevents a second wizard run', function ()
     ]);
 
     $this->actingAs($secondAdmin)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($secondAdmin))
         ->postJson('/api/v1/spa/installation-onboarding/entity', [
             'name' => 'PT Kedua',
         ])

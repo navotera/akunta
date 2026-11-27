@@ -3,6 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/stores/auth.svelte.js';
+  import { branding } from '$lib/stores/branding.svelte.js';
   import { redirectToEcopaLogin } from '$lib/api/client.js';
   import { ecopaIntegrationApi } from '$lib/api/ecopa-integration.js';
 
@@ -185,7 +186,7 @@
       onsubmit={onSubmit}
       data-testid="login-form"
     >
-      <h1 class="mb-1 text-xl font-bold">Akunta</h1>
+      <h1 class="mb-1 text-xl font-bold">{branding.appName}</h1>
       <p class="mb-5 text-sm text-text-muted">Masuk ke aplikasi akuntansi (mode lokal).</p>
 
       {#if formError}

@@ -102,6 +102,7 @@ class LogEcopaWebhook
                 'event_id' => $eventId,
                 'event' => $event,
                 'subject_reference' => $this->subjectReference($payload['subject'] ?? null),
+                'ecopa_organization_id' => $this->organizationId($payload['subject'] ?? null),
                 'outcome' => $this->outcome($request, $httpStatus, $responseStatus, $retryable),
                 'result_code' => $resultCode,
                 'http_status' => $httpStatus,
@@ -161,5 +162,33 @@ class LogEcopaWebhook
         }
 
         return null;
+    }
+
+    /**
+     * The Ecopa organisation a delivery belongs to: `subject.organization.id`,
+     * or - for `app.admin_bootstrap` - the single organisation shared by every
+     * `subject.admins[].organization`. Ambiguous or missing means NULL.
+     */
+    private function organizationId(mixed $subject): ?string
+    {
+        if (! is_array($subject)) {
+            return null;
+        }
+
+        $ids = [];
+        $own = $subject['organization']['id'] ?? null;
+        if (is_string($own) || is_int($own)) {
+            $ids[] = (string) $own;
+        }
+        foreach (is_array($subject['admins'] ?? null) ? $subject['admins'] : [] as $admin) {
+            $id = is_array($admin) ? ($admin['organization']['id'] ?? null) : null;
+            if (is_string($id) || is_int($id)) {
+                $ids[] = (string) $id;
+            }
+        }
+
+        $ids = array_values(array_unique(array_filter($ids, fn (string $id): bool => $id !== '')));
+
+        return count($ids) === 1 ? Str::limit($ids[0], 64, '') : null;
     }
 }

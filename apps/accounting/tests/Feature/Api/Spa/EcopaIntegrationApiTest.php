@@ -89,7 +89,13 @@ it('cancels a pending registration locally so setup can start again', function (
         EcopaConfigIntegration::query()->create(compact('name', 'value'));
     }
 
-    $this->postJson('/api/auth/ecopa-registration/cancel')
+    // Another browser cannot cancel someone else's pending registration.
+    $this->postJson('/api/auth/ecopa-registration/cancel')->assertForbidden();
+    $this->assertDatabaseHas('ecopa_config_integration', ['name' => 'registration_status', 'value' => 'pending']);
+
+    // The session that started it (marker written by register()) can.
+    $this->withSession(['ecopa.pending_registration' => 'pending:registration-123:https://ecopa.example.test'])
+        ->postJson('/api/auth/ecopa-registration/cancel')
         ->assertOk()
         ->assertJsonPath('data.configured', false)
         ->assertJsonPath('data.registration_status', null)
@@ -97,6 +103,10 @@ it('cancels a pending registration locally so setup can start again', function (
 
     $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'registration_status']);
     $this->assertDatabaseMissing('ecopa_config_integration', ['name' => 'registration_verification_secret']);
+    $this->assertDatabaseHas('platform_audit_log', [
+        'action' => 'ecopa.registration_cancelled',
+        'actor_kind' => 'anonymous_installer',
+    ]);
 });
 
 it('allows an HTTP localhost Ecopa URL in production', function () {
@@ -241,7 +251,7 @@ it('disables password login after Ecopa mode is active', function () {
         ->assertJsonPath('message', 'Login lokal dinonaktifkan karena Akunta menggunakan Ecopa.');
 });
 
-it('lets only an Akunta app admin inspect safe Ecopa webhook logs', function () {
+it('lets only the Platform Owner inspect safe Ecopa webhook logs', function () {
     EcopaWebhookLog::query()->create([
         'event_id' => 'visible-event-id',
         'event' => 'user.assigned',
@@ -256,8 +266,14 @@ it('lets only an Akunta app admin inspect safe Ecopa webhook logs', function () 
         'completed_at' => now(),
     ]);
 
+    // An Organization Owner (Ecopa admin without platform_admin) is refused.
     $this->actingAs($this->admin)
         ->withSession(['ecopa.app_role' => 'admin'])
+        ->getJson('/api/v1/spa/ecopa-integration/webhook-logs')
+        ->assertForbidden();
+
+    $this->actingAs($this->admin)
+        ->withSession(platformOwnerSession($this->admin))
         ->getJson('/api/v1/spa/ecopa-integration/webhook-logs')
         ->assertOk()
         ->assertJsonPath('data.0.event_id', 'visible-event-id')

@@ -6,6 +6,11 @@
   import { periodApi } from '$lib/api/period.js';
   import { ApiError } from '$lib/api/client.js';
   import { installationOnboardingApi } from '$lib/api/installation-onboarding.js';
+  import {
+    MEMBER_MESSAGES,
+    organizationOnboardingApi,
+    type OrganizationEntryStateName,
+  } from '$lib/api/organization-onboarding.js';
   import DateInput from '$lib/components/ui/DateInput.svelte';
 
   let status = $state<OnboardingStatus | null>(null);
@@ -17,6 +22,10 @@
   let error = $state<string | null>(null);
   let entityName = $state('');
   let legalForm = $state('PT');
+  // Entry flow of the signed-in person's organisation (null without an Ecopa organisation).
+  let entryState = $state<OrganizationEntryStateName | null>(null);
+  // Members never see the wizard: they are told whom to contact.
+  let blockedMessage = $state<string | null>(null);
 
   const currentYear = new Date().getFullYear();
 
@@ -34,15 +43,35 @@
         return;
       }
     }
+    if (auth.user?.organization) {
+      // The organisation decides: its Organization Owner builds the workspace (flow 2),
+      // a member is only told to contact the owner (flow 3), a set-up organisation goes on.
+      const entry = await organizationOnboardingApi.status();
+      entryState = entry.state;
+      if (entry.state === 'ready') {
+        goto('/dashboard', { replaceState: true });
+        return;
+      }
+      if (entry.state === 'workspace_missing' || entry.state === 'no_role') {
+        blockedMessage = MEMBER_MESSAGES[entry.state];
+        return;
+      }
+      if (entry.state === 'needs_workspace') {
+        step = 0;
+        return;
+      }
+      await loadEntityOnboarding();
+      return;
+    }
     const installation = await installationOnboardingApi.status();
     if (installation.completed) {
       goto('/dashboard', { replaceState: true });
       return;
     }
     if (auth.user?.tenants.length === 0) {
-      if (!auth.user.is_sso_admin) {
+      if (!auth.user.is_platform_admin) {
         error =
-          'Entitas Akunta belum tersedia. Minta admin Ecopa menyelesaikan onboarding pertama.';
+          'Entitas Akunta belum tersedia. Minta Platform Owner menyelesaikan onboarding pertama.';
       }
       step = 0;
       return;
@@ -64,7 +93,16 @@
     busy = true;
     error = null;
     try {
-      await installationOnboardingApi.createEntity({ name: entityName, legal_form: legalForm });
+      // The Platform Owner runs the installation wizard; an Organization Owner of a new
+      // organisation creates that organisation's own workspace.
+      if (auth.user?.is_platform_admin) {
+        await installationOnboardingApi.createEntity({ name: entityName, legal_form: legalForm });
+      } else {
+        await organizationOnboardingApi.createWorkspace({
+          name: entityName,
+          legal_form: legalForm,
+        });
+      }
       await auth.refresh();
       await loadEntityOnboarding();
       step = 1;
@@ -173,12 +211,24 @@
     </div>
   {/if}
 
-  {#if step === 0 && auth.user?.is_sso_admin}
+  {#if blockedMessage}
+    <div
+      class="rounded-lg border border-border-default bg-card-bg p-5 text-sm"
+      role="status"
+      data-testid="onboarding-blocked"
+    >
+      {blockedMessage}
+    </div>
+  {:else if step === 0 && (auth.user?.is_platform_admin || entryState === 'needs_workspace')}
     <section
       class="rounded-lg border border-border-default bg-card-bg p-5"
       data-testid="entity-onboarding-step"
     >
-      <h2 class="mb-2 text-lg font-bold">Buat Entitas Pertama</h2>
+      <h2 class="mb-2 text-lg font-bold">
+        {entryState === 'needs_workspace' && !auth.user?.is_platform_admin
+          ? 'Buat Workspace Organisasi'
+          : 'Buat Entitas Pertama'}
+      </h2>
       <p class="mb-4 text-sm text-text-muted">
         Entitas ini menjadi ruang kerja awal untuk COA, periode, jurnal, dan laporan.
       </p>

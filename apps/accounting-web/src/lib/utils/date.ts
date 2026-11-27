@@ -18,13 +18,29 @@ export function setDateFormat(format: string | null, entityId = activeEntityId()
   else localStorage.removeItem(key);
 }
 
-export function getTodayIso(): string {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
+/**
+ * Local calendar date as `YYYY-MM-DD`. Never use `toISOString().slice(0, 10)` for a
+ * date-only value: it converts to UTC and returns the previous day for the first hours
+ * of the day in timezones ahead of UTC (e.g. WIB, UTC+7).
+ */
+export function toLocalIso(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+}
+
+export function getTodayIso(now = new Date()): string {
+  return toLocalIso(now);
+}
+
+export function getStartOfMonthIso(now = new Date()): string {
+  return toLocalIso(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+export function getStartOfYearIso(now = new Date()): string {
+  return toLocalIso(new Date(now.getFullYear(), 0, 1));
 }
 
 export function getDateFormat(entityId = activeEntityId()): string {

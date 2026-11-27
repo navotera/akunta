@@ -6,6 +6,7 @@ namespace App\Services\Reporting;
 
 use App\Models\Account;
 use App\Models\Journal;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -59,7 +60,7 @@ class CashFlowService
         $ending = $this->cashBalance($cashIds, $entityId, $periodEnd, '<=', $journalMode);
 
         // Pull journals touching cash within range, group by journal
-        $cashLines = DB::table('journal_entries as je')
+        $cashLines = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->whereIn('je.account_id', $cashIds)
             ->where('j.entity_id', $entityId)
@@ -76,7 +77,7 @@ class CashFlowService
         $journalIds = $cashLines->keys()->all();
         $counters = collect();
         if (! empty($journalIds)) {
-            $counters = DB::table('journal_entries as je')
+            $counters = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
                 ->join('accounts as a', 'a.id', '=', 'je.account_id')
                 ->whereIn('je.journal_id', $journalIds)
                 ->whereNotIn('je.account_id', $cashIds)
@@ -148,7 +149,7 @@ class CashFlowService
 
     private function cashBalance(Collection $cashIds, string $entityId, string $cutoff, string $op, string $journalMode): string
     {
-        $row = DB::table('journal_entries as je')
+        $row = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->whereIn('je.account_id', $cashIds)
             ->where('j.entity_id', $entityId)

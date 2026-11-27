@@ -32,8 +32,9 @@ class ApplyCoaTemplateAction
      */
     public function execute(string $entityId, string $templateKey): array
     {
-        $rows = $this->registry->load($templateKey);
         $entity = Entity::query()->findOrFail($entityId);
+        // An organisation template can only be applied to a workspace of the same organisation.
+        $rows = $this->registry->load($templateKey, $entity->tenant_id);
         $independentBooks = data_get($entity->workspace_settings, 'bookkeeping_mode') === 'independent_books';
         $defaultAvailability = $independentBooks
             ? Account::AVAILABILITY_BOTH

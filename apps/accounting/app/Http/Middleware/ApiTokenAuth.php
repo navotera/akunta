@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use Akunta\Rbac\Support\TenantContext;
 use App\Models\ApiToken;
 use Closure;
 use Illuminate\Http\Request;
@@ -17,7 +18,9 @@ class ApiTokenAuth
             return response()->json(['error' => 'token_missing'], 401);
         }
 
-        $token = ApiToken::findByPlain($plain);
+        // The token decides the tenant, so it is looked up before any context exists: an explicit,
+        // read-only cross-tenant read of one row by its hash.
+        $token = TenantContext::platformRead(fn () => ApiToken::findByPlain($plain));
         if ($token === null) {
             return response()->json(['error' => 'token_invalid'], 401);
         }
@@ -28,23 +31,32 @@ class ApiTokenAuth
             return response()->json(['error' => $reason], 401);
         }
 
-        $token->touchLastUsed();
-
         $request->attributes->set('api_token', $token);
 
-        if ($token->user_id !== null) {
-            $user = $token->user;
-            if ($user !== null) {
-                if ($user->disabled_at !== null) {
-                    $token->forceFill(['revoked_at' => now()])->save();
+        // The token's tenant is the organisation this call works for; the entity it names in the
+        // payload must live inside it (Entity is tenant-scoped). Everything that writes — including
+        // the token's own bookkeeping — happens inside that context.
+        TenantContext::set($token->getAttribute('tenant_id'));
 
-                    return response()->json(['error' => 'account_disabled'], 401);
+        try {
+            $token->touchLastUsed();
+
+            if ($token->user_id !== null) {
+                $user = $token->user;
+                if ($user !== null) {
+                    if ($user->disabled_at !== null) {
+                        $token->forceFill(['revoked_at' => now()])->save();
+
+                        return response()->json(['error' => 'account_disabled'], 401);
+                    }
+                    Auth::setUser($user);
                 }
-                Auth::setUser($user);
             }
-        }
 
-        return $next($request);
+            return $next($request);
+        } finally {
+            TenantContext::clear();
+        }
     }
 
     private function extractToken(Request $request): ?string

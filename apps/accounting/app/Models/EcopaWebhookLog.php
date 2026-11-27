@@ -17,6 +17,7 @@ class EcopaWebhookLog extends Model
         'event_id',
         'event',
         'subject_reference',
+        'ecopa_organization_id',
         'outcome',
         'result_code',
         'http_status',

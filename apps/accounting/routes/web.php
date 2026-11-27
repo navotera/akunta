@@ -9,6 +9,7 @@ use App\Http\Controllers\Wellknown\AkuntaAppMetadataController;
 use App\Http\Middleware\LogEcopaWebhook;
 use App\Http\Middleware\VerifyEcopaSignature;
 use App\Services\InstallationOnboardingService;
+use App\Support\PlatformOwner;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -87,8 +88,17 @@ Route::get('/sso/login', function () {
             return redirect()->away($target);
         }
 
-        if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
+        // Only the Platform Owner runs the installation wizard.
+        if (PlatformOwner::check()) {
             $target = $spaUrl !== '' ? $spaUrl.'/onboarding' : '/dashboard';
+
+            return redirect()->away($target);
+        }
+
+        // An Organization Owner waits for the Platform Owner; the dashboard
+        // explains that setup is pending.
+        if (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin()) {
+            $target = $spaUrl !== '' ? $spaUrl.'/dashboard' : '/dashboard';
 
             return redirect()->away($target);
         }

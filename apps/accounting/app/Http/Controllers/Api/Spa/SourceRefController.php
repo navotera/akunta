@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Spa\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\Journal;
 use App\Models\SourceRefRegistry;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +79,7 @@ class SourceRefController extends Controller
         $mode = $data['journal_mode'] ?? Journal::MODE_INTERNAL;
         $this->authorizeBookRead($request, $mode);
 
-        $q = DB::table('journal_entries as je')
+        $q = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->where('j.entity_id', $entity->id)
             ->where('j.status', Journal::STATUS_POSTED)

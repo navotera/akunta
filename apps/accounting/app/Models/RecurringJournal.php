@@ -3,19 +3,25 @@
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class RecurringJournal extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
-    public const FREQUENCY_DAILY     = 'daily';
-    public const FREQUENCY_WEEKLY    = 'weekly';
-    public const FREQUENCY_MONTHLY   = 'monthly';
+    public const FREQUENCY_DAILY = 'daily';
+
+    public const FREQUENCY_WEEKLY = 'weekly';
+
+    public const FREQUENCY_MONTHLY = 'monthly';
+
     public const FREQUENCY_QUARTERLY = 'quarterly';
-    public const FREQUENCY_YEARLY    = 'yearly';
+
+    public const FREQUENCY_YEARLY = 'yearly';
 
     public const FREQUENCIES = [
         self::FREQUENCY_DAILY,
@@ -26,8 +32,10 @@ class RecurringJournal extends Model
     ];
 
     public const STATUS_ACTIVE = 'active';
+
     public const STATUS_PAUSED = 'paused';
-    public const STATUS_ENDED  = 'ended';
+
+    public const STATUS_ENDED = 'ended';
 
     protected $fillable = [
         'entity_id',
@@ -47,15 +55,15 @@ class RecurringJournal extends Model
     ];
 
     protected $casts = [
-        'start_date'  => 'date',
-        'end_date'    => 'date',
+        'start_date' => 'date',
+        'end_date' => 'date',
         'next_run_at' => 'date',
         'last_run_at' => 'datetime',
-        'auto_post'   => 'boolean',
+        'auto_post' => 'boolean',
     ];
 
     protected $attributes = [
-        'status'    => self::STATUS_ACTIVE,
+        'status' => self::STATUS_ACTIVE,
         'auto_post' => false,
     ];
 

@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $main_tier_user_id
  * @property Carbon|null $last_login_at
  * @property Carbon|null $disabled_at
+ * @property bool|null $ecopa_platform_admin Last signed Ecopa `platform_admin` value; null = never reported
  */
 class User extends Authenticatable
 {
@@ -39,6 +40,7 @@ class User extends Authenticatable
         'last_login_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
+        'ecopa_platform_admin' => 'boolean',
     ];
 
     public function getAuthPassword(): ?string

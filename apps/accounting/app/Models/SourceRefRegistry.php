@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class SourceRefRegistry extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     protected $table = 'source_ref_registry';
@@ -39,10 +41,10 @@ class SourceRefRegistry extends Model
     ];
 
     protected $casts = [
-        'last_attrs'    => 'array',
+        'last_attrs' => 'array',
         'first_seen_at' => 'datetime',
-        'last_seen_at'  => 'datetime',
-        'entry_count'   => 'integer',
+        'last_seen_at' => 'datetime',
+        'entry_count' => 'integer',
     ];
 
     public function entity(): BelongsTo
@@ -61,10 +63,10 @@ class SourceRefRegistry extends Model
         $now = now();
 
         $row = self::firstOrNew([
-            'entity_id'  => $entityId,
+            'entity_id' => $entityId,
             'source_app' => $sourceApp,
-            'ref_type'   => $source['ref_type'],
-            'ref_id'     => $source['ref_id'],
+            'ref_type' => $source['ref_type'],
+            'ref_id' => $source['ref_id'],
         ]);
 
         if (! $row->exists) {
@@ -72,11 +74,11 @@ class SourceRefRegistry extends Model
             $row->entry_count = 0;
         }
 
-        $row->last_code    = $source['ref_code']   ?? $row->last_code;
-        $row->last_label   = $source['ref_label']  ?? $row->last_label;
-        $row->last_attrs   = $source['ref_attrs']  ?? $row->last_attrs;
+        $row->last_code = $source['ref_code'] ?? $row->last_code;
+        $row->last_label = $source['ref_label'] ?? $row->last_label;
+        $row->last_attrs = $source['ref_attrs'] ?? $row->last_attrs;
         $row->last_seen_at = $now;
-        $row->entry_count  = ($row->entry_count ?? 0) + 1;
+        $row->entry_count = ($row->entry_count ?? 0) + 1;
         $row->save();
 
         return $row;

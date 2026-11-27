@@ -3,7 +3,12 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.svelte.js';
-  import { can, activeRoles, canManagePermissions } from '$lib/stores/permissions.svelte.js';
+  import {
+    can,
+    activeRoles,
+    canManagePermissions,
+    isPlatformOwner,
+  } from '$lib/stores/permissions.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import JournalForm, { type FormPayload } from '$lib/components/journal/JournalForm.svelte';
@@ -488,7 +493,7 @@
   >
     <strong>Workspace demo untuk latihan.</strong> Anda dapat mengubah jurnal sesuai izin dan
     statusnya.
-    {#if can('settings.fake_data.manage')}
+    {#if isPlatformOwner()}
       <a href="/settings?section=fake-data" class="ml-1 font-semibold underline"
         >Pulihkan Data Demo di Settings</a
       > untuk mengembalikan data contoh bawaan.

@@ -6,6 +6,7 @@ namespace App\Services\Reporting;
 
 use App\Models\Account;
 use App\Models\Journal;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -64,7 +65,7 @@ class GeneralLedgerService
         $opening = $this->balance($account, '<', $periodStart, $applyFilters, $journalMode);
 
         // Lines within range
-        $lines = DB::table('journal_entries')
+        $lines = TenantOwnership::restrict(DB::table('journal_entries'), 'journal_entries')
             ->join('journals', 'journals.id', '=', 'journal_entries.journal_id')
             ->where('journals.entity_id', $entityId)
             ->where('journals.status', Journal::STATUS_POSTED)
@@ -124,7 +125,7 @@ class GeneralLedgerService
 
     private function balance(Account $account, string $op, string $cutoff, callable $applyFilters, string $journalMode): string
     {
-        $row = DB::table('journal_entries')
+        $row = TenantOwnership::restrict(DB::table('journal_entries'), 'journal_entries')
             ->join('journals', 'journals.id', '=', 'journal_entries.journal_id')
             ->where('journals.entity_id', $account->entity_id)
             ->where('journals.status', Journal::STATUS_POSTED)

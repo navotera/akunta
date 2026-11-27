@@ -38,6 +38,7 @@ test('Fake Data controls remain hidden when switching to the native demo entity'
             email: 'admin@example.test',
             roles: ['admin'],
             is_sso_admin: true,
+            is_platform_admin: true,
             is_admin: true,
             tenants: [
               {

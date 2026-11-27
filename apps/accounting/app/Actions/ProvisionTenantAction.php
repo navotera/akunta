@@ -217,6 +217,7 @@ class ProvisionTenantAction extends BaseAction
 
             [$token, $plain] = ApiToken::issue([
                 'name' => $tokenName,
+                'tenant_id' => $tenant->id,
                 'user_id' => $adminUser->id,
                 'app_id' => $app->id,
                 'permissions' => $tokenPermissions,

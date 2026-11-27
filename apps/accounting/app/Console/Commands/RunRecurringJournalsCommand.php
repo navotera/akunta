@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Actions\RunRecurringJournalAction;
 use App\Models\RecurringJournal;
+use App\Support\Tenancy\EachTenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -18,7 +19,21 @@ class RunRecurringJournalsCommand extends Command
 
     protected $description = 'Instantiate journals for due RecurringJournal schedules.';
 
+    /** Each tenant is processed in its own TenantContext (stage 5). */
     public function handle(RunRecurringJournalAction $runner): int
+    {
+        $failures = EachTenant::run(function (string $tenantId) use ($runner): void {
+            $this->line("Tenant {$tenantId}");
+            $this->handleTenant($runner);
+        });
+        foreach ($failures as $tenantId => $message) {
+            $this->error("Tenant {$tenantId} failed: {$message}");
+        }
+
+        return $failures === [] ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function handleTenant(RunRecurringJournalAction $runner): int
     {
         $today = $this->option('date') ?? Carbon::today()->toDateString();
         $dryRun = (bool) $this->option('dry-run');

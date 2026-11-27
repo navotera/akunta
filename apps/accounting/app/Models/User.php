@@ -6,6 +6,8 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User as RbacUser;
 use App\Http\Middleware\SharedEntitySelector;
 use App\Services\AccountingPermissions;
+use App\Support\Tenancy\RequestTenant;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -26,8 +28,12 @@ class User extends RbacUser
     /** @return Collection<int, Entity> */
     public function getTenants(): Collection
     {
+        // An Ecopa admin gets every workspace of the organisation in the session —
+        // never those of another organisation.
         if ($this->isSsoAdmin()) {
-            return Entity::query()->get();
+            $tenantId = RequestTenant::forSession($this->id);
+
+            return $tenantId === null ? new Collection : Entity::query()->where('tenant_id', $tenantId)->get();
         }
 
         return Entity::query()
@@ -42,16 +48,19 @@ class User extends RbacUser
             return false;
         }
 
-        if ($this->isSsoAdmin()) {
+        if ($this->isSsoAdmin() && RequestTenant::isSessionAdminOf($this->id, $tenant->tenant_id)) {
             return true;
         }
 
+        // Assignments are tenant-scoped (AssignmentTenantScope): an application-wide
+        // one only counts for entities of its own tenant.
         return $this->assignments()
             ->whereNull('revoked_at')
             ->where(function ($q) use ($tenant) {
                 $q->where('entity_id', $tenant->id)
-                    ->orWhere(function ($q) {
-                        $q->whereNull('entity_id')->whereNotNull('role_id');
+                    ->orWhere(function ($q) use ($tenant) {
+                        $q->whereNull('entity_id')->whereNotNull('role_id')
+                            ->where(fn ($q) => $q->whereNull('tenant_id')->orWhere('tenant_id', $tenant->tenant_id));
                     });
             })
             ->exists();
@@ -72,15 +81,18 @@ class User extends RbacUser
      */
     protected function accessibleEntityIdsFromTenantWide(): Collection
     {
-        if ($this->assignments()
+        // ...and only inside the tenant(s) those assignments belong to.
+        $tenantIds = $this->assignments()
             ->whereNull('revoked_at')
             ->whereNull('entity_id')
             ->whereNotNull('role_id')
-            ->exists()) {
-            return Entity::query()->pluck('id');
-        }
+            ->get(['tenant_id'])
+            ->map(fn ($assignment) => $assignment->tenant_id ?? TenantOwnership::onlyTenant())
+            ->filter()
+            ->unique()
+            ->values();
 
-        return collect();
+        return $tenantIds->isEmpty() ? collect() : Entity::query()->whereIn('tenant_id', $tenantIds)->pluck('id');
     }
 
     /**

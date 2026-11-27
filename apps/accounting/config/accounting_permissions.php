@@ -49,8 +49,6 @@ $rows = [
     ['fiscal.tax_provision.read', 'Fiskal', 'Melihat simulasi provisi pajak', true, false],
     ['fiscal.tax_provision.manage', 'Fiskal', 'Membuat perhitungan dan draft provisi pajak', true, false],
     ['settings.coa_template.manage', 'Pengaturan', 'Menerapkan template Bagan Akun', false, false],
-    ['settings.cron.manage', 'Pengaturan', 'Melihat status dan log scheduler', false, false],
-    ['settings.fake_data.manage', 'Pengaturan', 'Mengelola data simulasi bertanda fake', false, false],
 ];
 
 return [

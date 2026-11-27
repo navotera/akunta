@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use Akunta\Rbac\Models\App as RbacApp;
+use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\ApiToken;
 
 beforeEach(function () {
+    // A token belongs to a tenant; with a single tenant (v1 / standalone) it is implied.
+    $this->tenant = Tenant::create(['name' => 'Tenant Token', 'slug' => 'token-'.uniqid(), 'status' => 'active']);
     $this->user = User::create([
         'name' => 'Service User',
         'email' => 'svc+'.uniqid().'@example.test',
@@ -133,4 +136,35 @@ it('token:issue CLI fails with missing required options', function () {
     ])
         ->expectsOutputToContain('required')
         ->assertExitCode(2);
+});
+
+it('token:issue CLI stores the tenant and accepts an explicit one', function () {
+    $other = Tenant::create(['name' => 'Tenant Lain', 'slug' => 'lain-'.uniqid(), 'status' => 'active']);
+
+    $this->artisan('token:issue', [
+        '--name' => 'Eksplisit',
+        '--user-email' => $this->user->email,
+        '--app-code' => $this->rbacApp->code,
+        '--permissions' => 'journal.post',
+        '--tenant' => $other->slug,
+    ])->assertExitCode(0);
+
+    expect(ApiToken::where('name', 'Eksplisit')->first()->getAttributes()['tenant_id'])->toBe($other->id);
+});
+
+it('token:issue CLI refuses to guess the tenant when several exist', function () {
+    Tenant::create(['name' => 'Tenant Lain', 'slug' => 'lain-'.uniqid(), 'status' => 'active']);
+
+    $this->artisan('token:issue', [
+        '--name' => 'Ambigu',
+        '--user-email' => $this->user->email,
+        '--app-code' => $this->rbacApp->code,
+        '--permissions' => 'journal.post',
+    ])
+        ->expectsOutputToContain('--tenant')
+        ->assertExitCode(1);
+
+    expect(ApiToken::where('name', 'Ambigu')->exists())->toBeFalse();
+    expect(fn () => ApiToken::issue(['name' => 'Ambigu', 'user_id' => $this->user->id, 'app_id' => $this->rbacApp->id, 'permissions' => []]))
+        ->toThrow(InvalidArgumentException::class, 'tenant_id');
 });

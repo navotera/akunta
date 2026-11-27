@@ -15,6 +15,7 @@
     prepareWorkspaceSwitch,
   } from '$lib/stores/workspace.svelte.js';
   import { tenant } from '$lib/stores/tenant.svelte.js';
+  import { branding } from '$lib/stores/branding.svelte.js';
   import { period } from '$lib/stores/period.svelte.js';
   import { palette } from '$lib/stores/palette.svelte.js';
   import { ecosystem } from '$lib/stores/ecosystem.svelte.js';
@@ -483,13 +484,24 @@
       class="ak-sidebar-brand mt-5 mb-5 flex items-center gap-2.5 px-5 py-4 transition-colors"
       title="Beranda Akunta"
     >
-      <span
-        class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm"
-      >
-        A
-      </span>
+      {#if branding.logoUrl}
+        <img
+          src={branding.logoUrl}
+          alt=""
+          class="h-8 w-8 rounded-md object-contain"
+          data-testid="app-logo"
+        />
+      {:else}
+        <span
+          class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white text-sm font-bold shadow-sm"
+        >
+          {branding.appName.charAt(0).toUpperCase()}
+        </span>
+      {/if}
       <div class="flex flex-col leading-tight">
-        <strong class="text-xl font-bold tracking-tight text-text-strong">Akunta</strong>
+        <strong class="text-xl font-bold tracking-tight text-text-strong" data-testid="app-name"
+          >{branding.appName}</strong
+        >
         <span class="text-[0.65rem] font-medium uppercase tracking-wider text-text-muted"
           >Accounting</span
         >

@@ -85,6 +85,7 @@ class RoleManagementController extends Controller
             ->whereNull('revoked_at')
             ->with(['user:id,name,email,main_tier_user_id,disabled_at', 'role:id,code,name'])
             ->orderBy('assigned_at')
+            ->orderBy('id')
             ->get();
         $roleRanksByUserId = $assignments
             ->groupBy('user_id')

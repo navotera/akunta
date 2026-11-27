@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Akunta\Rbac\Models;
 
+use Akunta\Rbac\Scopes\SharedOrTenantScope;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,6 +29,12 @@ class Role extends Model
     protected $casts = [
         'is_preset' => 'boolean',
     ];
+
+    /** Preset (global) roles plus the current tenant's own roles; never another tenant's. */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new SharedOrTenantScope);
+    }
 
     public function tenant(): BelongsTo
     {

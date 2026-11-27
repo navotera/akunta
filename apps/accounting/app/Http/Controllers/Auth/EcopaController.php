@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Auth;
 
 use Akunta\EcopaClient\Http\EcopaAuthController;
 use App\Models\User;
+use App\Services\EcopaOrganizationLinker;
 use App\Services\InstallationOnboardingService;
+use App\Support\PlatformOwner;
+use App\Support\Tenancy\TenantRls;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
@@ -38,6 +41,28 @@ class EcopaController extends EcopaAuthController
         // §2 — if app_role missing, user is not assigned to Akunta in Ecopa
         if (! $appRole) {
             abort(403, 'Akun belum di-assign ke Akunta. Hubungi admin Ecopa.');
+        }
+
+        // Ecopa multi-organisation (docs/plans/ecopa-multi-org-workspaces.md).
+        // The Platform Owner's home is always Ecopa's default organisation, so
+        // its signed login links the pre-existing tenant to that organisation
+        // (flow 1). Once linked, only that organisation may enter until
+        // per-organisation workspaces (flows 2–3) are implemented.
+        $organization = EcopaOrganizationLinker::normalize($claims['organization'] ?? null);
+        $platformAdmin = ($claims['platform_admin'] ?? false) === true;
+        $linker = app(EcopaOrganizationLinker::class);
+
+        // Linking pre-multi-organisation data rewrites rows of the tenant it adopts. That is a
+        // one-time owner/maintenance step (`ecopa:link-organization`); with Row-Level Security
+        // on, the application role cannot do it, and by then it has long been done.
+        if ($platformAdmin && $organization !== null && ! TenantRls::enabled()) {
+            $linker->linkLegacyTenants($organization, 'platform_admin_login');
+        }
+
+        if ($organization !== null && ! $linker->organizationMayEnter($organization['id'])) {
+            abort(403, $appRole === 'admin'
+                ? 'Workspace untuk organisasi Anda belum tersedia di Akunta. Hubungi Platform Owner Ecopa.'
+                : 'Workspace organisasi Anda belum disiapkan. Hubungi Organization Owner.');
         }
 
         // 1. Match by sticky Ecopa user id
@@ -76,6 +101,10 @@ class EcopaController extends EcopaAuthController
             $user->name = $name;
         }
         $user->last_login_at = now();
+        // Same value as session('ecopa.platform_admin') below, so
+        // EndStalePlatformOwnerSession sees them agree until Ecopa reports a
+        // change through a user.* webhook.
+        $user->ecopa_platform_admin = $platformAdmin;
         $user->save();
 
         // Stash claims in session so app code can map app_role → local RBAC role
@@ -84,6 +113,8 @@ class EcopaController extends EcopaAuthController
             'ecopa.app_role' => $appRole,
             'ecopa.app_scopes' => $appScopes,
             'ecopa.divisions' => $divisions,
+            'ecopa.organization' => $organization,
+            'ecopa.platform_admin' => $platformAdmin,
             'ecopa.access_token' => $claims['access_token'] ?? null,
             'ecopa.token_expires_at' => isset($claims['token_expires_in'])
                 ? now()->addSeconds((int) $claims['token_expires_in'])->timestamp
@@ -99,8 +130,10 @@ class EcopaController extends EcopaAuthController
         // is resolved client-side from /api/v1/me + cookie.
         $spa = rtrim((string) config('app.spa_url'), '/');
 
+        // Only the Platform Owner runs the installation wizard; an Organization
+        // Owner lands on the dashboard, which explains that setup is pending.
         $needsOnboarding = ! app(InstallationOnboardingService::class)->isCompleted()
-            && Auth::user()?->isSsoAdmin();
+            && PlatformOwner::check();
 
         return ($spa !== '' ? $spa : url('')).($needsOnboarding ? '/onboarding' : '/dashboard');
     }

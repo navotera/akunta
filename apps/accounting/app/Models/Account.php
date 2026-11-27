@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Account extends Model
 {
+    use BelongsToTenant;
+
     public const AVAILABILITY_INTERN = 'intern';
 
     public const AVAILABILITY_FISKAL = 'fiskal';

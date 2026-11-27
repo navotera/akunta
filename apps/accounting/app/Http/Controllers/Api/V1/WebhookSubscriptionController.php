@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\WebhookSubscription;
@@ -42,10 +43,19 @@ class WebhookSubscriptionController extends Controller
         /** @var ApiToken $token */
         $token = $request->attributes->get('api_token');
 
+        // The workspace must belong to the token's organisation (Entity is tenant-scoped by the
+        // token's context): a subscription on another organisation's workspace would receive
+        // that organisation's events.
+        if (! empty($data['entity_id']) && Entity::find($data['entity_id']) === null) {
+            return response()->json(['error' => 'entity_not_found'], 422);
+        }
+
         // Auto-generate strong secret — returned ONCE in response, never read again
         $secret = (string) Str::random(48);
 
         $sub = WebhookSubscription::create([
+            // A subscription belongs to the token's tenant, also when it has no workspace.
+            'tenant_id'  => $token->getAttribute('tenant_id'),
             'entity_id'  => $data['entity_id'] ?? null,
             'app_code'   => $data['app_code']  ?? $token->app?->code,
             'event'      => $data['event'],

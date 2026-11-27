@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Akunta\Rbac\Models;
 
+use Akunta\Rbac\Scopes\TenantScope;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -37,6 +38,12 @@ class Entity extends Model
     protected $table = 'entities';
 
     protected $guarded = [];
+
+    /** A workspace of another organisation does not exist for the current request or job. */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new TenantScope);
+    }
 
     protected $casts = [
         'address' => 'array',

@@ -7,12 +7,14 @@ namespace App\Models;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
 use App\Concerns\HasAttachments;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FiscalAdjustment extends Model
 {
+    use BelongsToTenant;
     use HasAttachments;
     use HasUlids;
 

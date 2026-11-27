@@ -6,16 +6,19 @@ namespace App\Http\Controllers\Api\Spa;
 
 use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\Entity;
+use App\Actions\ApplyCoaTemplateAction;
 use App\Http\Controllers\Controller;
 use App\Jobs\PurgeArchivedWorkspace;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Services\PlatformAuditLogger;
 use App\Services\RequiredAccountService;
 use App\Services\WorkspaceActivityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -74,7 +77,10 @@ class WorkspaceController extends Controller
             'date_format' => ['sometimes', 'in:DD MMM YYYY,DD/MM/YYYY,MM/DD/YYYY,YYYY-MM-DD,d F Y'],
             'max_open_tabs' => ['sometimes', 'integer', 'min:1', 'max:50'],
             'issue_report_url' => ['nullable', 'url:http,https', 'max:2048'],
+            'coa_template_key' => ['nullable', 'string', 'max:40'],
         ]);
+        $templateKey = $data['coa_template_key'] ?? null;
+        unset($data['coa_template_key']);
         $data = $this->normalizeAddress($data);
         $data = $this->normalizeNumberFormats($data);
         abort_unless(
@@ -82,11 +88,23 @@ class WorkspaceController extends Controller
             422,
             'Tenant workspace tidak sesuai dengan workspace aktif.',
         );
+        // Creating a workspace (workspace.manage) is not a way around the permission to
+        // apply a Chart-of-Accounts template (settings.coa_template.manage).
+        if ($templateKey !== null && $templateKey !== '') {
+            Gate::authorize('accounting.permission', [
+                'settings.coa_template.manage',
+                Entity::query()->findOrFail(trim((string) $request->header('X-Tenant-Slug'))),
+            ]);
+        }
         $data['id'] = (string) Str::ulid();
 
-        $workspace = DB::transaction(function () use ($data): Entity {
+        $workspace = DB::transaction(function () use ($data, $templateKey): Entity {
             $workspace = Entity::query()->create($data);
             $this->requiredAccounts->ensure($workspace);
+            // An organisation template only applies inside its own organisation (the registry refuses others).
+            if ($templateKey !== null && $templateKey !== '') {
+                app(ApplyCoaTemplateAction::class)->execute($workspace->id, $templateKey);
+            }
 
             return $workspace;
         });
@@ -267,6 +285,13 @@ class WorkspaceController extends Controller
                 'archived_at' => $workspace->archived_at?->toIso8601String(),
             ],
         );
+
+        // Platform Owner only (route middleware). Kept outside the tenant's own
+        // audit trail too, which the purge may remove with the workspace.
+        app(PlatformAuditLogger::class)->record('workspace.purge_requested', Entity::class, $workspace->id, [
+            'name' => $workspace->name,
+            'tenant_id' => $workspace->tenant_id,
+        ]);
 
         PurgeArchivedWorkspace::dispatch($workspace->id, ignoreRetention: true);
 

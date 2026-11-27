@@ -48,26 +48,43 @@ function sandboxJournalPayload(Journal $journal, array $changes = []): array
     ], $changes);
 }
 
+/**
+ * Restore Demo Data is Platform Owner only. Run just the given calls as the
+ * Platform Owner, then drop the claim so the sandbox edits around them keep
+ * using the workspace admin's ordinary permissions.
+ */
+function asSandboxPlatformOwner($test, Closure $callback): mixed
+{
+    $test->withSession(platformOwnerSession($test->admin));
+    try {
+        return $callback();
+    } finally {
+        session()->forget(['ecopa.app_role', 'ecopa.platform_admin']);
+    }
+}
+
 function restoreSandboxData($test): void
 {
-    $preview = $test->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
-    $test->postJson('/api/v1/spa/fake-data/reset', [
-        'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
-        'preview_token' => $preview->json('data.preview_token'),
-    ])->assertOk();
+    asSandboxPlatformOwner($test, function () use ($test): void {
+        $preview = $test->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
+        $test->postJson('/api/v1/spa/fake-data/reset', [
+            'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
+            'preview_token' => $preview->json('data.preview_token'),
+        ])->assertOk();
+    });
 }
 
 it('restores a verified soft deleted demo account while preserving a soft deleted manual account', function () {
     $owned = Account::where('entity_id', $this->entity->id)->whereNull('system_key')->where('is_postable', true)
         ->whereHas('fakeDataRecords', fn ($query) => $query->where('entity_id', $this->entity->id))->firstOrFail();
     $code = $owned->code;
-    $manualCount = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->json('data.preserved_manual_records.accounts');
+    $manualCount = asSandboxPlatformOwner($this, fn () => $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->json('data.preserved_manual_records.accounts'));
     $manual = Account::create(['entity_id' => $this->entity->id, 'code' => 'MANUAL-ARCHIVED', 'name' => 'Manual tetap disimpan', 'type' => 'asset', 'normal_balance' => 'debit']);
     Period::where('entity_id', $this->entity->id)->update(['status' => 'inactive']);
     $this->deleteJson('/api/v1/spa/accounts/'.$owned->id, ['confirm_inactive_usage' => true])->assertNoContent();
     $this->deleteJson('/api/v1/spa/accounts/'.$manual->id)->assertNoContent();
     $this->assertSoftDeleted('accounts', ['id' => $owned->id]);
-    $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->assertJsonPath('data.preserved_manual_records.accounts', $manualCount + 1);
+    asSandboxPlatformOwner($this, fn () => $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk()->assertJsonPath('data.preserved_manual_records.accounts', $manualCount + 1));
     restoreSandboxData($this);
     expect(Account::where('entity_id', $this->entity->id)->where('code', $code)->exists())->toBeTrue();
     $this->assertSoftDeleted('accounts', ['id' => $manual->id, 'name' => 'Manual tetap disimpan']);
@@ -100,8 +117,8 @@ it('allows editing a saved demo journal and restores its original data without c
     expect($restoredPayload['memo'])->toBe($original['memo'])
         ->and(array_sum(array_column($restoredPayload['entries_debit'], 'amount')))->toBe(array_sum(array_column($restoredPayload['entries_credit'], 'amount')))
         ->and(Journal::find($manual->id)?->memo)->toBe('Latihan tambahan tetap disimpan');
-    $this->getJson('/api/v1/spa/fake-data')->assertOk()->assertJsonPath('data.dataset.immutable_posted_journals', false)
-        ->assertJsonPath('data.dataset.immutable_period', false);
+    asSandboxPlatformOwner($this, fn () => $this->getJson('/api/v1/spa/fake-data')->assertOk()->assertJsonPath('data.dataset.immutable_posted_journals', false)
+        ->assertJsonPath('data.dataset.immutable_period', false));
 })->with(['internal', 'fiscal']);
 
 it('allows normal period management in the demo and restores the owned baseline period', function () {

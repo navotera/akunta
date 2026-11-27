@@ -85,7 +85,8 @@ class AttachmentController extends Controller
 
         $file = $request->file('file');
         $disk = config('filesystems.default');
-        $directory = "attachments/{$entity->id}/".date('Y/m');
+        // New files live under their tenant, then their workspace; existing rows keep their stored path.
+        $directory = "attachments/{$entity->tenant_id}/{$entity->id}/".date('Y/m');
         $storedPaths = [];
 
         try {

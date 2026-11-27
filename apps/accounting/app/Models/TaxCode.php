@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TaxCode extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     public const KIND_OUTPUT_VAT = 'output_vat';     // PPN Keluaran (Penjualan)

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Period extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     public const STATUS_OPEN = 'open';

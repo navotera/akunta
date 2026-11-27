@@ -13,6 +13,7 @@ use App\Services\AccountingPermissions;
 use App\Services\FakeDataService;
 use App\Services\NativeFakeDataProvisioner;
 use App\Services\NativeFakeDataResetService;
+use App\Support\PlatformOwner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -106,15 +107,9 @@ class FakeDataController extends Controller
     {
         $user = Auth::user();
         abort_if($user !== null && app(AccountingPermissions::class)->isInspector($user, $entity), 403, 'Inspector hanya dapat membaca data Fiskal.');
-        abort_unless(
-            $user !== null && (
-                (method_exists($user, 'isSsoAdmin') && $user->isSsoAdmin())
-                || session('ecopa.app_role') === 'admin'
-                || $user->hasPermission('settings.fake_data.manage', $entity->id)
-            ),
-            403,
-            'Hanya admin yang dapat mengelola fake data.',
-        );
+        // The native dataset and fake-data imports are installation-level
+        // (Platform Owner only); the route middleware enforces it as well.
+        abort_unless(PlatformOwner::check($user), 403, 'Hanya Platform Owner yang dapat mengelola fake data.');
     }
 
     private function ensureImportableEntity(Entity $entity): void

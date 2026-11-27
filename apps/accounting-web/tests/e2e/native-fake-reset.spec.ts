@@ -31,6 +31,7 @@ async function mockNativeRestore(
             email: 'admin@example.test',
             roles: ['admin'],
             is_sso_admin: allowed,
+            is_platform_admin: allowed,
             is_admin: allowed,
             tenants: [
               {

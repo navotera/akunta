@@ -3,6 +3,8 @@
 use Akunta\Rbac\Models\App;
 use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
+use Akunta\Rbac\Models\User;
+use App\Models\EcopaConfigIntegration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -60,4 +62,29 @@ function grantSpaPermissionsForTest(Role $role, App $app, array $codes): void
         ['description' => 'SPA API test fixture permission', 'category' => 'test_fixture'],
     )->id);
     $role->permissions()->syncWithoutDetaching($ids);
+}
+
+/**
+ * Make $user the Ecopa Platform Owner for this test: the Ecopa integration is
+ * on, the signed platform_admin claim is stored on the user, and the session
+ * holds what the SSO login writes. Returns the array for withSession().
+ *
+ * @param  array<string, mixed>  $session
+ * @return array<string, mixed>
+ */
+function platformOwnerSession(User $user, array $session = []): array
+{
+    EcopaConfigIntegration::query()->updateOrCreate(
+        ['name' => 'integration_status'],
+        ['value' => 'on'],
+    );
+    $user->forceFill(['ecopa_platform_admin' => true])->save();
+
+    return array_merge(['ecopa.app_role' => 'admin', 'ecopa.platform_admin' => true], $session);
+}
+
+/** Diagnostic mode (AKUNTA_RLS_TEST_HTTP=1): every HTTP request runs as the non-owner role under Row-Level Security. */
+function rlsHttpMode(): bool
+{
+    return env('AKUNTA_RLS_TEST_HTTP') === '1';
 }
