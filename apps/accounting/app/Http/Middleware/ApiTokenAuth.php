@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use Akunta\Rbac\Support\TenantContext;
 use App\Models\ApiToken;
 use Closure;
 use Illuminate\Http\Request;
@@ -44,7 +45,15 @@ class ApiTokenAuth
             }
         }
 
-        return $next($request);
+        // The token's tenant is the organisation this call works for; the entity it
+        // names in the payload must live inside it (Entity is tenant-scoped).
+        TenantContext::set($token->getAttribute('tenant_id'));
+
+        try {
+            return $next($request);
+        } finally {
+            TenantContext::clear();
+        }
     }
 
     private function extractToken(Request $request): ?string

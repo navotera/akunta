@@ -25,16 +25,6 @@ class SettingsPermissionsSeeder extends Seeder
                 'category' => 'settings',
             ],
             [
-                'code' => 'settings.cron.manage',
-                'description' => 'Akses halaman Pengaturan → Cron (status scheduler + activity log + retensi).',
-                'category' => 'settings',
-            ],
-            [
-                'code' => 'settings.fake_data.manage',
-                'description' => 'Import dan hapus data simulasi yang ditandai fake.',
-                'category' => 'settings',
-            ],
-            [
                 'code' => 'automapping.manage',
                 'description' => 'Mengonfigurasi rule, akun COA, tanggal, dan deskripsi Auto Mapping.',
                 'category' => 'journal',

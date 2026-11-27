@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use Akunta\Audit\Models\AuditLog;
 use Akunta\Core\Hooks;
 use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\User;
@@ -23,6 +24,7 @@ use App\Services\AccountingPermissions;
 use App\Services\CronLogger;
 use App\Services\EcopaIntegrationService;
 use App\Services\WebhookDispatcher;
+use App\Support\Tenancy\TenantOwnership;
 use App\Tenancy\Contracts\TenantProvisioner;
 use App\Tenancy\PostgresTenantProvisioner;
 use App\Tenancy\SqliteTenantProvisioner;
@@ -71,6 +73,7 @@ class AppServiceProvider extends ServiceProvider
         $this->registerJournalGates();
         Gate::define('accounting.permission', fn (?User $user, string $code, Entity $entity): bool => app(AccountingPermissions::class)->allows($user, $code, $entity));
         Gate::define('permissions.manage', fn (?User $user, Entity $entity): bool => app(AccountingPermissions::class)->canManage($user, $entity));
+        $this->registerTenantAttribution();
         $this->registerWebhookListeners();
         $this->registerCronLogger();
         $this->registerSettingsPermissions();
@@ -108,6 +111,25 @@ class AppServiceProvider extends ServiceProvider
         }
     }
 
+    /**
+     * audit_log lives in the audit module, which knows nothing about this app's
+     * tenancy rules. Attribute each new entry to its tenant from here: through
+     * its entity, or the tenant it is about. Platform-level entries stay NULL.
+     */
+    protected function registerTenantAttribution(): void
+    {
+        AuditLog::creating(function (AuditLog $log): void {
+            if ($log->getAttribute('tenant_id') !== null || ! TenantOwnership::hasTenantColumn($log->getTable())) {
+                return;
+            }
+
+            $tenantId = TenantOwnership::tenantFor($log->getTable(), $log->getAttributes());
+            if ($tenantId !== null) {
+                $log->setAttribute('tenant_id', $tenantId);
+            }
+        });
+    }
+
     protected function registerCronLogger(): void
     {
         $this->app->singleton(CronLogger::class);
@@ -138,18 +160,8 @@ class AppServiceProvider extends ServiceProvider
                         'category' => 'settings',
                     ],
                     [
-                        'code' => 'settings.cron.manage',
-                        'description' => 'Akses halaman Pengaturan → Cron (status + activity log + retensi).',
-                        'category' => 'settings',
-                    ],
-                    [
                         'code' => 'workspace.manage',
                         'description' => 'Menambah dan mengubah workspace accounting.',
-                        'category' => 'settings',
-                    ],
-                    [
-                        'code' => 'settings.fake_data.manage',
-                        'description' => 'Import dan hapus data simulasi yang ditandai fake.',
                         'category' => 'settings',
                     ],
                     [

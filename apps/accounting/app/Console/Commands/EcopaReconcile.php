@@ -5,21 +5,35 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use Akunta\Rbac\Models\App as RbacApp;
-use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
 use App\Models\User;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Cross-app RBAC nightly reconcile (cf. docs/cross-app-rbac.md §4).
+ * Nightly repair of missed Ecopa webhooks (docs/cross-app-rbac.md §4), per
+ * organisation.
  *
- * Pulls the entity catalogue + this app's full assignment list from Ecopa
- * and reconciles the local mirror. Catches webhook drops + ensures
- * eventual consistency.
+ * Ecopa's reconciliation contract (CHILD_APP_INTEGRATION_STANDARD "Conditional
+ * reconciliation") offers `GET /api/apps/{slug}/accesses` (who has, or lost,
+ * access to this application) and `GET /api/users` (each user's
+ * `organization`). Accesses are grouped by `organization.id` and applied only
+ * to the tenant linked to that organisation:
+ *
+ *  - an active access ensures the user's application-wide shadow assignment in
+ *    THAT tenant exists and is not revoked;
+ *  - a revoked access revokes it in that tenant only.
+ *
+ * It never creates a tenant, never attaches anything to another organisation's
+ * tenant, never creates users, and never touches role, entity membership, or
+ * permissions (child-owned state). Organisations without a tenant, users that
+ * were never provisioned locally, and users of unknown organisation are
+ * counted and skipped, not guessed.
  *
  * Usage:
  *   php artisan ecopa:reconcile
@@ -29,7 +43,7 @@ class EcopaReconcile extends Command
 {
     protected $signature = 'ecopa:reconcile {--dry-run : Print actions without applying} {--app=accounting : Local app code}';
 
-    protected $description = 'Reconcile entities + assignments mirror against Ecopa.';
+    protected $description = 'Reconcile Ecopa application access against the local per-organisation mirror.';
 
     public function handle(): int
     {
@@ -42,134 +56,151 @@ class EcopaReconcile extends Command
             return self::FAILURE;
         }
 
-        $http = Http::baseUrl($base)
-            ->withToken($token)
-            ->acceptJson()
-            ->timeout(15);
+        $appCode = (string) $this->option('app');
+        $localApp = RbacApp::query()->where('code', $appCode)->first();
+        if (! $localApp) {
+            $this->warn("Local app '{$appCode}' not provisioned — nothing to reconcile.");
 
-        $entitiesUpserted = $this->reconcileEntities($http);
-        $assignmentsUpserted = $this->reconcileAssignments($http, (string) $this->option('app'));
+            return self::SUCCESS;
+        }
 
-        $this->info("Reconcile done — entities upserted: {$entitiesUpserted}, assignments touched: {$assignmentsUpserted}");
+        $http = Http::baseUrl($base)->withToken($token)->acceptJson()->timeout(15);
+
+        $organizationByUser = $this->fetchPages($http, '/api/users', ['per_page' => 200]);
+        $accesses = $organizationByUser === null
+            ? null
+            : $this->fetchPages($http, "/api/apps/{$appCode}/accesses", ['per_page' => 200, 'include_revoked' => 1]);
+        if ($organizationByUser === null || $accesses === null) {
+            // Fail observably (contract): a partial read must never look like "nothing to do".
+            return self::FAILURE;
+        }
+
+        $organizations = [];
+        foreach ($organizationByUser as $user) {
+            $organizations[(string) ($user['id'] ?? '')] = data_get($user, 'organization.id');
+        }
+
+        $stats = ['granted' => 0, 'revoked' => 0, 'unchanged' => 0, 'skipped_no_tenant' => 0, 'skipped_no_user' => 0, 'skipped_no_organization' => 0];
+        $tenantByOrganization = [];
+        foreach ($accesses as $row) {
+            $ecopaUserId = (string) ($row['user_id'] ?? '');
+            $organizationId = $organizations[$ecopaUserId] ?? null;
+            if ($ecopaUserId === '' || $organizationId === null) {
+                $stats['skipped_no_organization']++;
+
+                continue;
+            }
+
+            $organizationId = (string) $organizationId;
+            $tenantByOrganization[$organizationId] ??= Tenant::query()->where('ecopa_organization_id', $organizationId)->first();
+            $tenant = $tenantByOrganization[$organizationId];
+            if ($tenant === null) {
+                $stats['skipped_no_tenant']++;
+
+                continue;
+            }
+
+            $user = User::query()->where('main_tier_user_id', $ecopaUserId)->first();
+            if ($user === null) {
+                $stats['skipped_no_user']++;
+
+                continue;
+            }
+
+            $outcome = $this->apply($localApp, $tenant, $user, ($row['revoked_at'] ?? null) !== null);
+            $stats[$outcome]++;
+        }
+
+        $summary = collect($stats)->map(fn (int $count, string $key): string => "{$key}: {$count}")->implode(', ');
+        $this->info('Reconcile done — '.$summary);
+        Log::info('ecopa:reconcile', $stats + ['dry_run' => (bool) $this->option('dry-run')]);
 
         return self::SUCCESS;
     }
 
-    protected function reconcileEntities($http): int
+    /** @return 'granted'|'revoked'|'unchanged' */
+    private function apply(RbacApp $app, Tenant $tenant, User $user, bool $revoked): string
     {
-        $count = 0;
-        $page = 1;
-        $tenant = Tenant::query()->first() ?? Tenant::create(['name' => 'Default', 'slug' => 'default']);
+        $assignment = UserAppAssignment::query()
+            ->withoutGlobalScopes()
+            ->where('user_id', $user->id)
+            ->where('app_id', $app->id)
+            ->whereNull('entity_id')
+            ->where(fn ($query) => $query->where('tenant_id', $tenant->id)
+                ->when(TenantOwnership::onlyTenant() === $tenant->id, fn ($q) => $q->orWhereNull('tenant_id')))
+            ->first();
 
-        do {
-            $res = $http->get('/api/entities', ['page' => $page, 'per_page' => 200]);
-            if (! $res->ok()) {
-                $this->error("Ecopa /api/entities returned {$res->status()}");
-                Log::warning('ecopa:reconcile entities fetch failed', ['status' => $res->status()]);
-
-                return $count;
+        if ($revoked) {
+            if ($assignment === null || $assignment->revoked_at !== null) {
+                return 'unchanged';
             }
-            $body = $res->json();
-            foreach (($body['data'] ?? []) as $row) {
-                $id = (string) ($row['id'] ?? '');
-                if ($id === '') {
-                    continue;
-                }
-                if ($this->option('dry-run')) {
-                    $this->line("  [dry] entity {$id} {$row['name']}");
-                    $count++;
-
-                    continue;
-                }
-                Entity::updateOrCreate(
-                    ['id' => $id],
-                    array_filter([
-                        'tenant_id' => $tenant->id,
-                        'name'      => $row['name'] ?? null,
-                        'npwp'      => $row['npwp'] ?? null,
-                    ], fn ($v) => $v !== null),
-                );
-                $count++;
+            $this->report('revoke', $user, $tenant);
+            if (! $this->option('dry-run')) {
+                $assignment->forceFill(['revoked_at' => now(), 'ecopa_role' => null, 'tenant_id' => $tenant->id])->save();
             }
-            $last = (int) ($body['meta']['last_page'] ?? 1);
-            $page++;
-        } while ($page <= $last);
 
-        return $count;
-    }
-
-    protected function reconcileAssignments($http, string $appCode): int
-    {
-        $localApp = RbacApp::query()->where('code', $appCode)->first();
-        if (! $localApp) {
-            $this->warn("Local app '{$appCode}' not provisioned — skipping assignments.");
-
-            return 0;
+            return 'revoked';
         }
 
-        $count = 0;
+        if ($assignment !== null && $assignment->revoked_at === null) {
+            return 'unchanged';
+        }
+
+        $this->report($assignment === null ? 'grant' : 'restore', $user, $tenant);
+        if (! $this->option('dry-run')) {
+            if ($assignment === null) {
+                $assignment = new UserAppAssignment;
+                $assignment->id = (string) Str::ulid();
+                $assignment->user_id = $user->id;
+                $assignment->app_id = $app->id;
+                $assignment->entity_id = null;
+                $assignment->assigned_at = now();
+            }
+            // role_id is child-owned and left untouched.
+            $assignment->tenant_id = $tenant->id;
+            $assignment->revoked_at = null;
+            $assignment->save();
+        }
+
+        return 'granted';
+    }
+
+    private function report(string $action, User $user, Tenant $tenant): void
+    {
+        if ($this->option('dry-run')) {
+            $this->line("  [dry] {$action} user={$user->id} tenant={$tenant->id}");
+        }
+    }
+
+    /**
+     * Every row of a paginated Ecopa list, or null on any HTTP failure.
+     *
+     * @param  array<string, mixed>  $query
+     * @return list<array<string, mixed>>|null
+     */
+    private function fetchPages(PendingRequest $http, string $path, array $query): ?array
+    {
+        $rows = [];
         $page = 1;
-        $seenKeys = [];
-
         do {
-            $res = $http->get("/api/apps/{$appCode}/assignments", [
-                'page' => $page,
-                'per_page' => 500,
-                'include_revoked' => 1,
-            ]);
-            if (! $res->ok()) {
-                $this->error("Ecopa /api/apps/{$appCode}/assignments returned {$res->status()}");
+            $response = $http->get($path, $query + ['page' => $page]);
+            if (! $response->ok()) {
+                $this->error("Ecopa {$path} returned {$response->status()}");
+                Log::warning('ecopa:reconcile fetch failed', ['path' => $path, 'status' => $response->status()]);
 
-                return $count;
+                return null;
             }
-            $body = $res->json();
 
+            $body = $response->json();
             foreach (($body['data'] ?? []) as $row) {
-                $userIdEcopa = (string) ($row['user_id'] ?? '');
-                $entityId = (string) ($row['entity_id'] ?? '');
-                if ($userIdEcopa === '' || $entityId === '') {
-                    continue;
+                if (is_array($row)) {
+                    $rows[] = $row;
                 }
-                $user = User::query()->where('main_tier_user_id', $userIdEcopa)->first();
-                if (! $user) {
-                    continue;
-                }
-
-                $key = "{$user->id}:{$localApp->id}:{$entityId}";
-                $seenKeys[$key] = true;
-
-                if ($this->option('dry-run')) {
-                    $this->line("  [dry] assignment user={$user->id} entity={$entityId} role={$row['ecopa_role']}");
-                    $count++;
-
-                    continue;
-                }
-
-                $existing = UserAppAssignment::query()
-                    ->where('user_id', $user->id)
-                    ->where('app_id', $localApp->id)
-                    ->where('entity_id', $entityId)
-                    ->first();
-
-                if (! $existing) {
-                    $existing = new UserAppAssignment();
-                    $existing->id = (string) Str::ulid();
-                    $existing->user_id = $user->id;
-                    $existing->app_id = $localApp->id;
-                    $existing->entity_id = $entityId;
-                    $existing->assigned_at = now();
-                }
-
-                $existing->ecopa_role = $row['ecopa_role'] ?? $existing->ecopa_role;
-                $existing->revoked_at = $row['revoked_at'] !== null ? now() : null;
-                $existing->save();
-                $count++;
             }
-
             $last = (int) ($body['meta']['last_page'] ?? 1);
             $page++;
         } while ($page <= $last);
 
-        return $count;
+        return $rows;
     }
 }

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Attachment;
 use App\Models\Journal;
+use App\Support\Tenancy\EachTenant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,19 +22,24 @@ class PruneTrashedJournalsCommand extends Command
         $cutoff = now()->subDays(30);
         $deleted = 0;
 
-        Journal::onlyTrashed()
-            ->where('deleted_at', '<=', $cutoff)
-            ->orderBy('id')
-            ->chunkById(100, function ($journals) use (&$deleted): void {
-                foreach ($journals as $journal) {
-                    $this->purge($journal);
-                    $deleted++;
-                }
-            });
+        $failures = EachTenant::run(function () use ($cutoff, &$deleted): void {
+            Journal::onlyTrashed()
+                ->where('deleted_at', '<=', $cutoff)
+                ->orderBy('id')
+                ->chunkById(100, function ($journals) use (&$deleted): void {
+                    foreach ($journals as $journal) {
+                        $this->purge($journal);
+                        $deleted++;
+                    }
+                });
+        });
+        foreach ($failures as $tenantId => $message) {
+            $this->error("Tenant {$tenantId} failed: {$message}");
+        }
 
         $this->info("Permanently deleted {$deleted} trashed journal(s) older than 30 days.");
 
-        return self::SUCCESS;
+        return $failures === [] ? self::SUCCESS : self::FAILURE;
     }
 
     private function purge(Journal $journal): void

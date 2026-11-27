@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Journal;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +35,7 @@ class AccountBalanceController extends Controller
 
         $asOf = $data['as_of'] ?? now()->toDateString();
 
-        $q = DB::table('journal_entries as je')
+        $q = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->where('j.entity_id', $acc->entity_id)
             ->where('j.status', Journal::STATUS_POSTED)

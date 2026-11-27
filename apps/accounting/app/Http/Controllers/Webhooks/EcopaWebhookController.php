@@ -14,6 +14,7 @@ use App\Models\EcopaWebhookReceipt;
 use App\Models\User;
 use App\Services\EcopaIntegrationService;
 use App\Services\UserAccessRevoker;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -168,6 +169,7 @@ class EcopaWebhookController extends Controller
     {
         $user = $this->findUser($subject);
         if ($user) {
+            $this->syncPlatformAdmin($user, $subject);
             $this->accessRevoker->disable($user);
         }
 
@@ -178,6 +180,7 @@ class EcopaWebhookController extends Controller
     {
         $user = $this->findUser($subject);
         if ($user) {
+            $this->syncPlatformAdmin($user, $subject);
             $this->accessRevoker->enable($user);
         }
 
@@ -196,7 +199,52 @@ class EcopaWebhookController extends Controller
             'email' => $subject['email'] ?? null,
         ], fn (mixed $value): bool => is_string($value) && $value !== ''))->save();
 
-        return ['status' => 'applied', 'code' => 'user_updated'];
+        $changed = $this->syncPlatformAdmin($user, $subject);
+
+        return array_filter([
+            'status' => 'applied',
+            'code' => 'user_updated',
+            'platform_admin_changed' => $changed ?: null,
+        ], fn (mixed $value): bool => $value !== null);
+    }
+
+    /**
+     * Ecopa sends the signed `platform_admin` flag on every `user.*` payload and
+     * a `user.updated` when Platform Owner status is granted or removed. Store
+     * the latest value; when the effective status changes, end the user's
+     * local logins so the next SSO login re-reads the claim.
+     *
+     * A payload without the field (older Ecopa) changes nothing. A stored NULL
+     * (never reported) counts as "not a Platform Owner": sessions created
+     * before the value was stored never carried Platform Owner rights, so
+     * NULL → false is saved without ending sessions. No business role or
+     * assignment is touched.
+     */
+    private function syncPlatformAdmin(User $user, array $subject): bool
+    {
+        if (! array_key_exists('platform_admin', $subject) || ! is_bool($subject['platform_admin'])) {
+            return false;
+        }
+
+        $reported = $subject['platform_admin'];
+        $stored = $user->ecopa_platform_admin;
+
+        if ($stored === $reported) {
+            return false;
+        }
+
+        $user->forceFill(['ecopa_platform_admin' => $reported])->save();
+
+        $changed = ($stored === true) !== $reported;
+        if ($changed) {
+            $this->accessRevoker->endLoginSessions($user);
+            Log::info('Ecopa platform_admin changed; local logins ended', [
+                'user_id' => $user->id,
+                'platform_admin' => $reported,
+            ]);
+        }
+
+        return $changed;
     }
 
     private function onUserAssigned(array $subject): array
@@ -225,28 +273,45 @@ class EcopaWebhookController extends Controller
             'disabled_at' => null,
         ])->save();
 
+        $this->syncPlatformAdmin($user, $subject);
+
         $assignmentSubject = array_merge([
             'user_id' => $ecopaId,
             'app_code' => 'accounting',
         ], $subject);
 
+        // The identity above is global. Access is per organisation: without a
+        // tenant for this event's organisation nothing is attached to any other
+        // tenant — the identity waits until that organisation's workspace exists.
+        $tenant = $this->tenantFor($assignmentSubject);
+        if ($tenant === null && ! ($this->isUnattributedLegacyEvent($assignmentSubject) && empty($assignmentSubject['entity_id']))) {
+            return ['status' => 'applied', 'code' => 'organization_not_provisioned'];
+        }
+
         if (empty($assignmentSubject['entity_id'])) {
-            return $this->onAppWideAssignment($user, $assignmentSubject);
+            return $this->onAppWideAssignment($user, $assignmentSubject, $tenant);
         }
 
         return $this->onAssignment('assignment.granted', $assignmentSubject);
     }
 
-    private function onAppWideAssignment(User $user, array $subject): array
+    private function onAppWideAssignment(User $user, array $subject, ?Tenant $tenant): array
     {
         $app = RbacApp::query()->firstOrCreate(
             ['code' => 'accounting'],
             ['name' => 'Accounting', 'version' => '1.0', 'enabled' => true],
         );
+        // One application-wide assignment per user and tenant. A legacy row that
+        // never got a tenant is adopted only in a single-tenant installation.
         $assignment = UserAppAssignment::query()
+            ->withoutGlobalScopes()
             ->where('user_id', $user->id)
             ->where('app_id', $app->id)
             ->whereNull('entity_id')
+            ->where(fn ($query) => $tenant === null
+                ? $query->whereNull('tenant_id')
+                : $query->where('tenant_id', $tenant->id)
+                    ->when(TenantOwnership::onlyTenant() === $tenant->id, fn ($q) => $q->orWhereNull('tenant_id')))
             ->first();
 
         if (! $assignment) {
@@ -257,6 +322,7 @@ class EcopaWebhookController extends Controller
             $assignment->entity_id = null;
             $assignment->assigned_at = now();
         }
+        $assignment->tenant_id = $tenant?->id;
 
         $ecopaRole = $subject['ecopa_role'] ?? $subject['app_role'] ?? null;
         $assignment->ecopa_role = is_string($ecopaRole) ? $ecopaRole : $assignment->ecopa_role;
@@ -276,14 +342,26 @@ class EcopaWebhookController extends Controller
         }
 
         $user = $this->findUser($subject);
+        if ($user) {
+            $this->syncPlatformAdmin($user, $subject);
+        }
         $app = RbacApp::query()->where('code', 'accounting')->first();
-        if ($user && $app) {
+        // Access is revoked in the organisation the event names — the same person's
+        // access in another organisation is a different grant and stays.
+        $tenant = $this->tenantFor($subject);
+        $unattributed = $tenant === null && $this->isUnattributedLegacyEvent($subject);
+        if ($user && $app && ($tenant !== null || $unattributed)) {
             UserAppAssignment::query()
+                ->withoutGlobalScopes()
                 ->where('user_id', $user->id)
                 ->where('app_id', $app->id)
+                ->where(fn ($query) => $tenant === null
+                    ? $query->whereNull('tenant_id')
+                    : $query->where('tenant_id', $tenant->id)
+                        ->when(TenantOwnership::onlyTenant() === $tenant->id, fn ($q) => $q->orWhereNull('tenant_id')))
                 ->whereNull('revoked_at')
                 ->update(['revoked_at' => now(), 'ecopa_role' => null]);
-            $this->accessRevoker->revokeSessionsAndTokens($user);
+            $this->accessRevoker->revokeSessionsAndTokens($user, $tenant?->id);
         }
 
         return ['status' => 'applied', 'code' => 'user_access_revoked'];
@@ -358,8 +436,21 @@ class EcopaWebhookController extends Controller
             return ['status' => 'applied', 'code' => 'entity_preserved'];
         }
 
-        $tenant = $this->resolveLocalTenant();
-        Entity::query()->updateOrCreate(
+        $tenant = $this->tenantFor($subject);
+        if ($tenant === null) {
+            return $this->pending(
+                'organization_not_provisioned',
+                'Organisasi entity ini belum memiliki workspace di Akunta.',
+                ['entity_id' => $id],
+            );
+        }
+
+        $existing = Entity::withoutGlobalScopes()->whereKey($id)->value('tenant_id');
+        if ($existing !== null && (string) $existing !== $tenant->id) {
+            return $this->rejected('entity_tenant_mismatch', 'Entity sudah dimiliki organisasi lain di Akunta.');
+        }
+
+        Entity::withoutGlobalScopes()->updateOrCreate(
             ['id' => $id],
             array_filter([
                 'tenant_id' => $tenant->id,
@@ -395,7 +486,8 @@ class EcopaWebhookController extends Controller
             );
         }
 
-        if (! Entity::query()->whereKey($entityId)->exists()) {
+        $entityTenantId = Entity::withoutGlobalScopes()->whereKey($entityId)->value('tenant_id');
+        if ($entityTenantId === null) {
             return $this->pending(
                 'entity_not_synced',
                 'Entity belum tersedia di Akunta. Sinkronkan entity terlebih dahulu.',
@@ -403,7 +495,15 @@ class EcopaWebhookController extends Controller
             );
         }
 
+        // The entity must belong to the organisation the event is about; an event
+        // can never reach into another organisation's workspace.
+        $tenant = $this->tenantFor($subject);
+        if ($tenant === null || $tenant->id !== (string) $entityTenantId) {
+            return $this->rejected('entity_tenant_mismatch', 'Entity bukan milik organisasi pada event ini.');
+        }
+
         $row = UserAppAssignment::query()
+            ->withoutGlobalScopes()
             ->where('user_id', $user->id)
             ->where('app_id', $app->id)
             ->where('entity_id', $entityId)
@@ -411,7 +511,7 @@ class EcopaWebhookController extends Controller
 
         if ($event === 'assignment.revoked') {
             $row?->forceFill(['revoked_at' => now(), 'ecopa_role' => null])->save();
-            $this->accessRevoker->revokeSessionsAndTokens($user);
+            $this->accessRevoker->revokeSessionsAndTokens($user, $tenant->id);
 
             return ['status' => 'applied', 'code' => 'assignment_revoked'];
         }
@@ -422,6 +522,7 @@ class EcopaWebhookController extends Controller
             $row->user_id = $user->id;
             $row->app_id = $app->id;
             $row->entity_id = $entityId;
+            $row->tenant_id = $tenant->id;
             $row->assigned_at = now();
         }
 
@@ -431,7 +532,7 @@ class EcopaWebhookController extends Controller
         $row->save();
 
         if ($event === 'assignment.role_changed') {
-            $this->accessRevoker->revokeSessionsAndTokens($user);
+            $this->accessRevoker->revokeSessionsAndTokens($user, $tenant->id);
         }
 
         return [
@@ -442,12 +543,34 @@ class EcopaWebhookController extends Controller
         ];
     }
 
-    private function resolveLocalTenant(): Tenant
+    /**
+     * The tenant an event is about: the one linked to `subject.organization.id`.
+     * A payload without an organisation (older Ecopa) can only mean the
+     * installation's single tenant; with several tenants it means nobody. There
+     * is no "first tenant" fallback and no tenant is created here.
+     */
+    /**
+     * A fresh installation has no tenant yet (the installation wizard creates it)
+     * and an older Ecopa payload names no organisation: the grant can only be
+     * recorded unattributed. It attaches to no tenant, and the migration/link
+     * step adopts it once the single tenant exists. Never true when an
+     * organisation is named.
+     */
+    private function isUnattributedLegacyEvent(array $subject): bool
     {
-        return Tenant::query()->first() ?? Tenant::query()->create([
-            'name' => 'Default',
-            'slug' => 'default',
-        ]);
+        return data_get($subject, 'organization.id') === null && DB::table('tenants')->doesntExist();
+    }
+
+    private function tenantFor(array $subject): ?Tenant
+    {
+        $organizationId = data_get($subject, 'organization.id');
+        if (is_string($organizationId) || is_int($organizationId)) {
+            return Tenant::query()->where('ecopa_organization_id', (string) $organizationId)->first();
+        }
+
+        $onlyTenant = TenantOwnership::onlyTenant();
+
+        return $onlyTenant === null ? null : Tenant::query()->find($onlyTenant);
     }
 
     private function pending(string $code, string $message, array $context = []): array

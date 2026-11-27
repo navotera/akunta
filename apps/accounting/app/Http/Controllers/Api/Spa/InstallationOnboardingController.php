@@ -12,8 +12,11 @@ use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\UserAppAssignment;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\EcopaOrganizationLinker;
 use App\Services\InstallationOnboardingService;
+use App\Services\PlatformAuditLogger;
 use App\Services\RequiredAccountService;
+use App\Support\PlatformOwner;
 use Database\Seeders\PresetRolesSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +29,7 @@ class InstallationOnboardingController extends Controller
         private readonly RequiredAccountService $requiredAccounts,
         private readonly AuditLoggerContract $auditLogger,
         private readonly InstallationOnboardingService $onboarding,
+        private readonly EcopaOrganizationLinker $organizationLinker,
     ) {}
 
     public function status(Request $request): JsonResponse
@@ -70,6 +74,11 @@ class InstallationOnboardingController extends Controller
                 'name' => $data['name'],
                 'slug' => $slug,
             ]);
+            $organization = EcopaOrganizationLinker::normalize(session('ecopa.organization'));
+            if ($organization !== null) {
+                $this->organizationLinker->linkNewTenant($tenant, $organization, 'installation_onboarding');
+            }
+
             $entity = Entity::query()->create([
                 'tenant_id' => $tenant->id,
                 'name' => $data['name'],
@@ -97,6 +106,11 @@ class InstallationOnboardingController extends Controller
                 metadata: ['tenant_id' => $tenant->id, 'source' => 'integrated_ecopa_wizard'],
             );
 
+            app(PlatformAuditLogger::class)->record('installation.entity_created', Entity::class, $entity->id, [
+                'tenant_id' => $tenant->id,
+                'name' => $entity->name,
+            ]);
+
             return $entity;
         });
 
@@ -109,8 +123,10 @@ class InstallationOnboardingController extends Controller
 
     private function authorizeInstaller(Request $request): void
     {
-        /** @var User|null $user */
-        $user = $request->user();
-        abort_unless($user?->isSsoAdmin(), 403, 'Hanya admin Ecopa pertama yang dapat menyelesaikan setup Akunta.');
+        abort_unless(
+            PlatformOwner::check($request->user()),
+            403,
+            'Hanya Platform Owner yang dapat menyelesaikan setup instalasi Akunta.',
+        );
     }
 }

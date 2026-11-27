@@ -69,13 +69,25 @@ it('exposes the fake badge contract and independently deactivates the demo works
         ->assertJsonPath('data.is_active', false)
         ->assertJsonPath('data.is_fake_data', true);
 
+    // Managing the native dataset is Platform Owner only, not a workspace grant.
     $this->actingAs($this->user)
         ->getJson('/api/v1/me')
         ->assertOk()
+        ->assertJsonPath('data.is_platform_admin', false)
         ->assertJsonFragment([
             'id' => $this->fake->id,
             'is_active' => false,
             'is_fake_data' => true,
+            'can_manage_fake_data' => false,
+        ]);
+
+    $this->actingAs($this->user)
+        ->withSession(platformOwnerSession($this->user))
+        ->getJson('/api/v1/me')
+        ->assertOk()
+        ->assertJsonPath('data.is_platform_admin', true)
+        ->assertJsonFragment([
+            'id' => $this->fake->id,
             'can_manage_fake_data' => true,
         ]);
 
@@ -334,7 +346,7 @@ it('keeps the native fake workspace even when it is inactive', function () {
 
     $this->fake->update(['archived_at' => now()]);
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->regular->id)
         ->deleteJson('/api/v1/spa/workspaces/'.$this->fake->id.'/permanent', [
             'confirmation_name' => $this->fake->name,
@@ -399,8 +411,18 @@ it('queues an explicitly confirmed permanent deletion for a recent archive', fun
         'archived_at' => now(),
     ]);
 
+    // An Organization Owner can archive but not purge.
     $this->actingAs($this->user)
         ->withSession(['ecopa.app_role' => 'admin'])
+        ->withHeader('X-Tenant-Slug', $this->regular->id)
+        ->deleteJson('/api/v1/spa/workspaces/'.$archived->id.'/permanent', [
+            'confirmation_name' => $archived->name,
+        ])
+        ->assertForbidden();
+    Queue::assertNothingPushed();
+
+    $this->actingAs($this->user)
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->regular->id)
         ->deleteJson('/api/v1/spa/workspaces/'.$archived->id.'/permanent', [
             'confirmation_name' => $archived->name,
@@ -417,6 +439,12 @@ it('queues an explicitly confirmed permanent deletion for a recent archive', fun
     $this->assertDatabaseHas('audit_log', [
         'action' => 'workspace.purge_requested',
         'resource_id' => $archived->id,
+    ]);
+    $this->assertDatabaseHas('platform_audit_log', [
+        'action' => 'workspace.purge_requested',
+        'actor_kind' => 'platform_owner',
+        'actor_user_id' => $this->user->id,
+        'subject_id' => $archived->id,
     ]);
 });
 

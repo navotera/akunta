@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JournalTemplate extends Model
 {
+    use BelongsToTenant;
     use HasUlids;
 
     protected $fillable = [

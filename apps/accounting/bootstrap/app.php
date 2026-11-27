@@ -18,8 +18,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
             'require.token.perms' => \App\Http\Middleware\RequireTokenPermissions::class,
             'ecosystem.assigned' => \App\Http\Middleware\EnforceEcosystemAssignment::class,
+            'platform.owner' => \App\Http\Middleware\EnsurePlatformOwner::class,
         ]);
         $middleware->append(\App\Http\Middleware\TenantResolver::class);
+
+        // Ecopa platform_admin changes end the session on its next request,
+        // whatever the session driver (see the middleware docblock).
+        $middleware->web(append: [
+            \App\Http\Middleware\EndStalePlatformOwnerSession::class,
+        ]);
 
         // SPA cookie auth — promote first-party stateful requests on the
         // configured Sanctum domains to use the web session guard.

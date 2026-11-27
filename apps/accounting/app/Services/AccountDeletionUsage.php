@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\Journal;
 use App\Models\Period;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Support\Facades\DB;
 
 class AccountDeletionUsage
@@ -24,9 +25,9 @@ class AccountDeletionUsage
         if (! $fiscalOnly) {
             $references = [
                 'sub-akun' => $account->children()->where('entity_id', $account->entity_id)->count(),
-                'template jurnal' => DB::table('journal_template_lines')->where('account_id', $account->id)->distinct()->count('template_id'),
-                'koreksi Fiskal' => DB::table('fiscal_adjustments')->where('entity_id', $account->entity_id)->where('account_id', $account->id)->count(),
-                'provisi pajak' => DB::table('tax_provisions')->where('entity_id', $account->entity_id)->where(fn ($query) => $query
+                'template jurnal' => TenantOwnership::restrict(DB::table('journal_template_lines'), 'journal_template_lines')->where('account_id', $account->id)->distinct()->count('template_id'),
+                'koreksi Fiskal' => TenantOwnership::restrict(DB::table('fiscal_adjustments'), 'fiscal_adjustments')->where('entity_id', $account->entity_id)->where('account_id', $account->id)->count(),
+                'provisi pajak' => TenantOwnership::restrict(DB::table('tax_provisions'), 'tax_provisions')->where('entity_id', $account->entity_id)->where(fn ($query) => $query
                     ->where('expense_account_id', $account->id)->orWhere('payable_account_id', $account->id))->count(),
             ];
             foreach ($references as $label => $count) {

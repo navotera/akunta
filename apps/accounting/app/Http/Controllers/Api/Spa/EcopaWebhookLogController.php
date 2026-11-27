@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Spa;
 
-use Akunta\Rbac\Models\Entity;
 use App\Http\Controllers\Controller;
 use App\Models\EcopaWebhookLog;
-use App\Models\User;
+use App\Support\PlatformOwner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -76,15 +75,10 @@ class EcopaWebhookLogController extends Controller
 
     private function authorizeAdmin(Request $request): void
     {
-        /** @var User|null $user */
-        $user = $request->user();
-        $entityId = trim((string) $request->header('X-Tenant-Slug'));
-        $entity = $entityId === '' ? null : Entity::query()->find($entityId);
-
         abort_unless(
-            $user && ($user->isSsoAdmin() || ($entity && $user->hasPermission('workspace.manage', $entity->id))),
+            PlatformOwner::check($request->user()),
             403,
-            'Hanya Admin Aplikasi Akunta yang dapat melihat log webhook Ecopa.',
+            'Hanya Platform Owner yang dapat melihat log webhook Ecopa.',
         );
     }
 }

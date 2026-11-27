@@ -40,7 +40,7 @@ beforeEach(function () {
 
 it('only exposes COA and impersonation users for a regular entity', function () {
     $response = $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/fake-data')
         ->assertOk()
@@ -52,13 +52,13 @@ it('only exposes COA and impersonation users for a regular entity', function () 
 
 it('imports COA and provisions scoped impersonation accounts for User & Roles', function () {
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/accounts/import')
         ->assertOk();
 
     $users = $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/users/import')
         ->assertOk()
@@ -74,7 +74,7 @@ it('imports COA and provisions scoped impersonation accounts for User & Roles', 
             ->exists())->toBeTrue();
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/impersonate/'.$fakeUserId)
         ->assertNotFound();
@@ -90,13 +90,13 @@ it('rejects Import All and financial demo groups for a regular entity', function
     ]);
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/import-all')
         ->assertConflict();
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/journals/import')
         ->assertConflict();
@@ -106,13 +106,13 @@ it('protects the built-in native fake entity from import and clear operations', 
     $this->entity->update(['is_fake_data' => true]);
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/import-all', ['period_id' => str_repeat('0', 26)])
         ->assertConflict();
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->deleteJson('/api/v1/spa/fake-data/accounts')
         ->assertConflict();
@@ -144,7 +144,7 @@ it('previews and resets only the versioned native dataset with an audit trail', 
     $posted->forceFill(['memo' => 'Diubah sebelum reset'])->saveQuietly();
 
     $preview = $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/fake-data/reset-preview')
         ->assertOk()
@@ -156,7 +156,7 @@ it('previews and resets only the versioned native dataset with an audit trail', 
         ->and($preview->json('data.preserved_manual_records.accounts'))->toBeGreaterThan(0);
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/reset', [
             'confirmation' => 'RESET DEMO 2026',
@@ -211,7 +211,7 @@ it('restores edited deleted and Trashed demo data repeatedly while preserving ma
     ]);
     $manual->delete();
 
-    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    $this->actingAs($this->user)->withSession(platformOwnerSession($this->user))->withHeader('X-Tenant-Slug', $this->entity->id);
     foreach ([1, 2] as $attempt) {
         $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
         $preview->assertJsonPath('data.managed_records.trashed_journals', $attempt === 1 ? 1 : 0)
@@ -236,7 +236,7 @@ it('requires a new restore preview after a demo journal is changed or deleted', 
     config()->set('filesystems.default', 'local');
     $this->entity->forceFill(['is_fake_data' => true, 'workspace_settings' => ['bookkeeping_mode' => 'independent_books']])->save();
     app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
-    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    $this->actingAs($this->user)->withSession(platformOwnerSession($this->user))->withHeader('X-Tenant-Slug', $this->entity->id);
     $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
     $draft = Journal::where('entity_id', $this->entity->id)->where('status', 'draft')->firstOrFail();
     if ($change === 'deleted') {
@@ -265,7 +265,7 @@ it('preserves foreign records even when corrupt demo markers refer to them durin
     foreach ([$child, $foreignJournal] as $foreignModel) {
         FakeDataRecord::create(['entity_id' => $this->entity->id, 'group_key' => 'native_fake_entity', 'model_type' => $foreignModel::class, 'model_id' => $foreignModel->id]);
     }
-    $this->actingAs($this->user)->withSession(['ecopa.app_role' => 'admin'])->withHeader('X-Tenant-Slug', $this->entity->id);
+    $this->actingAs($this->user)->withSession(platformOwnerSession($this->user))->withHeader('X-Tenant-Slug', $this->entity->id);
     $preview = $this->getJson('/api/v1/spa/fake-data/reset-preview')->assertOk();
     $this->postJson('/api/v1/spa/fake-data/reset', [
         'confirmation' => 'RESET DEMO 2026', 'expected_version' => NativeFakeDataProvisioner::DATASET_VERSION,
@@ -282,7 +282,7 @@ it('limits native restore to authorized users in the demo workspace', function (
     }
     $this->actingAs($this->user)->withHeader('X-Tenant-Slug', $this->entity->id);
     if ($access !== 'denied') {
-        $this->withSession(['ecopa.app_role' => 'admin']);
+        $this->withSession(platformOwnerSession($this->user));
     }
     if ($access === 'inspector') {
         $this->user->assignments()->delete();
@@ -307,7 +307,7 @@ it('rolls back before reset mutations when the audit trail cannot be written', f
     app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
 
     $preview = $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/fake-data/reset-preview')
         ->assertOk();
@@ -329,7 +329,7 @@ it('rolls back before reset mutations when the audit trail cannot be written', f
     });
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/reset', [
             'confirmation' => 'RESET DEMO 2026',
@@ -356,7 +356,7 @@ it('rejects stale reset previews before changing sandbox data', function () {
     app(NativeFakeDataProvisioner::class)->provision($this->entity, $this->user);
 
     $preview = $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->getJson('/api/v1/spa/fake-data/reset-preview')
         ->assertOk();
@@ -368,7 +368,7 @@ it('rejects stale reset previews before changing sandbox data', function () {
     ]);
 
     $this->actingAs($this->user)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($this->user))
         ->withHeader('X-Tenant-Slug', $this->entity->id)
         ->postJson('/api/v1/spa/fake-data/reset', [
             'confirmation' => 'RESET DEMO 2026',

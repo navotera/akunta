@@ -22,6 +22,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string      $status
  * @property \Illuminate\Support\Carbon|null $provisioned_at
  * @property string|null $license_key
+ * @property string|null $ecopa_organization_id  Ecopa organisation (1:1) that owns this tenant
+ * @property string|null $ecopa_organization_slug
+ * @property \Illuminate\Support\Carbon|null $ecopa_organization_linked_at
  */
 class Tenant extends Model
 {
@@ -42,6 +45,7 @@ class Tenant extends Model
     protected $casts = [
         'audit_retention_days' => 'integer',
         'provisioned_at' => 'datetime',
+        'ecopa_organization_linked_at' => 'datetime',
     ];
 
     protected $attributes = [

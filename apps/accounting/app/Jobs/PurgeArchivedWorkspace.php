@@ -6,6 +6,9 @@ namespace App\Jobs;
 
 use Akunta\Core\Contracts\AuditLogger as AuditLoggerContract;
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Support\TenantContext;
+use App\Jobs\Middleware\RunInTenant;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -30,10 +33,21 @@ class PurgeArchivedWorkspace implements ShouldBeUnique, ShouldQueue
     /** @var list<int> */
     public array $backoff = [60, 300];
 
+    /** Tenant the workspace belongs to, carried in the payload (see RunInTenant). */
+    public ?string $tenantId;
+
     public function __construct(
         public readonly string $workspaceId,
         public readonly bool $ignoreRetention = false,
-    ) {}
+    ) {
+        $this->tenantId = TenantContext::id() ?? TenantOwnership::parentTenant('entities', $workspaceId);
+    }
+
+    /** @return list<object> */
+    public function middleware(): array
+    {
+        return [new RunInTenant];
+    }
 
     public function uniqueId(): string
     {

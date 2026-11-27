@@ -6,6 +6,7 @@ namespace App\Services\Reporting;
 
 use App\Models\Journal;
 use App\Models\TaxCode;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +28,7 @@ class TaxReportService
         ?string $kind = null,
         string $journalMode = Journal::MODE_FISCAL,
     ): array {
-        $q = DB::table('journal_entries as je')
+        $q = TenantOwnership::restrict(DB::table('journal_entries as je'), 'je')
             ->join('journals as j', 'j.id', '=', 'je.journal_id')
             ->join('tax_codes as t', 't.id', '=', 'je.tax_code_id')
             ->leftJoin('accounts as a', 'a.id', '=', 'je.account_id')

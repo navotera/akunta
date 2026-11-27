@@ -35,12 +35,39 @@ class UserAccessRevoker
         ])->save();
     }
 
-    public function revokeSessionsAndTokens(User $user): void
+    /**
+     * @param  string|null  $tenantId  Revoke only the integration tokens of this tenant
+     *                                 (an access change in one organisation must not
+     *                                 revoke the same person's tokens in another).
+     *                                 Null revokes all of the user's tokens.
+     */
+    public function revokeSessionsAndTokens(User $user, ?string $tenantId = null): void
     {
         ApiToken::query()
+            ->withoutGlobalScopes()
             ->where('user_id', $user->id)
+            ->when($tenantId !== null, fn ($query) => $query->where('tenant_id', $tenantId))
             ->whereNull('revoked_at')
             ->update(['revoked_at' => now()]);
+
+        $this->endLoginSessions($user);
+    }
+
+    /**
+     * Ends every local login of the user — database sessions, Sanctum personal
+     * access tokens, and the remember-me token — so the next request needs a
+     * fresh SSO login. Integration API tokens are left alone: their authority
+     * comes from business permissions, which this does not change.
+     *
+     * Sessions kept outside the database (e.g. SESSION_DRIVER=redis) cannot be
+     * listed per user; EndStalePlatformOwnerSession ends those on their next
+     * request when the stored Ecopa claim no longer matches the session.
+     */
+    public function endLoginSessions(User $user): void
+    {
+        if ($user->remember_token !== null) {
+            $user->forceFill(['remember_token' => null])->save();
+        }
 
         if (Schema::hasTable('personal_access_tokens')) {
             DB::table('personal_access_tokens')

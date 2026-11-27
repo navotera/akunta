@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\PurgeArchivedWorkspace;
 use App\Models\FiscalAdjustment;
 use App\Models\Journal;
+use App\Services\PlatformAuditLogger;
 use App\Services\RequiredAccountService;
 use App\Services\WorkspaceActivityService;
 use Illuminate\Http\JsonResponse;
@@ -267,6 +268,13 @@ class WorkspaceController extends Controller
                 'archived_at' => $workspace->archived_at?->toIso8601String(),
             ],
         );
+
+        // Platform Owner only (route middleware). Kept outside the tenant's own
+        // audit trail too, which the purge may remove with the workspace.
+        app(PlatformAuditLogger::class)->record('workspace.purge_requested', Entity::class, $workspace->id, [
+            'name' => $workspace->name,
+            'tenant_id' => $workspace->tenant_id,
+        ]);
 
         PurgeArchivedWorkspace::dispatch($workspace->id, ignoreRetention: true);
 

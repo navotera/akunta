@@ -125,7 +125,7 @@ it('completes onboarding globally and prevents a second wizard run', function ()
     ]);
 
     $this->actingAs($secondAdmin)
-        ->withSession(['ecopa.app_role' => 'admin'])
+        ->withSession(platformOwnerSession($secondAdmin))
         ->postJson('/api/v1/spa/installation-onboarding/entity', [
             'name' => 'PT Kedua',
         ])

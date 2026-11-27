@@ -3,8 +3,10 @@
 namespace App\Console\Commands;
 
 use Akunta\Rbac\Models\App as RbacApp;
+use Akunta\Rbac\Models\Tenant;
 use Akunta\Rbac\Models\User;
 use App\Models\ApiToken;
+use App\Support\Tenancy\TenantOwnership;
 use Illuminate\Console\Command;
 
 class IssueApiToken extends Command
@@ -13,6 +15,7 @@ class IssueApiToken extends Command
         {--name= : Descriptive name for the token}
         {--user-email= : Email of user this token is bound to (for Gate context)}
         {--app-code= : App code this token scopes to (must match rbac apps.code)}
+        {--tenant= : Tenant id or slug the token belongs to (needed when it cannot be derived from the user)}
         {--permissions= : Comma-separated permission codes, e.g. "journal.create,journal.post"}
         {--expires= : Optional ISO8601 expiry, e.g. 2027-01-01T00:00:00Z}';
 
@@ -45,6 +48,13 @@ class IssueApiToken extends Command
             return self::FAILURE;
         }
 
+        $tenantId = $this->resolveTenant($user->id);
+        if ($tenantId === null) {
+            $this->error('Tenant token tidak dapat ditentukan dari user; gunakan --tenant=<id atau slug>.');
+
+            return self::FAILURE;
+        }
+
         $permissions = array_values(array_filter(array_map('trim', explode(',', $permCsv))));
         if ($permissions === []) {
             $this->error('--permissions must contain at least one permission code.');
@@ -56,6 +66,7 @@ class IssueApiToken extends Command
 
         [$token, $plain] = ApiToken::issue([
             'name' => $name,
+            'tenant_id' => $tenantId,
             'user_id' => $user->id,
             'app_id' => $app->id,
             'permissions' => $permissions,
@@ -70,10 +81,22 @@ class IssueApiToken extends Command
         $this->line('  id:           '.$token->id);
         $this->line('  name:         '.$token->name);
         $this->line('  user:         '.$user->email);
+        $this->line('  tenant:       '.$tenantId);
         $this->line('  app:          '.$app->code);
         $this->line('  permissions:  '.implode(',', $permissions));
         $this->line('  expires_at:   '.($token->expires_at?->toIso8601String() ?? 'never'));
 
         return self::SUCCESS;
+    }
+
+    /** The explicit --tenant, else the tenant the user belongs to (or the only tenant). */
+    private function resolveTenant(string $userId): ?string
+    {
+        $given = (string) $this->option('tenant');
+        if ($given !== '') {
+            return Tenant::query()->where('id', $given)->orWhere('slug', $given)->value('id');
+        }
+
+        return TenantOwnership::tenantFor('api_tokens', ['user_id' => $userId]);
     }
 }

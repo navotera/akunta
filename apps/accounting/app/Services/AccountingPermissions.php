@@ -8,6 +8,7 @@ use Akunta\Rbac\Models\Entity;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\User;
 use Akunta\Rbac\Models\UserAppAssignment;
+use App\Support\Tenancy\RequestTenant;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -116,8 +117,13 @@ class AccountingPermissions
     public function roleCodes(Entity $entity, string $role): array
     {
         $overrides = $entity->workspace_settings[self::SETTINGS_KEY] ?? [];
+        $codes = array_key_exists($role, $overrides) ? $overrides[$role] : $this->roleDefaults($entity, $role);
 
-        return array_key_exists($role, $overrides) ? $overrides[$role] : $this->roleDefaults($entity, $role);
+        // Saved overrides and custom-role snapshots may still list codes that
+        // left the catalog (e.g. settings.cron.manage became Platform Owner
+        // only). Drop them so they grant nothing and re-saving the role does
+        // not fail catalog validation. The stored setting is left untouched.
+        return array_values(array_intersect($codes, array_column($this->catalog(), 'code')));
     }
 
     public function activeAssignments(User $user, Entity $entity): Builder
@@ -137,7 +143,8 @@ class AccountingPermissions
         if ($this->isInspector($user, $entity)) {
             return false;
         }
-        if (session('ecopa.app_role') === 'admin') {
+        // An Ecopa admin manages the workspaces of the organisation in the session only.
+        if (RequestTenant::isSessionAdminOf($user->id, $entity->tenant_id)) {
             return true;
         }
 

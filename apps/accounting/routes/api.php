@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Spa\InstallationOnboardingController;
 use App\Http\Controllers\Api\Spa\OnboardingController;
 use App\Http\Controllers\Api\Spa\PeriodController;
 use App\Http\Controllers\Api\Spa\PermissionManagementController;
+use App\Http\Controllers\Api\Spa\PlatformUsageController;
 use App\Http\Controllers\Api\Spa\ReportingController;
 use App\Http\Controllers\Api\Spa\RoleManagementController;
 use App\Http\Controllers\Api\Spa\SchedulerHealthController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\Api\V1\JournalTemplateController;
 use App\Http\Controllers\Api\V1\RecurringJournalController;
 use App\Http\Controllers\Api\V1\WebhookSubscriptionController;
 use App\Http\Middleware\EnforceSpaPermissions;
+use App\Http\Middleware\EstablishTenantContext;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -50,7 +52,7 @@ Route::middleware('web')->group(function () {
     Route::post('auth/logout', [AuthController::class, 'logout']);
 });
 
-Route::middleware(['web', 'auth:sanctum'])
+Route::middleware(['web', 'auth:sanctum', EstablishTenantContext::class])
     ->prefix('v1')
     ->group(function () {
         Route::get('me', [AuthController::class, 'me']);
@@ -64,7 +66,7 @@ Route::post('webhooks/incoming/{secret}', InboundWebhookController::class)
 | SPA-only API surface (cookie auth) — `/api/v1/spa/*`
 |--------------------------------------------------------------------------
 */
-Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
+Route::middleware(['web', 'auth:sanctum', EstablishTenantContext::class, EnforceSpaPermissions::class])
     ->prefix('v1/spa')
     ->group(function () {
         Route::get('permission-management', [PermissionManagementController::class, 'index']);
@@ -138,12 +140,18 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::post('tax-provisions/preview', [TaxProvisionController::class, 'preview']);
         Route::post('tax-provisions', [TaxProvisionController::class, 'store']);
 
-        Route::get('fake-data', [FakeDataController::class, 'index']);
-        Route::get('fake-data/reset-preview', [FakeDataController::class, 'resetPreview']);
-        Route::post('fake-data/reset', [FakeDataController::class, 'reset']);
-        Route::post('fake-data/import-all', [FakeDataController::class, 'importAll']);
-        Route::post('fake-data/{group}/import', [FakeDataController::class, 'import']);
-        Route::delete('fake-data/{group}', [FakeDataController::class, 'destroy']);
+        Route::get('fake-data', [FakeDataController::class, 'index'])
+            ->middleware('platform.owner');
+        Route::get('fake-data/reset-preview', [FakeDataController::class, 'resetPreview'])
+            ->middleware('platform.owner');
+        Route::post('fake-data/reset', [FakeDataController::class, 'reset'])
+            ->middleware('platform.owner');
+        Route::post('fake-data/import-all', [FakeDataController::class, 'importAll'])
+            ->middleware('platform.owner');
+        Route::post('fake-data/{group}/import', [FakeDataController::class, 'import'])
+            ->middleware('platform.owner');
+        Route::delete('fake-data/{group}', [FakeDataController::class, 'destroy'])
+            ->middleware('platform.owner');
 
         Route::get('auto-mapping', [AutoMappingController::class, 'index']);
         Route::get('auto-mapping/entity-links', [AutoMappingController::class, 'entityLinks']);
@@ -167,10 +175,15 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::patch('documentation-notes/{id}', [DocumentationNoteController::class, 'update']);
         Route::delete('documentation-notes/{id}', [DocumentationNoteController::class, 'destroy']);
 
-        Route::get('ecopa-integration', [EcopaIntegrationController::class, 'show']);
-        Route::get('ecopa-integration/webhook-logs', [EcopaWebhookLogController::class, 'index']);
+        Route::get('ecopa-integration', [EcopaIntegrationController::class, 'show'])
+            ->middleware('platform.owner');
+        Route::get('ecopa-integration/webhook-logs', [EcopaWebhookLogController::class, 'index'])
+            ->middleware('platform.owner');
 
-        Route::get('scheduler/status', [SchedulerHealthController::class, 'index']);
+        Route::get('scheduler/status', [SchedulerHealthController::class, 'index'])
+            ->middleware('platform.owner');
+        Route::get('platform/usage', [PlatformUsageController::class, 'index'])
+            ->middleware('platform.owner');
 
         Route::get('role-management', [RoleManagementController::class, 'index']);
         Route::post('role-management/assignments', [RoleManagementController::class, 'assign']);
@@ -184,7 +197,8 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::post('onboarding/bookkeeping-mode', [OnboardingController::class, 'bookkeepingMode']);
         Route::post('onboarding/apply-coa', [OnboardingController::class, 'applyCoa']);
         Route::get('installation-onboarding/status', [InstallationOnboardingController::class, 'status']);
-        Route::post('installation-onboarding/entity', [InstallationOnboardingController::class, 'entity']);
+        Route::post('installation-onboarding/entity', [InstallationOnboardingController::class, 'entity'])
+            ->middleware('platform.owner');
 
         Route::get('widgets/financial-pulse', [FinancialPulseController::class, 'show']);
         Route::get('widgets/recent-journals', [RecentJournalsController::class, 'index']);
@@ -195,7 +209,8 @@ Route::middleware(['web', 'auth:sanctum', EnforceSpaPermissions::class])
         Route::patch('workspaces/{id}', [WorkspaceController::class, 'update']);
         Route::delete('workspaces/{id}', [WorkspaceController::class, 'destroy']);
         Route::post('workspaces/{id}/restore', [WorkspaceController::class, 'restore']);
-        Route::delete('workspaces/{id}/permanent', [WorkspaceController::class, 'purge']);
+        Route::delete('workspaces/{id}/permanent', [WorkspaceController::class, 'purge'])
+            ->middleware('platform.owner');
         Route::post('workspaces/{id}/logo', [WorkspaceController::class, 'logo']);
 
         Route::get('webhooks', [App\Http\Controllers\Api\Spa\WebhookSubscriptionController::class, 'index']);

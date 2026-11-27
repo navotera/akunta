@@ -139,6 +139,7 @@ class JournalVolumeSeeder extends Seeder
 
                 $journalRows[] = [
                     'id' => $journalId,
+                    'tenant_id' => $entity->tenant_id,
                     'entity_id' => $entity->id,
                     'period_id' => $period->id,
                     'type' => Journal::TYPE_GENERAL,
@@ -158,6 +159,7 @@ class JournalVolumeSeeder extends Seeder
                 ];
                 $entryRows[] = [
                     'id' => (string) Str::ulid(),
+                    'tenant_id' => $entity->tenant_id,
                     'journal_id' => $journalId,
                     'line_no' => 1,
                     'account_id' => $debitAccount->id,
@@ -167,6 +169,7 @@ class JournalVolumeSeeder extends Seeder
                 ];
                 $entryRows[] = [
                     'id' => (string) Str::ulid(),
+                    'tenant_id' => $entity->tenant_id,
                     'journal_id' => $journalId,
                     'line_no' => 2,
                     'account_id' => $creditAccount->id,

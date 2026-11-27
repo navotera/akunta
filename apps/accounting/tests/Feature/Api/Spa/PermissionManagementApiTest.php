@@ -311,17 +311,41 @@ it('requires an explicit grant to reactivate a period for supervisor or operator
         ->assertOk()->assertJsonPath('data.status', 'open');
 });
 
-it('exposes delegated settings grants in auth bootstrap and clears them after revocation', function () {
+it('keeps the former settings grants out of the catalog and ignores them in saved overrides', function () {
     $defaults = app(AccountingPermissions::class)->defaults('operator');
-    saveOperatorPermissions($this, [...$defaults, 'settings.cron.manage', 'settings.fake_data.manage']);
-    $response = $this->actingAs($this->operator)->getJson('/api/v1/me')->assertOk();
-    $entity = collect($response->json('data.tenants'))->firstWhere('id', $this->entity->id);
-    expect($entity['can_manage_cron'])->toBeTrue()->and($entity['can_manage_fake_data'])->toBeTrue()
+    $snapshot = $this->actingAs($this->admin)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/permission-management')->assertOk()->json('data');
+
+    // Scheduler and native Fake Data are Platform Owner only, so the codes can
+    // no longer be granted to a workspace role.
+    $this->putJson('/api/v1/spa/permission-management/operator', [
+        'permissions' => [...$defaults, 'settings.cron.manage', 'settings.fake_data.manage'],
+        'revision' => $snapshot['revision'],
+    ])->assertUnprocessable()->assertJsonValidationErrors('permissions.'.count($defaults));
+
+    // An override saved before the change still lists them: it grants nothing,
+    // is not shown, and the role can be saved again without validation errors.
+    $settings = $this->entity->workspace_settings ?? [];
+    $settings[AccountingPermissions::SETTINGS_KEY]['operator'] = [...$defaults, 'settings.cron.manage', 'settings.fake_data.manage'];
+    $this->entity->forceFill(['workspace_settings' => $settings])->save();
+
+    $entity = collect($this->actingAs($this->operator)->getJson('/api/v1/me')->assertOk()->json('data.tenants'))
+        ->firstWhere('id', $this->entity->id);
+    expect($entity['can_manage_cron'])->toBeFalse()
+        ->and($entity['can_manage_fake_data'])->toBeFalse()
+        ->and($entity['permissions'])->not->toContain('settings.cron.manage')
         ->and($entity['roles'])->toBe(['operator']);
-    saveOperatorPermissions($this, $defaults);
-    $response = $this->actingAs($this->operator)->getJson('/api/v1/me')->assertOk();
-    $entity = collect($response->json('data.tenants'))->firstWhere('id', $this->entity->id);
-    expect($entity['can_manage_cron'])->toBeFalse()->and($entity['can_manage_fake_data'])->toBeFalse();
+    $this->actingAs($this->operator)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/scheduler/status')->assertForbidden();
+
+    $snapshot = $this->actingAs($this->admin)->withHeader('X-Tenant-Slug', $this->entity->id)
+        ->getJson('/api/v1/spa/permission-management')->assertOk()->json('data');
+    $operator = collect($snapshot['roles'])->firstWhere('code', 'operator');
+    expect($operator['permissions'])->not->toContain('settings.cron.manage')
+        ->not->toContain('settings.fake_data.manage');
+    $this->putJson('/api/v1/spa/permission-management/operator', [
+        'permissions' => $operator['permissions'], 'revision' => $snapshot['revision'],
+    ])->assertOk();
 });
 
 it('rejects stale saves and can restore the default permissions', function () {

@@ -3,15 +3,18 @@
 namespace App\Models;
 
 use Akunta\Rbac\Models\Entity;
+use Akunta\Rbac\Models\User;
+use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
 class Attachment extends Model
 {
+    use BelongsToTenant;
     use HasUlids, SoftDeletes;
 
     protected $fillable = [
@@ -32,7 +35,7 @@ class Attachment extends Model
 
     protected $casts = [
         'size_bytes' => 'integer',
-        'metadata'   => 'array',
+        'metadata' => 'array',
     ];
 
     public function attachable(): MorphTo
@@ -47,7 +50,7 @@ class Attachment extends Model
 
     public function uploader(): BelongsTo
     {
-        return $this->belongsTo(\Akunta\Rbac\Models\User::class, 'uploaded_by');
+        return $this->belongsTo(User::class, 'uploaded_by');
     }
 
     public function url(): ?string

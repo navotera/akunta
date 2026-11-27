@@ -10,6 +10,7 @@ use App\Http\Controllers\Controller;
 use App\Services\AccountingPermissions;
 use App\Services\EcopaIntegrationService;
 use App\Services\WorkspaceActivityService;
+use App\Support\PlatformOwner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -139,6 +140,10 @@ class AuthController extends Controller
             ->get(['id', 'tenant_id', 'name', 'is_active', 'is_fake_data', 'workspace_settings', 'theme_color', 'logo_path', 'updated_at']);
         $lastActivities = $this->workspaceActivity->latestByEntity($entities);
         $permissions = app(AccountingPermissions::class);
+        // Installation-level menus (scheduler, Ecopa integration, native Fake
+        // Data, workspace purge) follow the Platform Owner status, not a
+        // workspace permission. The backend enforces it on every endpoint.
+        $isPlatformOwner = PlatformOwner::check($user);
         $tenants = $entities->map(fn (Entity $e) => [
             'id' => $e->id,
             'tenant_id' => $e->tenant_id,
@@ -160,8 +165,8 @@ class AuthController extends Controller
             'demo_dataset_version' => $e->is_fake_data
                 ? data_get($e->workspace_settings, 'native_fake_data_version', 'legacy')
                 : null,
-            'can_manage_fake_data' => $permissions->allows($user, 'settings.fake_data.manage', $e),
-            'can_manage_cron' => $permissions->allows($user, 'settings.cron.manage', $e),
+            'can_manage_fake_data' => $isPlatformOwner,
+            'can_manage_cron' => $isPlatformOwner,
             'bookkeeping_mode' => data_get($e->workspace_settings, 'bookkeeping_mode', 'independent_books'),
             'date_format' => data_get($e->workspace_settings, 'date_format', 'DD MMM YYYY'),
             'max_open_tabs' => (int) data_get($e->workspace_settings, 'max_open_tabs', 8),
@@ -177,6 +182,7 @@ class AuthController extends Controller
             'roles' => $user->assignments()->whereNull('revoked_at')->with('role')->get()->pluck('role.code')->filter()->unique()->values()->all(),
             'tenants' => $tenants,
             'is_sso_admin' => session('ecopa.app_role') === 'admin',
+            'is_platform_admin' => $isPlatformOwner,
             'is_admin' => session('ecopa.app_role') === 'admin' || $user->hasPermission('workspace.manage'),
             'is_impersonating' => session()->has('impersonator_id'),
             'impersonator_id' => session('impersonator_id'),
