@@ -131,6 +131,17 @@ it('lets append-only logs grow but not shrink', function () {
         ->and(array_column($report->compare($before, $shrunk), 'key'))->toBe(['tables.audit_log']);
 });
 
+it('accepts a table the migration itself created while it is still empty, but reports one that holds rows', function () {
+    $report = app(EcopaMigrationReport::class);
+    $after = $report->snapshot();
+    $before = $after;
+    unset($before['data']['tables']['coa_templates'], $before['data']['tables']['installation_settings']);
+    $after['data']['tables']['coa_templates'] = 0;
+    $after['data']['tables']['installation_settings'] = 2;
+
+    expect(array_column($report->compare($before, $after), 'key'))->toBe(['tables.installation_settings']);
+});
+
 it('fails when a user role or revocation changes, but not when only tenant_id is filled', function () {
     $report = app(EcopaMigrationReport::class);
     $before = $report->snapshot();

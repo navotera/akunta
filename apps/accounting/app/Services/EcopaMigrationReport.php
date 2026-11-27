@@ -116,7 +116,7 @@ final class EcopaMigrationReport
         foreach (array_unique(array_merge(array_keys($old), array_keys($new))) as $key) {
             $a = $old[$key] ?? null;
             $b = $new[$key] ?? null;
-            if ($a === $b || $this->isAppendOnlyGrowth((string) $key, $a, $b)) {
+            if ($a === $b || $this->isAppendOnlyGrowth((string) $key, $a, $b) || $this->isNewEmptyTable((string) $key, $a, $b)) {
                 continue;
             }
             $differences[] = ['key' => (string) $key, 'before' => $a, 'after' => $b];
@@ -359,6 +359,16 @@ final class EcopaMigrationReport
         }
 
         return $result;
+    }
+
+    /**
+     * A table that did not exist when the snapshot was taken (created by the migration itself) and is still
+     * empty is not a difference: no row was lost or changed. A new table that holds rows after the migration
+     * is still reported, because rows appeared that the operator should be able to explain.
+     */
+    private function isNewEmptyTable(string $key, mixed $before, mixed $after): bool
+    {
+        return $before === null && str_starts_with($key, 'tables.') && $after === 0;
     }
 
     private function isAppendOnlyGrowth(string $key, mixed $before, mixed $after): bool

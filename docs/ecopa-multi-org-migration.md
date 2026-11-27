@@ -197,6 +197,20 @@ php artisan ecopa:migration-report --compare=storage/app/migration-reports/befor
   Ecopa tanpa assignment hanya ada di klaim SSO; laporan menampilkan (a)
   `with_assignment` dan gabungan (b)+(c) `without_assignment`.
 
+## 4a. Gladi otomatis pada salinan (tahap 10)
+
+`apps/accounting/scripts/migration-rehearsal.sh` menjalankan seluruh urutan di atas pada **salinan sekali pakai**
+dan menolak berjalan bila `AKUNTA_REHEARSAL_CONFIRM` tidak sama dengan nama database. Urutan:
+`pg_dump -Fc` + SHA-256 → uji restore (jumlah baris tabel kunci) → snapshot sebelum (`ecopa:migration-report` dan
+`scripts/report-snapshot.php --root=<folder v1>`) → maintenance mode → `migrate --force` → `ecopa:link-organization
+--dry-run` dan nyata → `ecopa:migration-report --compare --check-files` → laporan Neraca Saldo, Neraca, Laba Rugi per
+entity dan buku identik → jalankan ulang migrate, link, dan compare (harus tanpa perubahan) → smoke test per jenis user
+(`tests/Rehearsal`, hanya-baca, dibatalkan lewat transaksi) → maintenance mode off. Setiap langkah dicatat dengan
+perintah, durasi, dan exit code di `rehearsal.log`; exit code 0 hanya bila semuanya lulus.
+
+Catatan: snapshot laporan "sebelum" harus diambil dengan build v1 (build baru membutuhkan `tenant_id` untuk membaca
+buku besar); `scripts/report-snapshot.php` menerima `--root` untuk itu. Laporan gladi: `docs/plans/ecopa-multi-org-workspaces.md`.
+
 ## 5. Tabel milik tenant dan tabel global (daftar awal, ditinjau saat tahap 3)
 
 | Milik tenant (wajib `tenant_id`) | Global (tanpa `tenant_id`) |
@@ -244,7 +258,7 @@ dihapus.
 
 ## 7. Yang belum ada
 
-- Gladi penuh pada salinan production (tahap 10 prompt agent), termasuk
-  `pg_dump` + uji restore. Migration tahap 3 sudah diuji pada fixture dan pada
-  PostgreSQL disposable, belum pada data production.
-- Scope query per tenant (`TenantContext`), tahap 5.
+- Gladi pada **salinan production** yang sebenarnya. Gladi tahap 10 sudah dijalankan pada database v1 buatan
+  (build v1 asli, 15.144 jurnal, 3 entity, semua jenis user, lampiran nyata; §4a) dan lulus; data production belum
+  pernah disentuh. Ulangi dengan salinan production sebelum rilis (`docs/release-readiness-multi-org.md`).
+- Eksekusi di production: hanya atas perintah eksplisit pemilik.
