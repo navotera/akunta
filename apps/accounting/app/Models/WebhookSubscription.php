@@ -15,6 +15,7 @@ class WebhookSubscription extends Model
     use HasUlids;
 
     protected $fillable = [
+        'tenant_id',
         'entity_id',
         'app_code',
         'description',

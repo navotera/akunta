@@ -275,6 +275,20 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
   `organization-entry-flows.spec.ts` (3). Suite Accounting penuh: 712 lulus pada SQLite; test terkait lulus pada PostgreSQL.
 - Belum: tes isolasi dua organisasi menyeluruh (tahap 8) sebelum `AKUNTA_MULTI_ORGANIZATION` boleh dinyalakan.
 
+## Tahap 8 — tes isolasi dua organisasi (prompt agent, gerbang keamanan)
+
+**Selesai 2026-11-27.** Rincian bukti, temuan, dan pengecualian: `docs/decisions.md` (butir "Diimplementasikan 2026-11-27
+(tahap 8…)").
+- Tes: `TwoOrganizationIsolationTest` (sapuan 128 route SPA: owner/member/inspector B dan PO organisasi lain),
+  `TwoOrganizationChannelsTest` (token API 24 route, webhook Ecopa, dispatch webhook, job, perintah terjadwal, lampiran,
+  cache, Role/Permission Management, regresi webhook dan pagar tulis), fixture dan helper di `Concerns_two_organizations.php`.
+- Perbaikan yang ditemukan: validasi entity dan tenant pada `POST /api/v1/webhooks` (token B tidak lagi dapat memasang
+  subscription di workspace A), `WebhookDispatcher` per tenant, pagar tulis lintas tenant di `BelongsToTenant`.
+- Acceptance criteria 4 (organisasi B tidak dapat melihat atau mengubah entity, jurnal, user, atau role assignment organisasi
+  A lewat UI/API SPA, header `X-Tenant-Slug`, token, webhook) terbukti oleh tes di atas.
+- Suite Accounting penuh: 725+ lulus pada SQLite; PostgreSQL disposable lulus.
+- Sisa sebelum rilis: RLS (tahap 9), gladi migrasi dan penyalaan `AKUNTA_MULTI_ORGANIZATION` (tahap 10).
+
 ## Acceptance criteria
 
 1. Platform Owner dan user lama melihat data yang sudah ada tanpa wizard (alur 1).

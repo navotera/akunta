@@ -1881,6 +1881,42 @@ Aturan penegakan:
     false**). Selama false perilaku tidak berubah: organisasi kedua ditolak di login
     dan wizard OO tidak dapat dipakai. Nyalakan hanya setelah tes isolasi tahap 8
     lulus dan saklar "multi-organization ready" Ecopa untuk Akunta dinyalakan.
+- *Diimplementasikan 2026-11-27 (tahap 8 prompt agent, gerbang keamanan):* tes isolasi
+  dua organisasi lengkap (`tests/Feature/Tenancy/TwoOrganization*Test.php`). Fixture:
+  organisasi A dan B, masing-masing dengan Organization Owner, Member, Inspector, user
+  menunggu, workspace, periode, akun, jurnal dua buku (+ draft), lampiran (berkas nyata di
+  path ber-tenant), koreksi fiskal, template dan baris, jurnal berulang, aturan dan data mentah
+  auto-mapping, catatan, kode pajak, subscription webhook (per workspace dan global), token API,
+  template COA organisasi, dan role kustom. Bukti:
+  - Sapuan seluruh route SPA (128) dengan owner, member, dan inspector B: id dan workspace A di
+    path, body, dan query, dan workspace A di header. Hasil tidak boleh sukses untuk sumber daya
+    A dan respons tidak boleh memuat marker data A. Fingerprint seluruh baris milik tenant A
+    (semua tabel, akses, user, dan berkas) harus identik sebelum dan sesudah. Kontrol positif
+    membuktikan sapuan mendeteksi kebocoran (sapuan terhadap data B sendiri penuh pelanggaran).
+  - Sapuan seluruh route token API (24) dengan token B; daftar token B hanya data B.
+  - Webhook Ecopa organisasi B (termasuk satu orang yang berada di dua organisasi) tidak dapat
+    mengubah grant, entity, assignment, atau token A.
+  - Dispatch webhook, job antrean, perintah terjadwal, lampiran (id, upload, path berprefiks
+    tenant), key cache, Role Management, Permission Management, dan Platform Owner organisasi
+    lain (PO bukan jendela ke organisasi lain).
+  - Temuan dan perbaikan: (1) **kebocoran nyata**: `POST /api/v1/webhooks` tidak memvalidasi
+    `entity_id`, sehingga token organisasi B dapat memasang subscription pada workspace A dan
+    menerima event jurnal A; kini entity harus berada di tenant token (422) dan tenant diisi dari
+    token. (2) `WebhookDispatcher` memilih subscription global tanpa batas tenant eksplisit; kini
+    event hanya sampai ke subscription tenant workspace-nya, apa pun konteksnya, dan tanpa tenant
+    tidak dikirim ke siapa pun. Test lama yang mengabadikan "subscription global menerima semua"
+    (termasuk tenant lain) diperbarui. (3) Pagar tulis di `BelongsToTenant`: selama konteks tenant
+    aktif, membuat baris milik tenant lain ditolak (`AuthorizationException`, 403), apa pun yang
+    dilakukan controller; `tenant_id` juga tidak dapat di-mass-assign.
+  - Pengecualian sapuan yang disengaja dan beralasan: route yang terikat identitas atau instalasi,
+    bukan workspace (status setup orang itu, status instalasi tenant sendiri, daftar aplikasi
+    Ecopa, status integrasi dan log webhook Ecopa, status scheduler, ringkasan penggunaan);
+    marker memastikan tidak satu pun memuat konten tenant.
+  - Aturan sementara login "hanya satu organisasi tertaut" digantikan oleh
+    `tenancy.multi_organization` (tahap 7). Keputusan: flag **tetap ada dan tetap mati** setelah
+    tahap 8 sebagai saklar rilis; ia baru dinyalakan pada tahap 10 bersama saklar "multi-organization
+    ready" Ecopa. Test pengganti: `OrganizationEntryFlowsTest` (flag mati menolak organisasi kedua,
+    flag nyala mengizinkan dan mengisolasi) dan sapuan di atas.
 - Amandemen atas "Locked 2026-11-19 — shared database … Amendment": admin Ecopa
   tanpa assignment lokal hanya memperoleh workspace **dalam tenant
   organisasinya**, bukan semua workspace. Aturan "semua workspace" hanya benar

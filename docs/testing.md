@@ -95,6 +95,9 @@ snapshot token.
 | Payroll approve / pay | payroll | `tests/Feature/Payroll/` |
 | Cash-mgmt expense approve / pay | cash-mgmt | `tests/Feature/Expense/` |
 | AutoJournalClient HTTP | api-client | `tests/AutoJournalClientTest.php` |
+| Two-organisation isolation (security gate, stage 8): SPA route sweep, token API sweep, webhooks, jobs, attachments, Role Management | accounting | `tests/Feature/Tenancy/TwoOrganizationIsolationTest.php`, `TwoOrganizationChannelsTest.php` (shared fixture: `Concerns_two_organizations.php`) |
+| Organisation entry flows (Owner wizard, Member messages) | accounting | `tests/Feature/Tenancy/OrganizationEntryFlowsTest.php` |
+| Tenant context, scopes, per-tenant jobs and commands | accounting | `tests/Feature/Tenancy/TenantContextTest.php`, `TenantColumnMigrationTest.php` |
 
 ---
 

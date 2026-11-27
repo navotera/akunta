@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models\Concerns;
 
 use Akunta\Rbac\Scopes\TenantScope;
+use Akunta\Rbac\Support\TenantContext;
 use App\Support\Tenancy\TenantOwnership;
+use Illuminate\Auth\Access\AuthorizationException;
 
 /**
  * Fills `tenant_id` when a tenant-owned row is created, from the parent row (or
@@ -22,13 +24,22 @@ trait BelongsToTenant
         static::addGlobalScope(new TenantScope);
 
         static::creating(function ($model): void {
-            if ($model->getAttribute('tenant_id') !== null || ! TenantOwnership::hasTenantColumn($model->getTable())) {
+            if (! TenantOwnership::hasTenantColumn($model->getTable())) {
                 return;
             }
 
-            $tenantId = TenantOwnership::tenantFor($model->getTable(), $model->getAttributes());
+            $tenantId = $model->getAttribute('tenant_id')
+                ?? TenantOwnership::tenantFor($model->getTable(), $model->getAttributes());
             if ($tenantId !== null) {
                 $model->setAttribute('tenant_id', $tenantId);
+            }
+
+            // Last line of defence behind every controller check: while a request, job, or
+            // command works for one tenant it can never create a row that belongs to another
+            // (for example by naming another organisation's workspace as the parent).
+            $context = TenantContext::id();
+            if ($context !== null && $tenantId !== null && $context !== $tenantId) {
+                throw new AuthorizationException('Baris ini milik organisasi lain dan tidak dapat dibuat dari konteks ini.');
             }
         });
     }
