@@ -82,8 +82,10 @@ beforeEach(function () {
     // The Platform Owner's Ecopa claim is stored on first sign-in after the release (EcopaController);
     // simulate that sign-in, inside the transaction, so the session claim matches the stored flag.
     User::query()->where('main_tier_user_id', getenv('AKUNTA_REHEARSAL_PO') ?: 'ecopa-po')->update(['ecopa_platform_admin' => true]);
-    $this->entities = DB::table('entities')->orderBy('name')->pluck('id', 'name')->all();
-    $this->counts = rehearsalJournalCounts();
+    // Reading the fixture itself spans every tenant: allowed explicitly, so the same test also runs
+    // against a copy where Row-Level Security is on and the database role is the application role.
+    $this->entities = TenantContext::platformRead(fn () => DB::table('entities')->orderBy('name')->pluck('id', 'name')->all());
+    $this->counts = TenantContext::platformRead(fn () => rehearsalJournalCounts());
 });
 
 afterEach(function () {
@@ -165,8 +167,12 @@ it('answers the three reports through the application with the numbers of the ta
 
 it('keeps every old row inside the one tenant, and leaves no context behind', function () {
     $tenants = DB::table('tenants')->count();
+    [$orphanJournals, $orphanAssignments] = TenantContext::platformRead(fn () => [
+        DB::table('journals')->whereNull('tenant_id')->count(),
+        DB::table('user_app_assignments')->whereNull('tenant_id')->count(),
+    ]);
     expect($tenants)->toBe(1)
-        ->and(DB::table('journals')->whereNull('tenant_id')->count())->toBe(0)
-        ->and(DB::table('user_app_assignments')->whereNull('tenant_id')->count())->toBe(0)
+        ->and($orphanJournals)->toBe(0)
+        ->and($orphanAssignments)->toBe(0)
         ->and(TenantContext::id())->toBeNull();
 });
