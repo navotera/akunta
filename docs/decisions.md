@@ -1920,7 +1920,7 @@ Aturan penegakan:
 - *Diimplementasikan 2026-11-27 (tahap 9 prompt agent, Row-Level Security):* lapisan ketiga
   isolasi, **opt-in dan mati secara default**. Runbook: `docs/row-level-security.md`.
   - Dua saklar independen: `php artisan akunta:rls enable|disable|status [--dry-run]` (policy
-    di 30 tabel milik tenant: `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `SELECT/INSERT/UPDATE/DELETE`
+    di 29 tabel milik tenant: `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `SELECT/INSERT/UPDATE/DELETE`
     berdasarkan `tenant_id = app.tenant_id`) dan `AKUNTA_RLS=true` (aplikasi menyalin `TenantContext`
     ke setting database). Kebijakan tanpa lapisan aplikasi = nol baris; sebaliknya = tanpa efek.
     Urutan: database uji → staging → production **hanya atas perintah pemilik**; rollback:

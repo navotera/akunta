@@ -5,6 +5,7 @@ use Akunta\Rbac\Models\Permission;
 use Akunta\Rbac\Models\Role;
 use Akunta\Rbac\Models\User;
 use App\Models\EcopaConfigIntegration;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -18,6 +19,27 @@ use Tests\TestCase;
 | need to change it using the "pest()" function to bind a different classes or traits.
 |
 */
+
+/*
+|--------------------------------------------------------------------------
+| Isolated fake disks
+|--------------------------------------------------------------------------
+|
+| Storage::fake() empties one shared folder (storage/framework/testing/disks/<disk>), so two test
+| runs at the same time in one working copy wipe each other's files and fail with missing or extra
+| attachments. A per-process token gives every run its own folder (the same mechanism Laravel's
+| parallel runner uses; it only affects where fake disks live) and the folder is removed at exit.
+| A token set by the caller (for example `--parallel`) is kept.
+*/
+if (! isset($_SERVER['TEST_TOKEN'])) {
+    $_SERVER['TEST_TOKEN'] = 'p'.getmypid();
+    register_shutdown_function(static function (): void {
+        $root = __DIR__.'/../storage/framework/testing/disks';
+        foreach (glob($root.'/*_test_'.$_SERVER['TEST_TOKEN']) ?: [] as $folder) {
+            (new Filesystem)->deleteDirectory($folder);
+        }
+    });
+}
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)

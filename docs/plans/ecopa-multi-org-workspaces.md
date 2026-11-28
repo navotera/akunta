@@ -293,7 +293,7 @@ tombol hapus permanen workspace), `routes/onboarding`, `lib/stores/permissions.s
 
 **Selesai 2026-11-27, opt-in dan mati secara default.** Runbook: `docs/row-level-security.md`; keputusan dan bukti:
 `docs/decisions.md` (butir "Diimplementasikan 2026-11-27 (tahap 9…)").
-- `akunta:rls enable|disable|status [--dry-run]` memasang policy di 30 tabel; `AKUNTA_RLS=true` menyalakan lapisan aplikasi
+- `akunta:rls enable|disable|status [--dry-run]` memasang policy di 29 tabel; `AKUNTA_RLS=true` menyalakan lapisan aplikasi
   (`TenantAwarePostgresConnection`, setting transaksi-lokal `app.tenant_id`). Pintu lintas tenant hanya
   `TenantContext::platformRead()` / `without()` (hanya-baca).
 - Tes: `RowLevelSecurityTest` (role non-owner) dan mode diagnostik seluruh suite `AKUNTA_RLS_TEST_HTTP=1`.
@@ -357,3 +357,19 @@ terhadap Ecopa (smoke test memakai sesi yang disimulasikan). Lakukan pada gladi 
 6. Migrasi data lama tanpa kehilangan data: jumlah tenant, entity, user, role, assignment, dan jurnal sama sebelum dan
    sesudah; semuanya terikat organisasi default; role management dan user lama berfungsi seperti sebelumnya; migrasi
    dapat dijalankan ulang tanpa duplikasi; backup + restore teruji.
+
+### Bukti per acceptance criteria (2026-11-27)
+
+| # | Bukti | Di mana |
+|---|---|---|
+| 1 | Flow 1: Platform Owner dan user lama langsung ke data lama tanpa wizard; pada gladi, Platform Owner dan admin lama tidak melihat `needs_setup`/`needs_workspace` | `OrganizationEntryFlowsTest` ("flow 1"), `tests/Rehearsal/PostMigrationSmokeTest.php` |
+| 2 | Flow 2: OO organisasi baru mendapat wizard, tenant baru bertaut ke `organization.id`, OO hanya mengelola tenant itu | `OrganizationEntryFlowsTest` ("flow 2") |
+| 3 | Flow 3: Member langsung masuk atau mendapat pesan "Hubungi Organization Owner"; tidak pernah melihat wizard; organisasi yang sudah punya workspace tidak melihat wizard | `OrganizationEntryFlowsTest` ("flow 3", "shows no wizard...") |
+| 4 | Admin dan anggota organisasi B tidak dapat membaca atau mengubah milik A lewat UI/API SPA, header `X-Tenant-Slug`, token API, webhook, antrean, perintah terjadwal, lampiran, cache; diulang di bawah RLS non-owner | `TwoOrganizationIsolationTest`, `TwoOrganizationChannelsTest`, `RowLevelSecurityTest`, mode diagnostik `AKUNTA_RLS_TEST_HTTP=1` |
+| 5 | Perilaku single-organisasi tidak berubah: `AKUNTA_MULTI_ORGANIZATION` mati secara default dan organisasi kedua ditolak; suite Accounting yang ada tetap hijau | `OrganizationEntryFlowsTest` ("keeps refusing a second organisation..."), suite penuh SQLite dan PostgreSQL |
+| 6 | Jumlah tenant, entity, user, role, assignment, jurnal, nilai uang, dan keanggotaan sama sebelum dan sesudah; semuanya terikat organisasi default; migrasi dijalankan ulang tanpa duplikasi; backup + restore teruji; laporan keuangan identik | `TenantColumnMigrationTest` (dua kali), `EcopaMigrationReportTest`, gladi `scripts/migration-rehearsal.sh` (build v1 asli, 15.144 jurnal) |
+
+**Status plan:** seluruh kriteria terbukti di lingkungan uji dan gladi pada data buatan. Plan BELUM DONE: tersisa
+(a) gladi pada salinan production, (b) eksekusi rilis production atas perintah eksplisit pemilik
+(`docs/release-readiness-multi-org.md`), (c) saklar Ecopa "multi-organization ready" dan uji satu organisasi baru end-to-end
+setelah production lulus.
