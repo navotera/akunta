@@ -208,6 +208,9 @@ entity dan buku identik → jalankan ulang migrate, link, dan compare (harus tan
 (`tests/Rehearsal`, hanya-baca, dibatalkan lewat transaksi) → maintenance mode off. Setiap langkah dicatat dengan
 perintah, durasi, dan exit code di `rehearsal.log`; exit code 0 hanya bila semuanya lulus.
 
+Pembuktian lanjutan (login SSO nyata, RLS pada salinan, rollback, volume 10x): `docs/plans/ecopa-multi-org-workspaces.md`
+(Tahap 10 lanjutan). Volume dapat dilipatkan dengan `scripts/rehearsal-multiply-volume.sql` pada salinan v1 sekali pakai.
+
 Catatan: snapshot laporan "sebelum" harus diambil dengan build v1 (build baru membutuhkan `tenant_id` untuk membaca
 buku besar); `scripts/report-snapshot.php` menerima `--root` untuk itu. Laporan gladi: `docs/plans/ecopa-multi-org-workspaces.md`.
 

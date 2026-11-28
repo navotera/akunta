@@ -343,8 +343,83 @@ Temuan gladi dan perbaikan:
    ("terminating connection due to administrator command"); pelakunya tidak teridentifikasi. Gladi diulang pada database
    dengan nama unik dan lulus. Bukan perilaku aplikasi.
 
-Belum dibuktikan: data production sungguhan, jumlah user dan volume production, dan alur Platform Owner login SSO nyata
-terhadap Ecopa (smoke test memakai sesi yang disimulasikan). Lakukan pada gladi dengan salinan production.
+Belum dibuktikan pada gladi pertama: data production sungguhan, volume production, dan login SSO nyata terhadap Ecopa
+(smoke test memakai sesi yang disimulasikan). Dua hal terakhir ditutup oleh bagian berikut; data production tetap belum.
+
+### Tahap 10 lanjutan — pembuktian pada stack nyata lokal (2026-11-28)
+
+Tidak menyentuh production. Susunan: PostgreSQL 16 sekali pakai (Accounting v2 dari repo ini), **Ecopa asli** dari repo
+saudara (`git archive HEAD` dari `main` ke folder sementara, SQLite; perubahan kerja yang belum di-commit di repo itu
+tidak dipakai maupun diubah), Accounting Web (Vite) dan browser sungguhan. Di Windows PHP Ecopa memerlukan
+`OPENSSL_CONF` (mis. `<php>/extras/ssl/openssl.cnf`) agar bisa membuat kunci JWKS; hanya variabel lingkungan.
+
+**1. Login SSO nyata atas data hasil migrasi.** Database v1 (dump gladi, 15.144 jurnal) di-restore, di-`migrate`, lalu
+`ecopa:link-organization 1` dengan organisasi default Ecopa sungguhan; Akunta didaftarkan lewat wizard registrasi (token,
+persetujuan, callback), dan user Ecopa dipetakan ke user v1 lewat `main_tier_user_id`.
+
+| Pengguna | Hasil login OIDC nyata |
+|---|---|
+| Platform Owner | `is_platform_admin` true, organisasi `ready`, 3 entity, 45 permission tiap entity, `can_manage_cron` true; mendarat di `/dashboard` tanpa wizard |
+| Admin lama | `is_sso_admin` true, bukan Platform Owner, 3 entity, `can_manage_cron` false |
+| Inspector | mendarat di `/journals?status=draft&journal_mode=fiscal`, 2 entity, 6 permission baca, `is_fiscal_inspector` true |
+| Operator | 2 entity, 15 permission, tanpa `journal.post` |
+| Dinonaktifkan di Akunta, aktif di Ecopa | 403 "Akses Akunta untuk akun ini telah dinonaktifkan di Ecopa" |
+| Non-admin tanpa penugasan aplikasi di Ecopa | 403 "Akun belum di-assign ke Akunta" (klaim `app_role` kosong) |
+
+Setelah itu `users.ecopa_platform_admin` true hanya untuk Platform Owner dan tidak ada entity tanpa `tenant_id`.
+
+**2. Alur 2 dan 3 end-to-end** (`AKUNTA_MULTI_ORGANIZATION=true`; pada Ecopa lokal saklar "multi-organization ready"
+dinyalakan hanya di salinan itu): Member organisasi baru sebelum ada workspace mendapat "Workspace organisasi Anda belum
+disiapkan. Hubungi Organization Owner." Organization Owner masuk ke wizard `/onboarding` (entity, mode buku, COA, periode)
+sampai "Selesai"; tenant baru bertaut ke organisasi 2 dengan 1 entity, Owner hanya melihat entity itu, organisasi 1 tidak
+berubah (3 entity, 13 akun tiap entity). Member sesudah workspace ada: state `no_role`, "Hubungi Organization Owner untuk
+mendapatkan peran", tanpa entity.
+
+**3. RLS pada salinan hasil migrasi.** `akunta:rls enable` 29 tabel (114 policy) 1,0 s, `disable` 1,0 s, data utuh (15.144
+jurnal, 30.288 entry). Smoke test gladi (`tests/Rehearsal`, kini juga bisa berjalan dengan RLS; pembacaan lintas tenant
+fixture memakai `platformRead`) lulus 5 test dan 49 asersi sebagai role `akunta_app` dengan `AKUNTA_RLS=true`. Login SSO
+nyata di bawah RLS dan multi-organisasi: Platform Owner melihat 3 entity, 2.524 jurnal Intern per entity, total Kas identik
+dengan snapshot v1; Organization Owner organisasi lain mendapat 422 "Tenant is not accessible" untuk jurnal dan Neraca Saldo
+entity organisasi 1 lewat `X-Tenant-Slug`.
+
+**4. Gladi rollback.** Dump sebelum migrasi di-restore ke database baru (3,2 s) dan dijalankan dengan build v1 (`b05f1df`):
+tidak ada migration tertunda, laporan Neraca Saldo, Neraca, dan Laba Rugi per entity dan buku **IDENTIK** dengan snapshot
+sebelum migrasi (1,9 s), 48 baris lampiran = 48 berkas. Prosedur: `docs/release-readiness-multi-org.md` bagian 4.
+
+**5. Volume 10x** (151.440 jurnal, 302.880 entry, database 220 MB; dibuat dengan
+`apps/accounting/scripts/rehearsal-multiply-volume.sql`, 49 s). Gladi penuh lulus dengan selisih nol.
+
+| Langkah | 1x (15 rb jurnal) | 10x (151 rb jurnal) |
+|---|---|---|
+| `pg_dump -Fc` / uji restore | 0,6 s / 6,7 s | 2,7 s / 25,7 s |
+| `migrate --force` | 7,6 s | 62,9 s |
+| `ecopa:link-organization` | 1,1 s | 1,5 s |
+| laporan identik dengan v1 | 2,1 s | 18,6 s |
+| smoke test per jenis user | 3,6 s | 13,4 s |
+
+Skala hampir linear. Dari maintenance on sampai off (termasuk verifikasi dan ulang idempoten) sekitar 107 s pada 10x.
+Ukuran database naik dari 220 MB menjadi 437 MB karena backfill `tenant_id` memakai UPDATE (tuple lama menjadi dead
+tuple); `VACUUM (ANALYZE)` (5 s) tidak mengecilkan berkas, `VACUUM FULL journals, journal_entries` (19 s, kunci eksklusif)
+menurunkannya ke 245 MB (selisih nyata 25 MB: kolom dan indeks baru). Sediakan ruang disk sekitar 2x ukuran database.
+Biaya RLS pada 10x: Neraca Saldo 3 entity 646-719 ms menjadi 698-746 ms (+5-8%), satu halaman daftar jurnal 22,5 menjadi
+28 ms, 200 statement kecil di luar transaksi 130 menjadi 232 ms, dalam satu transaksi 129 menjadi 138-141 ms
+(`docs/row-level-security.md`).
+
+Temuan:
+1. Flag onboarding v1 (`ecopa_config_integration.installation_onboarding_completed_at`) harus sudah ada **sebelum**
+   `migrate`: migration tahap 7 menyalinnya ke `tenants.onboarding_completed_at`. Bila flag dimasukkan sesudahnya,
+   mode multi-organisasi menampilkan wizard kepada Platform Owner (kolom tenant masih kosong). Pra-pemeriksaan ditambahkan
+   ke checklist rilis.
+2. Pengguna non-admin hanya dapat masuk bila Ecopa menugaskan aplikasi kepadanya (klaim `app_role`); event
+   `app.access.granted` menambah penugasan seluruh-aplikasi tanpa role dan tidak mengubah role per entity yang ada
+   (diperiksa: 6 baris sebelum, 3 baris tambahan, role lama utuh). Event yang sama mengaktifkan kembali user yang
+   dinonaktifkan lokal (sesuai kontrak "user.assigned membuat atau mengaktifkan shadow user"); kontrol penonaktifan yang
+   berlaku adalah blokir atau penghapusan di Ecopa.
+3. Persetujuan registrasi di Ecopa memakai `OutboundUrl`; URL lokal hanya diterima saat `ECOPA_ALLOW_PRIVATE_APP_URLS`
+   menyala atau APP_ENV bukan production.
+
+Masih belum dibuktikan: data dan volume production sungguhan, Ecopa production (yang dipakai adalah salinan `main` lokal),
+biaya RLS pada perangkat keras staging, dan webhook `user.updated` Platform Owner langsung dari Ecopa nyata.
 
 ## Acceptance criteria
 
@@ -369,7 +444,8 @@ terhadap Ecopa (smoke test memakai sesi yang disimulasikan). Lakukan pada gladi 
 | 5 | Perilaku single-organisasi tidak berubah: `AKUNTA_MULTI_ORGANIZATION` mati secara default dan organisasi kedua ditolak; suite Accounting yang ada tetap hijau | `OrganizationEntryFlowsTest` ("keeps refusing a second organisation..."), suite penuh SQLite dan PostgreSQL |
 | 6 | Jumlah tenant, entity, user, role, assignment, jurnal, nilai uang, dan keanggotaan sama sebelum dan sesudah; semuanya terikat organisasi default; migrasi dijalankan ulang tanpa duplikasi; backup + restore teruji; laporan keuangan identik | `TenantColumnMigrationTest` (dua kali), `EcopaMigrationReportTest`, gladi `scripts/migration-rehearsal.sh` (build v1 asli, 15.144 jurnal) |
 
-**Status plan:** seluruh kriteria terbukti di lingkungan uji dan gladi pada data buatan. Plan BELUM DONE: tersisa
-(a) gladi pada salinan production, (b) eksekusi rilis production atas perintah eksplisit pemilik
-(`docs/release-readiness-multi-org.md`), (c) saklar Ecopa "multi-organization ready" dan uji satu organisasi baru end-to-end
-setelah production lulus.
+**Status plan:** seluruh kriteria terbukti di lingkungan uji dan gladi pada data buatan, kini juga dengan login SSO nyata
+terhadap Ecopa lokal, alur 2 dan 3 di browser, RLS pada salinan hasil migrasi, gladi rollback, dan volume 10x (Tahap 10
+lanjutan). Plan BELUM DONE: tersisa (a) gladi pada salinan production, (b) eksekusi rilis production atas perintah
+eksplisit pemilik (`docs/release-readiness-multi-org.md`), (c) saklar Ecopa "multi-organization ready" production dan uji
+satu organisasi baru end-to-end di sana setelah production lulus.

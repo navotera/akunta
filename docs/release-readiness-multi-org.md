@@ -16,13 +16,26 @@ di production.
       bukan default; identitas yatim dicatat.
 - [ ] Keputusan RLS: tetap mati saat rilis (default, disarankan) atau dinyalakan setelah rilis stabil.
       RLS tidak boleh dinyalakan bersamaan dengan migrasi.
+- [ ] Pra-pemeriksaan sebelum `migrate`: baris `ecopa_config_integration.installation_onboarding_completed_at` ada dan
+      berisi nilai (migration tahap 7 menyalinnya ke tenant). Tanpa itu, saat `AKUNTA_MULTI_ORGANIZATION=true` Platform
+      Owner melihat wizard; perbaikan: isi `tenants.onboarding_completed_at`.
+- [ ] Ruang disk database sekitar 2x ukurannya (backfill `tenant_id` menggandakan berkas tabel besar sampai
+      `VACUUM FULL` atau `pg_repack`; pada gladi 10x: 220 MB, 437 MB, lalu 245 MB setelah `VACUUM FULL` 19 s dengan
+      kunci eksklusif).
+- [ ] Setiap user non-admin yang harus masuk sudah ditugaskan ke Akunta di Ecopa (klaim `app_role`).
 
 ## 1. Gladi (sudah dijalankan pada salinan sekali pakai; ulangi pada salinan production sebelum rilis)
 
 - [ ] Restore dump production terbaru ke database sekali pakai dan salin folder lampiran.
 - [ ] Jalankan `apps/accounting/scripts/migration-rehearsal.sh` (variabel lingkungan ada di kepala
       skrip). Hasil harus `RESULT: PASSED`; simpan folder laporannya.
-- [ ] Catat durasi tiap langkah (menentukan lebar jendela maintenance).
+- [ ] Catat durasi tiap langkah (menentukan lebar jendela maintenance). Acuan gladi buatan: 1x (15 rb jurnal) `migrate`
+      7,6 s; 10x (151 rb jurnal) 62,9 s, jendela maintenance sekitar 107 s (hampir linear). Volume production sungguhan
+      menentukan angka sebenarnya.
+- [ ] Gladi rollback: restore dump sebelum migrasi ke database baru dan jalankan build v1; laporan harus identik
+      (`scripts/report-snapshot.php --root=<build v1> --compare=<reports-before.json>`). Pada gladi buatan: restore 3,2 s,
+      identik, 48 dari 48 lampiran.
+- [ ] Opsional, pada salinan: login SSO nyata Platform Owner, OO lama, Operator, Inspector terhadap Ecopa staging atau lokal.
 - [ ] Smoke test per jenis user (`tests/Rehearsal`) lulus dan laporan Neraca Saldo, Neraca, Laba
       Rugi per entity identik dengan build v1.
 

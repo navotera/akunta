@@ -90,7 +90,10 @@ non-owner. Pembanding: role owner tanpa RLS. Role non-owner tanpa policy sama de
   sub-select agar dievaluasi sekali per query, tetapi pengaruh utamanya kecocokan tipe) agar sama dengan tipe kolom `tenant_id` (`character(26)`). Tanpa
   kecocokan tipe, PostgreSQL mengubah kolom menjadi `text`, kehilangan statistiknya, dan memilih nested loop yang lambat.
   Pasang ulang policy (`akunta:rls enable`) pada database yang sudah memakai versi lama.
-- Pengukuran satu mesin dengan data kecil; ulangi di staging sebelum menyalakan RLS di production.
+- Pada data 10x (151.440 jurnal, 302.880 entry; 2026-11-28) hasilnya sejalan: Neraca Saldo 3 entity 646-719 ms menjadi
+  698-746 ms (+5-8%), satu halaman daftar jurnal 22,5 menjadi 28 ms, 200 statement kecil di luar transaksi 130 menjadi
+  232 ms, dalam satu transaksi 129 menjadi 138-141 ms.
+- Pengukuran satu mesin; ulangi di staging sebelum menyalakan RLS di production.
 
 ## 5. Jalur lintas tenant yang eksplisit
 
